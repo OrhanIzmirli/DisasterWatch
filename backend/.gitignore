@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Env (secrets)
+.env
+.env.*
+!.env.example
+
+# Build output (if any)
+dist/
+build/
+
+# Prisma generated (if you use it)
+src/generated/prisma/

@@ -1,0 +1,28 @@
+/* ===== GLOBAL RESET ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ===== ROOT & BODY ===== */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* RENK VE BACKGROUND YOK */
+  /* Bunlar App.css tarafından yönetilecek */
+}
+
+/* ===== ROOT CONTAINER ===== */
+#root {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}

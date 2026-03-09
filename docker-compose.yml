@@ -1,0 +1,106 @@
+services:
+  db:
+    container_name: disasterwatch_db
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: disasterwatch
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  zookeeper:
+    container_name: disasterwatch_zookeeper
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    restart: unless-stopped
+
+  dw-kafka:
+    container_name: disasterwatch_kafka
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"     # docker network içi
+      - "29092:29092"   # hosttan test
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://dw-kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    container_name: disasterwatch_backend
+    build: ./backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - NODE_OPTIONS=--dns-result-order=ipv4first
+      - NODE_ENV=production
+      - PORT=5000
+
+      # ✅ Kafka (Kafkajs/Producer burada bunu kullanacak)
+      - KAFKA_BROKER=dw-kafka:9092
+      - KAFKA_BROKERS=dw-kafka:9092
+      - KAFKA_BOOTSTRAP_SERVERS=dw-kafka:9092
+
+      # ✅ Docker içinden DB host adı container_name
+      - DATABASE_URL=postgresql://postgres:postgres@disasterwatch_db:5432/disasterwatch
+    depends_on:
+      db:
+        condition: service_healthy
+      dw-kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification:
+    container_name: disasterwatch_notification
+    build: ./notification-service
+    environment:
+      - NODE_ENV=production
+      - KAFKA_BROKER=dw-kafka:9092
+      - KAFKA_BROKERS=dw-kafka:9092
+      - KAFKA_BOOTSTRAP_SERVERS=dw-kafka:9092
+    depends_on:
+      dw-kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    container_name: disasterwatch_frontend
+    build: ./disasterwatch-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

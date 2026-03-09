@@ -1,0 +1,29 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  role      String   @default("user")
+  createdAt DateTime @default(now())
+}
+
+model Disaster {
+  id        Int      @id @default(autoincrement())
+  type      String
+  title     String
+  severity  String?
+  magnitude Float?
+  lat       Float
+  lng       Float
+  date      DateTime
+  createdAt DateTime @default(now())
+}
