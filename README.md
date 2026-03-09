@@ -213,47 +213,44 @@ This project runs locally via Docker Compose.
 cp backend/.env.example backend/.env
 2) Run with Docker
 docker compose up --build
-URLs
+### URLs
+- **Frontend:** http://localhost:8080  
+- **Backend health:** http://localhost:5000/health  
+- **Proxy health:** http://localhost:8080/api/health  
+- **Proxy disasters:** http://localhost:8080/api/disasters  
 
-Frontend: http://localhost:8080
+---
 
-Backend health: http://localhost:5000/health
+## 🧪 Kafka Demo (Send a test event)
 
-Proxy health: http://localhost:8080/api/health
-
-Proxy disasters: http://localhost:8080/api/disasters
-
-🧪 Kafka Demo (Send a test event)
-
-Send a test message into Kafka topic disaster-events:
-
+### Send a test message to `disaster-events`
+``bash
 echo "{\"type\":\"test\",\"location\":\"Warsaw\",\"severity\":\"low\",\"timestamp\":\"2026-03-08T22:25:00Z\"}" \
 | docker compose exec -T dw-kafka bash -lc "kafka-console-producer --bootstrap-server localhost:9092 --topic disaster-events"
-
 Then watch consumer logs:
 
 docker compose logs -f notification
-🔒 Notes on Security
+---
 
-.env, .env.local, .env.docker are excluded from version control
+###🔒 Notes on Security
 
-Secrets are not committed
+- .env, .env.local, .env.docker are excluded from version control
+- Secrets are not committed
+- Only .env.example is included
 
-Only .env.example is included
+---
 
-🚀 Future Improvements
+###🚀 Future Improvements
 
-WebSocket live broadcasting (real-time UI updates)
+-WebSocket live broadcasting (real-time UI updates)
+-Severity-based notification pipeline (Email/SMS/Push)
+-Persist alert rules in DB
+-Observability: metrics + tracing (Prometheus/Grafana)
+-Multi-region cloud deployment hardening
 
-Severity-based notification pipeline (Email/SMS/Push)
+---
 
-Persist alert rules in DB
-
-Observability: metrics + tracing (Prometheus/Grafana)
-
-Multi-region cloud deployment hardening
-
-👨‍💻 Author
+###👨‍💻 Author
 
 Orhan Izmirli
 Computer Science Student (Poland)
