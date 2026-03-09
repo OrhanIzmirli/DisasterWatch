@@ -79,119 +79,119 @@ Example message:
 
 ### 1) Main Dashboard (KPI + Map + Live Feed)
 Shows the complete overview: KPIs at the top, map markers, and live feed on the right.  
-📸 Koyulacak görsel: `screenshots/01-dashboard.png`  
+📸: `screenshots/01-dashboard.png`  
 ![Dashboard](screenshots/01-dashboard.png)
 
 ---
 
 ### 2) Backend Health (API Proof)
 Confirms backend is running and reachable through the reverse proxy `/api`.  
-📸 Koyulacak görsel: `screenshots/02-api-health.png`  
+📸: `screenshots/02-api-health.png`  
 ![API Health](screenshots/02-api-health.png)
 
 ---
 
 ### 3) Disasters API Response (Normalized Output)
 Shows normalized disasters data returned by the backend.  
-📸 Koyulacak görsel: `screenshots/03-api-disasters.png`  
+📸: `screenshots/03-api-disasters.png`  
 ![API Disasters](screenshots/03-api-disasters.png)
 
 ---
 
 ### 4) Disasters API Response (Alt View)
 Alternative capture (useful to show larger payload / different portion).  
-📸 Koyulacak görsel: `screenshots/03-api-disasters-alt.png`  
+📸: `screenshots/03-api-disasters-alt.png`  
 ![API Disasters Alt](screenshots/03-api-disasters-alt.png)
 
 ---
 
 ### 5) Docker Compose (All Services Up)
 Proves that frontend, backend, database, Kafka, zookeeper, and notification service are all running together.  
-📸 Koyulacak görsel: `screenshots/04-compose-ps.png`  
+📸: `screenshots/04-compose-ps.png`  
 ![Docker Compose PS](screenshots/04-compose-ps.png)
 
 ---
 
 ### 6) Kafka Consumer Receives Event (End-to-End Proof)
 Shows the notification-service consuming a message from Kafka topic.  
-📸 Koyulacak görsel: `screenshots/05-kafka-event-received.png`  
+📸: `screenshots/05-kafka-event-received.png`  
 ![Kafka Event Received](screenshots/05-kafka-event-received.png)
 
 ---
 
 ### 7) Kafka Topics (Topic Exists)
 Confirms the `disaster-events` topic exists.  
-📸 Koyulacak görsel: `screenshots/06-kafka-topics.png`  
+📸: `screenshots/06-kafka-topics.png`  
 ![Kafka Topics](screenshots/06-kafka-topics.png)
 
 ---
 
 ### 8) Filter Example — Earthquakes
 Clicking Earthquakes updates the feed and map context.  
-📸 Koyulacak görsel: `screenshots/07-filter-earthquakes.png`  
+📸: `screenshots/07-filter-earthquakes.png`  
 ![Filter Earthquakes](screenshots/07-filter-earthquakes.png)
 
 ---
 
 ### 9) Filter Example — Wildfires
 Switching to Wildfires updates markers and feed.  
-📸 Koyulacak görsel: `screenshots/08-filter-wildfires.png`  
+📸: `screenshots/08-filter-wildfires.png`  
 ![Filter Wildfires](screenshots/08-filter-wildfires.png)
 
 ---
 
 ### 10) Search Example (Country/City)
 Search input filters events by keyword (country/city).  
-📸 Koyulacak görsel: `screenshots/09-search-country.png`  
+📸: `screenshots/09-search-country.png`  
 ![Search](screenshots/09-search-country.png)
 
 ---
 
 ### 11) Sort Example — Newest
 Sort dropdown configured for Newest (time-based monitoring).  
-📸 Koyulacak görsel: `screenshots/10-sort-newest.png`  
+📸: `screenshots/10-sort-newest.png`  
 ![Sort Newest](screenshots/10-sort-newest.png)
 
 ---
 
 ### 12) Sort Example — Severity
 Sort dropdown configured for Severity (critical-first view).  
-📸 Koyulacak görsel: `screenshots/10-sort-severity.png`  
+📸: `screenshots/10-sort-severity.png`  
 ![Sort Severity](screenshots/10-sort-severity.png)
 
 ---
 
 ### 13) Severity Badges (LOW / MEDIUM / HIGH)
 Shows severity classification badges inside the feed.  
-📸 Koyulacak görsel: `screenshots/11-severity-badges.png`  
+📸: `screenshots/11-severity-badges.png`  
 ![Severity Badges](screenshots/11-severity-badges.png)
 
 ---
 
 ### 14) Map Marker Popup / Detail
 Clicking a marker reveals detail popup.  
-📸 Koyulacak görsel: `screenshots/12-map-popup.png`  
+📸: `screenshots/12-map-popup.png`  
 ![Map Popup](screenshots/12-map-popup.png)
 
 ---
 
 ### 15) Alerts Page (Demo UI)
 Demo UI for alert rules & channels (future persistence ready).  
-📸 Koyulacak görsel: `screenshots/16-alerts-page.png`  
+📸: `screenshots/16-alerts-page.png`  
 ![Alerts Page](screenshots/16-alerts-page.png)
 
 ---
 
 ### 16) Admin Console (Demo UI)
 Demo operator panel for creating demo disaster entries.  
-📸 Koyulacak görsel: `screenshots/17-admin-console.png`  
+📸: `screenshots/17-admin-console.png`  
 ![Admin Console](screenshots/17-admin-console.png)
 
 ---
 
 ### 17) News Modal (Demo UI)
 In-app modal showing disaster-related news.  
-📸 Koyulacak görsel: `screenshots/18-news-modal.png`  
+📸: `screenshots/18-news-modal.png`  
 ![News Modal](screenshots/18-news-modal.png)
 
 ---
