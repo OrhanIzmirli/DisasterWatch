@@ -240,11 +240,11 @@ echo "{\"type\":\"test\",\"location\":\"Warsaw\",\"severity\":\"low\",\"timestam
 
 ### 🚀 Future Improvements
 
--WebSocket live broadcasting (real-time UI updates)
--Severity-based notification pipeline (Email/SMS/Push)
--Persist alert rules in DB
--Observability: metrics + tracing (Prometheus/Grafana)
--Multi-region cloud deployment hardening
+- WebSocket live broadcasting (real-time UI updates)
+- Severity-based notification pipeline (Email/SMS/Push)
+- Persist alert rules in DB
+- Observability: metrics + tracing (Prometheus/Grafana)
+- Multi-region cloud deployment hardening
 
 ---
 

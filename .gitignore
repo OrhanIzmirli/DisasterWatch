@@ -5,8 +5,6 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # Env (secrets)
-.env
-.env.*
 !.env.example
 
 # Build outputs
@@ -15,8 +13,8 @@ build/
 
 # IDE
 .idea/
-.vscode/
 
 # OS
 .DS_Store
 Thumbs.db
+config.bat
