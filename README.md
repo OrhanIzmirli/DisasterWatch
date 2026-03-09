@@ -224,11 +224,7 @@ docker compose up --build
 ## 🧪 Kafka Demo (Send a test event)
 
 ### Send a test message to `disaster-events`
-``bash
-echo "{\"type\":\"test\",\"location\":\"Warsaw\",\"severity\":\"low\",\"timestamp\":\"2026-03-08T22:25:00Z\"}" \
-| docker compose exec -T dw-kafka bash -lc "kafka-console-producer --bootstrap-server localhost:9092 --topic disaster-events"
-Then watch consumer logs:
-
+echo "{\"type\":\"test\",\"location\":\"Warsaw\",\"severity\":\"low\",\"timestamp\":\"2026-03-08T22:25:00Z\"}" \ | docker compose exec -T dw-kafka bash -lc "kafka-console-producer --bootstrap-server localhost:9092 --topic disaster-events"
 docker compose logs -f notification
 ---
 
