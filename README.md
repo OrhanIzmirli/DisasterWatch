@@ -1,41 +1,42 @@
 # 🌍⚡ DisasterWatch
-A cloud-ready, real-time disaster monitoring platform powered by **NASA EONET + USGS**, built with an **event-driven microservices architecture** using **Kafka**. The system normalizes multi-source disaster data into a single model and visualizes it on an interactive map with filtering, search, and severity scoring.
+
+A cloud-ready, real-time disaster monitoring platform that aggregates global disaster signals using **NASA EONET + USGS**, normalizes multi-source API responses into a single schema, visualizes events on an interactive map, and uses **Kafka** for event-driven processing via producer/consumer microservices.
 
 Note: The project is designed to be **fully runnable on localhost** via Docker Compose (cloud deployment is optional). This makes it easy to demo in interviews without requiring cloud credentials.
 
 ---
 
-## Features
+## ✅ Features
 
-### 1) Multi-Source Disaster Ingestion (NASA + USGS)
+### 1) Multi-Source Disaster Data (NASA EONET + USGS)
 - Fetches global disaster data from:
   - **USGS** (Earthquakes)
-  - **NASA EONET** (Wildfires, storms, floods and more)
-- Normalizes heterogeneous API responses into a single schema
-- Provides performance-safe limits for UI rendering (marker caps / pagination)
+  - **NASA EONET** (Wildfires, floods, storms, etc.)
+- Normalizes heterogeneous API responses into a single unified model
+- Performance-safe rendering (pagination + marker caps)
 
-### 2) Interactive Dashboard (Map + Live Feed)
-- Real-time map visualization with event markers
-- Live feed of disasters with pagination
+### 2) Live Dashboard (Map + Feed + KPI)
+- Interactive **world map** with disaster markers
+- Live disaster feed with pagination
 - KPI overview:
   - Total disasters
   - Active alerts (high severity)
   - Countries affected
 
-### 3) Smart Filtering, Search, Sorting
+### 3) Filtering, Search, Sorting
 - Filter by disaster type:
   - Earthquakes
   - Wildfires
   - Floods
   - Storms
-- Search by city/country
+- Search by country/city keyword
 - Sorting options:
   - Newest
   - Severity
 
 ### 4) Severity Scoring (LOW / MEDIUM / HIGH)
-- Each event is classified by severity
-- Feed badges clearly display severity
+- Each event is classified into severity levels
+- Severity badges shown directly in the feed
 - Helps prioritize critical events
 
 ### 5) Event-Driven Architecture (Kafka)
@@ -46,153 +47,171 @@ DisasterWatch streams disaster events through Kafka to decouple ingestion from p
   - `disaster-events`
 
 Example message:
-```json
+``json
 {
   "type": "earthquake",
   "location": "Turkey",
   "severity": "high",
   "timestamp": "2026-03-08T22:25:00Z"
-}
+}`
 
-Consumer (Notification Service)
+**Consumer (Notification Service)**
+- Subscribes to `disaster-events`
+- Logs received events (ready for future alert pipelines: Email/SMS/WebSocket push)
 
-Subscribes to disaster-events
+### 6) Dockerized Microservices (Local + Cloud-Ready)
+- Fully containerized services:
+  - frontend (React build served by Nginx)
+  - backend (Node.js + Express)
+  - db (PostgreSQL)
+  - kafka (Confluent Kafka) + zookeeper
+  - notification-service (Kafka consumer)
+- Runs locally with a single Docker Compose command
 
-Logs received events (ready for future alert pipelines: Email/SMS/WebSocket push)
+### 7) Bonus UI Modules (Demo-Ready)
+- Alerts page UI (demo)
+- Admin console UI (demo)
+- News modal UI (demo)
 
-6) Dockerized Microservices (Local + Cloud-Ready)
+---
 
-Fully containerized:
+## 🖼 App Screenshots
 
-frontend (React build served by Nginx)
+### 1) Main Dashboard (KPI + Map + Live Feed)
+Shows the complete overview: KPIs at the top, map markers, and live feed on the right.  
+📸 Koyulacak görsel: `screenshots/01-dashboard.png`  
+![Dashboard](screenshots/01-dashboard.png)
 
-backend (Node.js + Express)
+---
 
-db (PostgreSQL)
+### 2) Backend Health (API Proof)
+Confirms backend is running and reachable through the reverse proxy `/api`.  
+📸 Koyulacak görsel: `screenshots/02-api-health.png`  
+![API Health](screenshots/02-api-health.png)
 
-kafka (Confluent Kafka)
+---
 
-zookeeper
+### 3) Disasters API Response (Normalized Output)
+Shows normalized disasters data returned by the backend.  
+📸 Koyulacak görsel: `screenshots/03-api-disasters.png`  
+![API Disasters](screenshots/03-api-disasters.png)
 
-notification-service (Kafka consumer)
+---
 
-Runs locally in one command using Docker Compose
+### 4) Disasters API Response (Alt View)
+Alternative capture (useful to show larger payload / different portion).  
+📸 Koyulacak görsel: `screenshots/03-api-disasters-alt.png`  
+![API Disasters Alt](screenshots/03-api-disasters-alt.png)
 
-7) Bonus UI Modules (Demo-Ready)
+---
 
-Alerts page UI (demo)
+### 5) Docker Compose (All Services Up)
+Proves that frontend, backend, database, Kafka, zookeeper, and notification service are all running together.  
+📸 Koyulacak görsel: `screenshots/04-compose-ps.png`  
+![Docker Compose PS](screenshots/04-compose-ps.png)
 
-Admin console UI (demo)
+---
 
-News modal UI (demo)
+### 6) Kafka Consumer Receives Event (End-to-End Proof)
+Shows the notification-service consuming a message from Kafka topic.  
+📸 Koyulacak görsel: `screenshots/05-kafka-event-received.png`  
+![Kafka Event Received](screenshots/05-kafka-event-received.png)
 
-App Screenshots
-Dashboard (Map + Feed + KPI)
+---
 
-API Proof (Nginx → Backend)
+### 7) Kafka Topics (Topic Exists)
+Confirms the `disaster-events` topic exists.  
+📸 Koyulacak görsel: `screenshots/06-kafka-topics.png`  
+![Kafka Topics](screenshots/06-kafka-topics.png)
 
-Health:
+---
 
+### 8) Filter Example — Earthquakes
+Clicking Earthquakes updates the feed and map context.  
+📸 Koyulacak görsel: `screenshots/07-filter-earthquakes.png`  
+![Filter Earthquakes](screenshots/07-filter-earthquakes.png)
 
-Disasters:
+---
 
+### 9) Filter Example — Wildfires
+Switching to Wildfires updates markers and feed.  
+📸 Koyulacak görsel: `screenshots/08-filter-wildfires.png`  
+![Filter Wildfires](screenshots/08-filter-wildfires.png)
 
+---
 
+### 10) Search Example (Country/City)
+Search input filters events by keyword (country/city).  
+📸 Koyulacak görsel: `screenshots/09-search-country.png`  
+![Search](screenshots/09-search-country.png)
 
-Docker Proof (All Services Up)
+---
 
-Kafka Proof (Consumer Receives Events)
+### 11) Sort Example — Newest
+Sort dropdown configured for Newest (time-based monitoring).  
+📸 Koyulacak görsel: `screenshots/10-sort-newest.png`  
+![Sort Newest](screenshots/10-sort-newest.png)
 
-Kafka Topics
+---
 
-Filtering + Search + Sorting + Severity
+### 12) Sort Example — Severity
+Sort dropdown configured for Severity (critical-first view).  
+📸 Koyulacak görsel: `screenshots/10-sort-severity.png`  
+![Sort Severity](screenshots/10-sort-severity.png)
 
-Earthquakes filter:
+---
 
+### 13) Severity Badges (LOW / MEDIUM / HIGH)
+Shows severity classification badges inside the feed.  
+📸 Koyulacak görsel: `screenshots/11-severity-badges.png`  
+![Severity Badges](screenshots/11-severity-badges.png)
 
-Wildfires filter:
+---
 
+### 14) Map Marker Popup / Detail
+Clicking a marker reveals detail popup.  
+📸 Koyulacak görsel: `screenshots/12-map-popup.png`  
+![Map Popup](screenshots/12-map-popup.png)
 
-Search by country/city:
+---
 
+### 15) Alerts Page (Demo UI)
+Demo UI for alert rules & channels (future persistence ready).  
+📸 Koyulacak görsel: `screenshots/16-alerts-page.png`  
+![Alerts Page](screenshots/16-alerts-page.png)
 
-Sort (Newest):
+---
 
+### 16) Admin Console (Demo UI)
+Demo operator panel for creating demo disaster entries.  
+📸 Koyulacak görsel: `screenshots/17-admin-console.png`  
+![Admin Console](screenshots/17-admin-console.png)
 
-Sort (Severity):
+---
 
+### 17) News Modal (Demo UI)
+In-app modal showing disaster-related news.  
+📸 Koyulacak görsel: `screenshots/18-news-modal.png`  
+![News Modal](screenshots/18-news-modal.png)
 
-Severity badges:
+---
 
+## 🧰 Tech Stack
+- **Frontend:** React, TypeScript, Vite, Leaflet  
+- **Backend:** Node.js, Express, Prisma ORM, Zod, REST API  
+- **Streaming:** Kafka (Confluent), KafkaJS Producer/Consumer  
+- **Infra:** Docker, Docker Compose, Nginx reverse proxy  
+- **Cloud (optional):** Azure Container Apps + ACR
 
-Map popup:
+---
 
+## 🐳 Setup (Important)
+This project runs locally via Docker Compose.
 
-Bonus Pages
-
-Alerts page:
-
-
-Admin console:
-
-
-News modal:
-
-
-Tech Stack
-Frontend
-
-React
-
-TypeScript
-
-Vite
-
-Leaflet (map)
-
-Advanced filtering + scoring logic
-
-Backend
-
-Node.js
-
-Express
-
-Prisma ORM
-
-Zod validation
-
-REST API
-
-KafkaJS producer
-
-Streaming
-
-Kafka (Confluent container)
-
-KafkaJS (Producer / Consumer)
-
-Consumer microservice (notification-service)
-
-DevOps / Infra
-
-Docker (multi-stage builds)
-
-Docker Compose
-
-Nginx reverse proxy
-
-Environment-based configuration
-
-Azure-ready containerization (optional)
-
-Setup (Important)
-
-This project is designed to run locally without requiring cloud deployment.
-
-1) Create env files
+### 1) Create env file
+``bash
 cp backend/.env.example backend/.env
-2) Run locally (Docker)
+2) Run with Docker
 docker compose up --build
 URLs
 
@@ -204,37 +223,37 @@ Proxy health: http://localhost:8080/api/health
 
 Proxy disasters: http://localhost:8080/api/disasters
 
-Kafka Demo (Send a test event)
+🧪 Kafka Demo (Send a test event)
 
-You can send a test event into Kafka topic disaster-events:
+Send a test message into Kafka topic disaster-events:
 
 echo "{\"type\":\"test\",\"location\":\"Warsaw\",\"severity\":\"low\",\"timestamp\":\"2026-03-08T22:25:00Z\"}" \
 | docker compose exec -T dw-kafka bash -lc "kafka-console-producer --bootstrap-server localhost:9092 --topic disaster-events"
 
-Then check consumer logs:
+Then watch consumer logs:
 
 docker compose logs -f notification
-Notes on Security
+🔒 Notes on Security
 
 .env, .env.local, .env.docker are excluded from version control
 
-API keys/secrets are not stored in the repository
+Secrets are not committed
 
 Only .env.example is included
 
-Future Improvements
+🚀 Future Improvements
 
-WebSocket live broadcasting (real-time UI updates without refresh)
+WebSocket live broadcasting (real-time UI updates)
 
-Notification pipeline (Email/SMS/Push) based on severity and user subscriptions
+Severity-based notification pipeline (Email/SMS/Push)
 
-Better alert rule persistence (store alert rules in DB)
+Persist alert rules in DB
 
 Observability: metrics + tracing (Prometheus/Grafana)
 
-Multi-region deployment improvements for cloud
+Multi-region cloud deployment hardening
 
-Author
+👨‍💻 Author
 
 Orhan Izmirli
 Computer Science Student (Poland)
