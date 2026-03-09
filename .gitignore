@@ -5,8 +5,6 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # Env (secrets)
-.env
-.env.*
 !.env.example
 
 # Build outputs
@@ -20,3 +18,4 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+config.bat
