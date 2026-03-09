@@ -232,7 +232,7 @@ Then watch consumer logs:
 docker compose logs -f notification
 ---
 
-###🔒 Notes on Security
+### 🔒 Notes on Security
 
 - .env, .env.local, .env.docker are excluded from version control
 - Secrets are not committed
@@ -240,7 +240,7 @@ docker compose logs -f notification
 
 ---
 
-###🚀 Future Improvements
+### 🚀 Future Improvements
 
 -WebSocket live broadcasting (real-time UI updates)
 -Severity-based notification pipeline (Email/SMS/Push)
@@ -250,7 +250,7 @@ docker compose logs -f notification
 
 ---
 
-###👨‍💻 Author
+### 👨‍💻 Author
 
 Orhan Izmirli
 Computer Science Student (Poland)
