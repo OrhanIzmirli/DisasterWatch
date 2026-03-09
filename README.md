@@ -209,7 +209,7 @@ In-app modal showing disaster-related news.
 This project runs locally via Docker Compose.
 
 ### 1) Create env file
-``bash
+
 cp backend/.env.example backend/.env
 2) Run with Docker
 docker compose up --build
