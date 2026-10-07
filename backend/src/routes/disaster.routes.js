@@ -12,14 +12,14 @@ import {
 } from "../services/usgs.service.js";
 
 // import { publishDisasterEvent } from "../services/kafkaProducer.js";
-// Kafka publish şimdilik kapalı (timeout önlemek için)
+// Kafka publishing is disabled here for now to avoid request timeouts
 
 const router = express.Router();
 
 /* =====================================================
-   ✅ CACHE (DEMO + AZURE SAFE)
-   - default 5 dk cache
-   - force=1 ile cache bypass
+   CACHE
+   - 5 minute cache by default
+   - force=1 bypasses the cache
 ===================================================== */
 let CACHE = {
   items: [
@@ -51,7 +51,7 @@ function toFloat(val, fallback) {
 
 function sanitizeText(s) {
   if (!s) return s;
-  // PowerShell'de bozulan karakterleri temizle
+  // Clean up characters that render incorrectly in PowerShell
   return String(s)
     .replace(/•/g, " - ")
     .replace(/\s+/g, " ")
@@ -59,24 +59,24 @@ function sanitizeText(s) {
 }
 
 router.get("/", async (req, res) => {
-  console.log("🌍 /disasters");
+  console.log("GET /disasters");
 
-  // Query paramlar
+  // Query parameters
   const forceLive = String(req.query.force || "") === "1";
 
-  // kaç dakika geriye gitsin? default: 7 gün
+  // How far back to look, in minutes (default: 7 days)
   const minutesWindow = toInt(req.query.minutes, 7 * 24 * 60); // 10080
 
-  // kaç item dönsün? default: 50 (isteyene 200'e kadar izin verelim)
+  // Number of items to return (default: 50, max: 200)
   const limit = Math.min(toInt(req.query.limit, 50), 200);
 
-  // USGS min magnitude default 4.5 (daha çok veri gelir)
+  // USGS minimum magnitude (default: 4.5)
   const minMag = toFloat(req.query.minMag, 4.5);
 
-  // cache süresi (ms) default 5 dk
+  // Cache duration in ms (default: 5 minutes)
   const cacheMs = toInt(req.query.cacheMs, 5 * 60 * 1000);
 
-  // ✅ cache geçerliyse dön (force yoksa)
+  // Serve from cache while it is fresh, unless force=1
   if (!forceLive && Date.now() - CACHE.updatedAt < cacheMs) {
     return res.json({
       items: CACHE.items,
@@ -91,7 +91,7 @@ router.get("/", async (req, res) => {
     const nasaEvents = await fetchNasaEvents();
     const nasaNormalized = normalizeNasaEvents(nasaEvents)
       .filter((e) => (e.timeMinutesAgo ?? 999999) <= minutesWindow)
-      .slice(0, Math.ceil(limit * 0.6)); // limitin %60'ı NASA
+      .slice(0, Math.ceil(limit * 0.6)); // up to 60% of the limit from NASA
 
     // ---- USGS ----
     const usgsFeatures = await fetchUsgsEarthquakes();
@@ -100,7 +100,7 @@ router.get("/", async (req, res) => {
       limit: Math.ceil(limit * 0.6),
     }).filter((e) => (e.timeMinutesAgo ?? 999999) <= minutesWindow);
 
-    // Birleştir + limit uygula
+    // Merge sources and apply the limit
     let merged = [...nasaNormalized, ...quakesNormalized]
       .slice(0, limit)
       .map((e) => ({
@@ -111,7 +111,7 @@ router.get("/", async (req, res) => {
         title: sanitizeText(e.title),
       }));
 
-    // Çok boş gelirse cache'e düşme yerine yine de döndür
+    // If the live result is empty, fall back to the cached items
     if (!merged.length) {
       merged = CACHE.items;
     }
@@ -129,7 +129,7 @@ router.get("/", async (req, res) => {
       params: { minutesWindow, limit, minMag, cacheMs },
     });
   } catch (err) {
-    console.error("❌ LIVE API FAILED → RETURN CACHE:", err?.message || err);
+    console.error("Live API failed, returning cache:", err?.message || err);
 
     return res.json({
       items: CACHE.items,
@@ -140,7 +140,7 @@ router.get("/", async (req, res) => {
 });
 
 /* ===========================
-   🔍 NASA RAW (opsiyonel)
+   NASA RAW (optional)
 =========================== */
 router.get("/nasa", async (req, res) => {
   try {
@@ -152,12 +152,12 @@ router.get("/nasa", async (req, res) => {
 });
 
 /* ===========================
-   🔐 AUTH SONRA
+   Routes below require authentication
 =========================== */
 router.use(requireAuth);
 
 /* ===========================
-   📥 CREATE DISASTER
+   CREATE DISASTER
 =========================== */
 router.post("/", async (req, res) => {
   const schema = z.object({

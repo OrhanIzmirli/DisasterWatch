@@ -136,7 +136,7 @@ export function normalizeNasaEvents(events) {
     const location = ev?.title || "Unknown location";
     const sev = severityFromType(type);
 
-    // Meta daha anlamlı olsun
+    // Build a more descriptive meta line
     const meta = `${catTitle} • ${mins} min ago`;
 
     out.push({

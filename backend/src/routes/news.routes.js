@@ -4,7 +4,7 @@ import { fetchDisasterNews } from "../services/news.service.js";
 
 const router = express.Router();
 
-// ✅ PUBLIC endpoint
+// Public endpoint
 router.get("/", async (req, res) => {
   try {
     const limit = Number(req.query.limit ?? 10);

@@ -4,7 +4,7 @@ export function normalizeUsgsEarthquakes(events) {
     const coords = e.geometry?.coordinates || [];
 
     return {
-      id: 100000 + index, // NASA ile çakışmasın
+      id: 100000 + index, // keep ids from colliding with NASA ids
       type: "earthquake",
       location: props.place || "Unknown location",
       meta: `Mag ${props.mag ?? "?"} • ${new Date(props.time).toUTCString()}`,
