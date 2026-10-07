@@ -12,20 +12,25 @@ const brokers = broker
   .map((s) => s.trim())
   .filter(Boolean);
 
+// Env values are trimmed so stray whitespace from copy-pasting is ignored.
+const env = (name) => (process.env[name] ?? "").trim();
+
 // Managed Kafka providers require SASL over TLS. When no credentials are set
 // (local docker-compose), connect over plaintext as before.
-const { KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD } = process.env;
-const useSasl = Boolean(KAFKA_SASL_USERNAME && KAFKA_SASL_PASSWORD);
-
-if (!useSasl && (KAFKA_SASL_USERNAME || KAFKA_SASL_PASSWORD || process.env.KAFKA_SSL_CA)) {
-  console.warn(
-    "Kafka: SASL_SSL needs both KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD; connecting over plaintext"
-  );
-}
+const saslUsername = env("KAFKA_SASL_USERNAME");
+const saslPassword = env("KAFKA_SASL_PASSWORD");
+const useSasl = Boolean(saslUsername && saslPassword);
 
 // Optional CA certificate (PEM) for providers that use a private CA, e.g. Aiven.
 // Escaped "\n" sequences are accepted so the value can be stored on one line.
-const sslCa = process.env.KAFKA_SSL_CA?.replace(/\\n/g, "\n");
+const sslCa = env("KAFKA_SSL_CA").replace(/\\n/g, "\n");
+
+// Partial settings would fall back to plaintext against a broker that expects
+// SASL_SSL, so they are reported as a configuration error instead.
+const kafkaConfigError =
+  !useSasl && (saslUsername || saslPassword || sslCa)
+    ? "Kafka config error: KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD must both be set to use SASL_SSL"
+    : null;
 
 const kafka = new Kafka({
   clientId: "notification-service",
@@ -33,9 +38,9 @@ const kafka = new Kafka({
   ...(useSasl && {
     ssl: sslCa ? { ca: [sslCa] } : true,
     sasl: {
-      mechanism: process.env.KAFKA_SASL_MECHANISM || "scram-sha-256",
-      username: KAFKA_SASL_USERNAME,
-      password: KAFKA_SASL_PASSWORD,
+      mechanism: env("KAFKA_SASL_MECHANISM") || "scram-sha-256",
+      username: saslUsername,
+      password: saslPassword,
     },
   }),
 });
@@ -69,6 +74,7 @@ server.listen(PORT, () => {
 });
 
 async function start() {
+  if (kafkaConfigError) throw new Error(kafkaConfigError);
   await consumer.connect();
   await consumer.subscribe({ topic: "disaster-events", fromBeginning: true });
   kafkaConnected = true;
