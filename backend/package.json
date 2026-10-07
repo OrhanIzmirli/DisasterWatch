@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node src/index.js"
+    "dev": "node src/index.js",
+    "db:push": "prisma db push"
   },
   "dependencies": {
     "@prisma/client": "^6.6.0",
