@@ -33,8 +33,8 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"     # docker network içi
-      - "29092:29092"   # hosttan test
+      - "9092:9092"     # inside the docker network
+      - "29092:29092"   # for testing from the host
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -66,12 +66,12 @@ services:
       - NODE_ENV=production
       - PORT=5000
 
-      # ✅ Kafka (Kafkajs/Producer burada bunu kullanacak)
+      # Kafka (used by the KafkaJS producer)
       - KAFKA_BROKER=dw-kafka:9092
       - KAFKA_BROKERS=dw-kafka:9092
       - KAFKA_BOOTSTRAP_SERVERS=dw-kafka:9092
 
-      # ✅ Docker içinden DB host adı container_name
+      # Inside Docker the DB host is the container_name
       - DATABASE_URL=postgresql://postgres:postgres@disasterwatch_db:5432/disasterwatch
     depends_on:
       db:

@@ -2,21 +2,21 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# package dosyaları
+# Dependencies
 COPY package*.json ./
 RUN npm install
 
 # Prisma schema
 COPY prisma ./prisma
 
-# 🔴 KRİTİK
+# Generate the Prisma client at build time
 RUN npx prisma generate
 
-# source code
+# Source code
 COPY . .
 
-# 🔴 AZURE INGRESS İÇİN ŞART
+# Default port (overridable with PORT)
 EXPOSE 5000
 
-# 🔴 DOĞRU ENTRYPOINT
+# Start the API
 CMD ["node", "src/index.js"]
