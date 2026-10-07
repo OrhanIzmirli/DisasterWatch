@@ -305,6 +305,17 @@ The frontend calls relative `/api/...` paths, so the first rule plays the role o
 
 ---
 
+### Deployment Status / Changelog
+
+**2026-10-07**
+
+- Azure Container Apps + ACR was the initial deployment plan; it was dropped because of cost and operational complexity in favor of a free-tier stack: Render, Neon and Aiven.
+- Removed the Azure-specific comments from `backend/Dockerfile`.
+- Added `.dockerignore` files for the backend and notification service to keep the build context and images lean (no host `node_modules` or `.env` files).
+- Currently going live: a custom domain will be purchased and DNS and SSL will be configured.
+
+---
+
 ### Author
 
 Orhan Izmirli
