@@ -15,8 +15,8 @@ body {
 
 body {
   margin: 0;
-  /* RENK VE BACKGROUND YOK */
-  /* Bunlar App.css tarafından yönetilecek */
+  /* No colors or background here */
+  /* These are handled in App.css */
 }
 
 /* ===== ROOT CONTAINER ===== */

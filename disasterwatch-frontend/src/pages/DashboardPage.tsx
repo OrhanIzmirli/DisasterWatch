@@ -26,7 +26,7 @@ type TimelineEvent = {
 };
 
 /* =========================
-   FALLBACK (API ÇÖKERSE)
+   FALLBACK (IF THE API IS DOWN)
 ========================= */
 const FALLBACK_DISASTERS: DisasterItem[] = [
   {
@@ -594,9 +594,9 @@ const DashboardPage = () => {
   }, [filteredDisasters, activeFilter]);
 
   /* =========================
-     ✅ COUNTRIES AFFECTED (MAP-BASED + reverse geocode fallback)
-     - “haritada gösterilen her ülkeyi saysın”
-     - filtre değişince harita değişir => sayı da otomatik değişir
+     COUNTRIES AFFECTED (MAP-BASED + reverse geocode fallback)
+     - count every country shown on the map
+     - changing the filter updates the map, so the count updates too
   ========================= */
 
   // Reverse geocode cache (coordKey -> countryName)
@@ -705,7 +705,7 @@ const DashboardPage = () => {
     };
   }, [mapDisasters, reverseCountryByKey]);
 
-  // ✅ Countries affected now counts ONLY countries visible on map
+  // Countries affected counts only countries visible on the map
   const countriesAffected = useMemo(() => {
     const set = new Set<string>();
     for (const d of mapDisasters) {
@@ -731,7 +731,7 @@ const DashboardPage = () => {
 
   return (
     <>
-      {/* Üst Başlık Alanı */}
+      {/* Page header */}
       <section className="dashboard-header">
         <div>
           <h1 className="dashboard-title">Global Disaster Overview</h1>
@@ -744,7 +744,7 @@ const DashboardPage = () => {
         </div>
       </section>
 
-      {/* KPI Kartları */}
+      {/* KPI cards */}
       <section className="dashboard-kpis">
         <div className="kpi-card">
           <span className="kpi-label">Disasters</span>
@@ -765,7 +765,7 @@ const DashboardPage = () => {
         </div>
       </section>
 
-      {/* Ana grid (map + liste) */}
+      {/* Main grid (map + list) */}
       <main className="app-main">
         {/* MAP PANEL */}
         <section className="map-panel">
@@ -776,14 +776,14 @@ const DashboardPage = () => {
             </span>
           </div>
 
-          {/* Leaflet marker cache sorunlarına karşı reset */}
+          {/* Reset to work around Leaflet marker cache issues */}
           <MapView
             key={activeFilter}
             disasters={mapDisasters}
             highlightId={selectedDisaster?.id ?? null}
           />
 
-          {/* YATAY LEGEND */}
+          {/* HORIZONTAL LEGEND */}
           <div className="map-legend">
             <span className="legend-title">Legend</span>
             <div className="legend-pills">

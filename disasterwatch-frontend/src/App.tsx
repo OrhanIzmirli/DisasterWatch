@@ -107,7 +107,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
 
-          {/* ✅ BURASI: isAuthed prop’unu veriyoruz */}
+          {/* Pass isAuthed down to the page */}
           <Route path="/alerts" element={<AlertsPage isAuthed={isAuthed} />} />
 
           <Route

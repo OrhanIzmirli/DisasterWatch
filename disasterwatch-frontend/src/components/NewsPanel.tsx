@@ -32,7 +32,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
 
     (async () => {
       try {
-        // ✅ Daha fazla haber (max 30 mantıklı)
+        // Load more articles (30 is a sensible max)
         const data = await getDisasterNews(30);
         if (!alive) return;
         setArticles(Array.isArray(data) ? data : []);
@@ -66,7 +66,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
           </button>
         </header>
 
-        {/* ✅ Scroll garanti: panel içi içerik kaydırılabilir */}
+        {/* Panel content is scrollable */}
         <div className="news-content" style={{ maxHeight: "70vh", overflowY: "auto" }}>
           {loading && (
             <div className="news-loading">

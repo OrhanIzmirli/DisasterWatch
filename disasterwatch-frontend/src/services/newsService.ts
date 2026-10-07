@@ -8,7 +8,7 @@ export type NewsItem = {
 };
 
 export async function getDisasterNews(limit = 10): Promise<NewsItem[]> {
-  // ✅ nginx üzerinden backend'e gider: http://localhost:8080/api/news
+  // Goes through nginx to the backend: http://localhost:8080/api/news
   const res = await fetch(`/api/news?limit=${limit}`);
 
   const contentType = res.headers.get("content-type") || "";
@@ -18,7 +18,7 @@ export async function getDisasterNews(limit = 10): Promise<NewsItem[]> {
     throw new Error(`News fetch failed (${res.status}). ${text.slice(0, 120)}`);
   }
 
-  // ✅ HTML geldiyse burada yakalarız
+  // Catch HTML responses here
   if (!contentType.includes("application/json")) {
     const text = await res.text().catch(() => "");
     throw new Error(`News is not JSON. ${text.slice(0, 120)}`);
