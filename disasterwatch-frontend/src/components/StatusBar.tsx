@@ -12,11 +12,11 @@ const StatusBar = () => {
 
   useEffect(() => {
     const tick = () => {
-      // Latency'yi "yaşıyormuş" gibi oynat
+      // Vary latency slightly so the value looks live
       const jitter = Math.round((Math.random() - 0.5) * 30);
       setLatency((prev) => clamp(prev + jitter, 70, 240));
 
-      // Arada bir News API degrade gibi görünsün
+      // Occasionally show the News API as degraded
       const roll = Math.random();
       setNewsApi(roll < 0.12 ? "Degraded" : "OK");
     };

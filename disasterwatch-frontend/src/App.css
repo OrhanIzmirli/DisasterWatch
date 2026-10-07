@@ -180,7 +180,7 @@
   color: #243b53;
 }
 
-/* LEAFLET MAP – BÜYÜK VE DAHA OKUNUR */
+/* LEAFLET MAP – LARGER AND MORE READABLE */
 
 .map-leaflet-container {
   width: 100%;
@@ -192,12 +192,12 @@
   position: relative;
 }
 
-/* Harita biraz daha aydınlık ve kontrastlı olsun */
+/* Slightly brighter, higher-contrast map tiles */
 .map-leaflet-container .leaflet-layer {
   filter: brightness(1.1) contrast(1.08) saturate(1.05);
 }
 
-/* MAP MARKERS – GLOW / ESTETİK DAİRELER */
+/* MAP MARKERS – GLOWING CIRCLES */
 
 .map-marker {
   filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.9));
@@ -223,7 +223,7 @@
   opacity: 0.9;
 }
 
-/* Marker highlight (liste tıklanınca) */
+/* Marker highlight (when a list item is clicked) */
 .map-marker-highlight {
   filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.9))
     drop-shadow(0 0 22px rgba(255, 255, 255, 0.6));
@@ -242,14 +242,14 @@
 
 .news-panel {
   position: fixed;
-  top: 104px;                    /* header + status bar yüksekliği */
+  top: 104px;                    /* header + status bar height */
   right: 0;
-  height: calc(100vh - 104px);   /* altta boşluk / taşma olmasın */
+  height: calc(100vh - 104px);   /* no gap or overflow at the bottom */
   width: min(420px, 100%);
   background: #f6e8d9;
   border-left: 1px solid rgba(0, 48, 73, 0.4);
   box-shadow: -18px 0 40px rgba(0, 0, 0, 0.55);
-  z-index: 1200;                /* header'ın üstüne çıkmasın */
+  z-index: 1200;                /* stay below the header */
   display: flex;
   flex-direction: column;
 }
@@ -310,7 +310,7 @@
   color: #7b8794;
 }
 
-/* HEADER'DAKİ NEWS BUTONU */
+/* NEWS BUTTON IN HEADER */
 .news-toggle-btn {
   background: #669bbc;
   border: 1px solid #f6e8d9;
@@ -516,7 +516,7 @@
   color: #003049;
 }
 
-/* MAP LEGEND – YATAY CHİPLER */
+/* MAP LEGEND – HORIZONTAL CHIPS */
 
 .map-legend {
   margin-top: 0.75rem;
@@ -1391,12 +1391,12 @@
 
 .admin-container {
   max-width: 980px;
-  margin: 0 auto;        /* sayfayı ortalar */
+  margin: 0 auto;        /* center the page */
 }
 
 .admin-form-card {
   max-width: 720px;
-  margin: 1rem auto 0;   /* kartı ortalar */
+  margin: 1rem auto 0;   /* center the card */
 }
 
 /* =========================
@@ -1692,17 +1692,17 @@
 
 /* ===== Leaflet / layout safety (z-index + overflow + grid fix) ===== */
 
-/* Grid children taşmasın (Leaflet bazen width hesaplayıp sağa taşır) */
+/* Keep grid children from overflowing (Leaflet can miscalculate width) */
 .app-main > * { min-width: 0; }
 
-/* Map wrapper kesin sınır olsun */
+/* Give the map wrapper hard bounds */
 .map-wrapper {
   position: relative;
   overflow: hidden;
   border-radius: 0.9rem;
 }
 
-/* Leaflet katmanları header/drawer üstüne çıkmasın */
+/* Keep Leaflet layers below the header and drawers */
 .leaflet-container {
   z-index: 1 !important;
 }
@@ -1712,11 +1712,11 @@
   z-index: 2 !important;
 }
 
-/* Header + status her zaman üstte kalsın */
+/* Header and status bar always stay on top */
 .app-header { z-index: 1000; }
 .status-bar { z-index: 900; position: relative; }
 
-/* Drawer/overlay varsa Leaflet’in üstünde kalsın */
+/* Drawers and overlays stay above Leaflet */
 .detail-overlay,
 .alerts-modal-overlay,
 .news-overlay { z-index: 1100; }
@@ -1748,7 +1748,7 @@
   transform: translateX(2px);
 }
 
-/* severity renkleri */
+/* severity colors */
 .timeline-high::before,
 .timeline-medium::before,
 .timeline-low::before {
@@ -1777,7 +1777,7 @@
   box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
 }
 
-/* iconlar */
+/* icons */
 .timeline-icon {
   display: inline-block;
   width: 18px;
@@ -1791,7 +1791,7 @@
 .icon-wildfire { background: #f97316; }
 .icon-storm { background: #6b7280; }
 
-/* =============== OVERLAYS: BLUR YOK (MAP NET KALSIN) =============== */
+/* =============== OVERLAYS: NO BLUR (KEEP THE MAP SHARP) =============== */
 
 .detail-overlay,
 .news-overlay,
@@ -1799,11 +1799,11 @@
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
-  /* backdrop-filter: blur(4px);  <-- KAPALI. MAP’I SİS YAPAN BUYDU */
+  /* backdrop-filter: blur(4px);  disabled: it made the map look foggy */
   z-index: 60;
 }
 
-/* Drawer/Panel üstte kalsın */
+/* Drawer/panel stays on top */
 .detail-drawer {
   z-index: 70;
 }
@@ -1816,15 +1816,15 @@
   z-index: 80;
 }
 
-/* =============== LEAFLET: OVERLAY’LERLE KAVGA ETMESİN =============== */
+/* =============== LEAFLET: AVOID CONFLICTS WITH OVERLAYS =============== */
 
-/* Leaflet container kendi içinde düzgün kalsın */
+/* Keep the Leaflet container self-contained */
 .leaflet-container {
   width: 100%;
   height: 100%;
 }
 
-/* Leaflet'in kontrol/katman z-index’lerini normalize et */
+/* Normalize Leaflet control and pane z-indexes */
 .leaflet-pane,
 .leaflet-top,
 .leaflet-bottom {
@@ -1833,18 +1833,18 @@
 
 /* =========================
    LEAFLET MAP - HARD FIX
-   (Map'in sayfayı ele geçirmesini engeller)
+   (Prevents the map from taking over the page)
 ========================= */
 
 .map-panel {
-  overflow: hidden; /* map taşmasını kes */
+  overflow: hidden; /* clip map overflow */
 }
 
 .map-wrapper {
   width: 100%;
 }
 
-/* React-Leaflet MapContainer içine verdiğin class */
+/* Class passed to the React-Leaflet MapContainer */
 .map-leaflet-container {
   width: 100% !important;
   height: 430px !important;
@@ -1854,7 +1854,7 @@
   position: relative;
 }
 
-/* Eğer className bazen uygulanmıyorsa - en garanti fallback */
+/* Fallback in case className is not applied */
 .map-panel .leaflet-container {
   width: 100% !important;
   height: 430px !important;
@@ -1863,7 +1863,7 @@
   overflow: hidden;
 }
 
-/* Leaflet canvas/panes taşmasın */
+/* Keep Leaflet canvas and panes from overflowing */
 .map-panel .leaflet-pane,
 .map-panel .leaflet-map-pane,
 .map-panel .leaflet-tile-pane,
@@ -1875,8 +1875,8 @@
 }
 
 /* =========================
-   OVERLAY BLUR - KALDIR
-   (Modal açılınca map'i "sabun" yapmasın)
+   OVERLAY BLUR - REMOVED
+   (Keeps the map from looking washed out when a modal is open)
 ========================= */
 
 /* Detail drawer overlay */
@@ -1891,7 +1891,7 @@
   background: rgba(0, 21, 35, 0.55) !important;
 }
 
-/* Alerts modal overlay (sende varsa) */
+/* Alerts modal overlay (if present) */
 .alerts-modal-overlay {
   backdrop-filter: none !important;
   background: rgba(0, 21, 35, 0.55) !important;
@@ -2098,12 +2098,12 @@ body {
   background: linear-gradient(135deg, #003049 0%, #001523 45%, #780000 100%);
 }
 
-/* app-root zaten gradient, ama içerik kısa kalınca body görünüyor */
+/* app-root has the gradient, but body shows through on short pages */
 .app-root {
   min-height: 100vh;
 }
 
-/* Eğer içerik bazı sayfalarda kısa kalıyorsa boşluğu kapatır */
+/* Fills the gap when page content is short */
 .page-content {
   flex: 1;
   display: flex;

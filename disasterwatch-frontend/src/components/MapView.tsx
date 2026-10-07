@@ -60,12 +60,12 @@ const getRadiusBySeverity = (severity: Severity) => {
 };
 
 /**
- * Map içerisindeki asıl marker rendering + flyTo logic
+ * Marker rendering and flyTo logic inside the map
  */
 const MapInner: FC<MapInnerProps> = ({ disasters, highlightId }) => {
   const map = useMap();
 
-  // Liste tarafında bir disaster seçilince haritayı ona uçur
+  // Fly to a disaster when it is selected in the list
   useEffect(() => {
     if (!highlightId) return;
     const target = disasters.find((d) => d.id === highlightId);

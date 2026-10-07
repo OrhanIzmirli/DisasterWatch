@@ -10,7 +10,7 @@ export type NewsResponse = {
   articles: NewsArticle[];
 };
 
-// İleride NASA/Backend için (şimdilik sadece tip)
+// For future NASA/backend use (type only for now)
 export type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 export type Severity = "high" | "medium" | "low";
 
