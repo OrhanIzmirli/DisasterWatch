@@ -47,13 +47,14 @@ DisasterWatch streams disaster events through Kafka to decouple ingestion from p
   - `disaster-events`
 
 Example message:
-``json
+```json
 {
   "type": "earthquake",
   "location": "Turkey",
   "severity": "high",
   "timestamp": "2026-03-08T22:25:00Z"
-}`
+}
+```
 
 **Consumer (Notification Service)**
 - Subscribes to `disaster-events`
@@ -193,9 +194,16 @@ This project runs locally via Docker Compose.
 
 ### 1) Create env file
 
+```bash
 cp backend/.env.example backend/.env
-2) Run with Docker
+```
+
+### 2) Run with Docker
+
+```bash
 docker compose up --build
+```
+
 ### URLs
 - **Frontend:** http://localhost:8080  
 - **Backend health:** http://localhost:5000/health  
@@ -208,9 +216,17 @@ docker compose up --build
 
 ### Send a test message to `disaster-events`
 
-
+```bash
 echo "{\"type\":\"test\",\"location\":\"Warsaw\",\"severity\":\"low\",\"timestamp\":\"2026-03-08T22:25:00Z\"}" \
 | docker compose exec -T dw-kafka bash -lc "kafka-console-producer --bootstrap-server localhost:9092 --topic disaster-events"
+```
+
+Then check the consumer output:
+
+```bash
+docker compose logs notification
+```
+
 ---
 
 ### Notes on Security
