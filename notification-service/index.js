@@ -17,6 +17,12 @@ const brokers = broker
 const { KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD } = process.env;
 const useSasl = Boolean(KAFKA_SASL_USERNAME && KAFKA_SASL_PASSWORD);
 
+if (!useSasl && (KAFKA_SASL_USERNAME || KAFKA_SASL_PASSWORD || process.env.KAFKA_SSL_CA)) {
+  console.warn(
+    "Kafka: SASL_SSL needs both KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD; connecting over plaintext"
+  );
+}
+
 // Optional CA certificate (PEM) for providers that use a private CA, e.g. Aiven.
 // Escaped "\n" sequences are accepted so the value can be stored on one line.
 const sslCa = process.env.KAFKA_SSL_CA?.replace(/\\n/g, "\n");
