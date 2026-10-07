@@ -185,7 +185,7 @@ In-app modal showing disaster-related news.
 - **Backend:** Node.js, Express, Prisma ORM, Zod, REST API  
 - **Streaming:** Kafka (Confluent), KafkaJS Producer/Consumer  
 - **Infra:** Docker, Docker Compose, Nginx reverse proxy  
-- **Cloud (optional):** Azure Container Apps + ACR
+- **Cloud (optional):** Render (frontend + services), Neon (PostgreSQL), Aiven (Kafka)
 
 ---
 
@@ -226,6 +226,64 @@ Then check the consumer output:
 ```bash
 docker compose logs notification
 ```
+
+---
+
+## Cloud Deployment (Free Tiers)
+
+The same code runs in the cloud; only environment variables change. Without the Kafka SASL variables everything behaves exactly like the local Docker Compose setup.
+
+| Component | Service |
+|---|---|
+| Frontend | Render Static Site |
+| Backend | Render Web Service (Docker, `backend/`) |
+| Notification service | Render Web Service (Docker, `notification-service/`) |
+| PostgreSQL | Neon |
+| Kafka | Aiven for Apache Kafka (free tier) |
+
+### 1) Kafka (Aiven)
+1. Create a free Kafka service.
+2. In **Advanced configuration**, enable `kafka_authentication_methods.sasl`.
+3. Create the topic `disaster-events` (automatic topic creation is off by default).
+4. From the **SASL** connection details, copy the host:port, user, password and the CA certificate.
+
+The free tier powers off after a period without traffic; it can be started again from the Aiven console.
+
+### 2) Database (Neon)
+Create a database and copy its connection string (keep `?sslmode=require`). Push the Prisma schema once from your machine:
+
+```bash
+cd backend
+npm install
+DATABASE_URL="postgresql://...neon.tech/...?sslmode=require" npm run db:push
+```
+
+### 3) Backend and notification service (Render)
+Create two **Web Services** from this repository with the **Docker** runtime, root directories `backend` and `notification-service`, and health check path `/health`.
+
+| Variable | Backend | Notification | Example |
+|---|---|---|---|
+| `DATABASE_URL` | yes | | Neon connection string |
+| `JWT_SECRET` | yes | | a long random string |
+| `KAFKA_BROKER` | yes | yes | `kafka-xxxx.aivencloud.com:12345` (comma-separated for several brokers) |
+| `KAFKA_SASL_USERNAME` | yes | yes | `avnadmin` |
+| `KAFKA_SASL_PASSWORD` | yes | yes | from Aiven |
+| `KAFKA_SASL_MECHANISM` | optional | optional | `scram-sha-256` (default), `scram-sha-512` or `plain` |
+| `KAFKA_SSL_CA` | yes* | yes* | CA certificate (PEM); newlines may be written as `\n` |
+
+\* Not needed if `letsencrypt_sasl` is enabled on the Aiven service, since a public CA is used then.
+
+Render provides `PORT` automatically; both services read it. Free Render web services sleep after inactivity, so the consumer only processes messages while the service is awake.
+
+### 4) Frontend (Render Static Site)
+- Root directory: `disasterwatch-frontend`
+- Build command: `npm ci && npm run build`
+- Publish directory: `dist`
+- Redirects/Rewrites, in this order:
+  - `/api/*` → `https://<backend-service>.onrender.com/*` (Rewrite)
+  - `/*` → `/index.html` (Rewrite)
+
+The frontend calls relative `/api/...` paths, so the first rule plays the role of the Nginx proxy used locally.
 
 ---
 
