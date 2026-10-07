@@ -30,11 +30,11 @@ app.use("/disasters", disasterRoutes);
 app.use("/news", newsRoutes);
 
 // 🔴 SABİT PORT (AZURE İÇİN KRİTİK)
-const PORT = 5000;
+const PORT = Number(process.env.PORT) || 5000;
 
 // ✅ SERVER HEMEN AYAĞA KALKSIN
 app.listen(PORT, "0.0.0.0", () => {
-  console.log("✅ Backend listening on port 5000");
+  console.log(`✅ Backend listening on port ${PORT}`);
 });
 
 // 🔵 Kafka producer arka planda başlasın (fail ederse server kapanmasın)
