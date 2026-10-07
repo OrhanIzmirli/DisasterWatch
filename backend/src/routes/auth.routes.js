@@ -8,8 +8,8 @@ import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
 const router = express.Router();
 
 /* ===========================
-   🌍 REAL DISASTERS (NASA)
-   👉 PUBLIC (FRONTEND OKUR)
+   REAL DISASTERS (NASA)
+   Public, used by the frontend
 =========================== */
 router.get("/", async (req, res) => {
   try {
@@ -28,8 +28,8 @@ router.get("/", async (req, res) => {
 });
 
 /* ===========================
-   🌍 NASA RAW (DEBUG)
-   👉 PUBLIC
+   NASA RAW (DEBUG)
+   Public
 =========================== */
 router.get("/nasa", async (req, res) => {
   try {
@@ -52,12 +52,12 @@ router.get("/nasa", async (req, res) => {
 });
 
 /* ===========================
-   🔐 AUTH SADECE BURADAN SONRA
+   Routes below require authentication
 =========================== */
 router.use(requireAuth);
 
 /* ===========================
-   📥 CREATE DISASTER (MANUAL)
+   CREATE DISASTER (MANUAL)
 =========================== */
 const disasterSchema = z.object({
   type: z.string(),

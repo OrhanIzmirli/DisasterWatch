@@ -3,12 +3,12 @@ import { publishDisasterEvent } from "../services/kafkaProducer.js";
 
 const router = Router();
 
-// POST /events  -> body’yi Kafka’ya yollar
+// POST /events -> publishes the request body to Kafka
 router.post("/", async (req, res) => {
   try {
     const event = req.body;
 
-    // Minimum kontrol (boş body olmasın)
+    // Reject empty bodies
     if (!event || Object.keys(event).length === 0) {
       return res.status(400).json({ ok: false, error: "Empty body" });
     }
@@ -16,7 +16,7 @@ router.post("/", async (req, res) => {
     await publishDisasterEvent(event);
     return res.json({ ok: true, published: true, event });
   } catch (e) {
-    console.error(" publish error:", e?.message || e);
+    console.error("Publish error:", e?.message || e);
     return res.status(500).json({ ok: false, error: "Publish failed" });
   }
 });

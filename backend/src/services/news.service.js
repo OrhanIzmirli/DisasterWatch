@@ -30,7 +30,7 @@ function normalizeGdeltArticle(a) {
 export async function fetchDisasterNews({ limit = 40 } = {}) {
   const now = Date.now();
 
-  // ✅ English-only filter MUST be in query (GDELT query operator)
+  // The English-only filter must be part of the query (GDELT query operator)
   const baseQuery =
     '(earthquake OR quake OR flood OR wildfire OR "forest fire" OR storm OR hurricane OR cyclone OR disaster OR "climate emergency")';
 
