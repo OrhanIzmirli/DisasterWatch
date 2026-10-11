@@ -2117,3 +2117,83 @@ body {
 .list-panel {
   min-height: 640px;
 }
+
+/* ===== FIX: background stops at viewport height on long pages ===== */
+/* #root has a fixed height, so let app-root grow past it instead of shrinking */
+.app-root {
+  flex: 1 0 auto;
+}
+
+/* ===== FIX: map column matches feed column height ===== */
+/* Map grows to fill the stretched panel; legend keeps its natural size */
+.map-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.map-panel .map-leaflet-container,
+.map-panel .leaflet-container {
+  flex: 1 1 auto;
+  height: auto !important;
+  min-height: 430px;
+}
+
+.map-panel .map-legend {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
+/* ===== FIX: today's events details no longer cover other cards ===== */
+/* Details open inside the hovered card (replacing the short summary) and push the rest down */
+.timeline-upgraded .timeline-card .timeline-hovercard {
+  position: static;
+  width: auto;
+  display: none;
+  margin-top: 0.45rem;
+  padding: 0.5rem 0.6rem;
+  background: rgba(248, 250, 252, 0.9);
+  border-color: rgba(209, 213, 219, 0.9);
+  box-shadow: none;
+  opacity: 1;
+  transform: none;
+}
+
+.timeline-upgraded .timeline-item:hover .timeline-hovercard {
+  display: block;
+  animation: timeline-details-in 0.12s ease;
+}
+
+.timeline-upgraded .timeline-item:hover .timeline-item-summary {
+  display: none;
+}
+
+@keyframes timeline-details-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ===== SPACING: consistent rhythm between header, KPIs and panels ===== */
+.dashboard-header {
+  padding-bottom: 1rem;
+}
+
+.dashboard-kpis {
+  gap: 1rem;
+  padding-bottom: 0;
+}
+
+.app-main {
+  padding-top: 1rem;
+}
+
+/* Feed rows use the same inner padding as the event cards */
+.disaster-row {
+  padding: 0.55rem 0.7rem;
+}
+
+@media (max-width: 900px) {
+  .map-panel .map-leaflet-container,
+  .map-panel .leaflet-container {
+    min-height: 360px;
+  }
+}

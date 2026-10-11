@@ -76,6 +76,13 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId }) => {
     });
   }, [highlightId, disasters, map]);
 
+  // The map stretches with the feed column, so tell Leaflet when its box changes size
+  useEffect(() => {
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
+
   return (
     <>
       {disasters.map((d) => {
