@@ -197,6 +197,24 @@
   filter: brightness(1.1) contrast(1.08) saturate(1.05);
 }
 
+/* Leaflet tooltips default to `white-space: nowrap`, which clips longer
+   location names once the tooltip runs past the map's own edge. Let it
+   wrap instead, paired with direction="auto" on the <Tooltip> so it also
+   flips to whichever side of the marker has room. */
+.map-leaflet-container .leaflet-tooltip {
+  white-space: normal;
+  max-width: 220px;
+  line-height: 1.3;
+}
+
+/* Hairline seams between adjacent raster tiles (a Chrome sub-pixel
+   rounding artifact, most visible on the dark basemap) — the standard
+   Leaflet fix is an invisible outline instead of a border, since a border
+   would offset the tile grid. */
+.map-leaflet-container .leaflet-tile {
+  outline: 1px solid transparent;
+}
+
 /* MAP MARKERS – GLOWING CIRCLES */
 
 .map-marker {

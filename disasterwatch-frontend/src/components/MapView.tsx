@@ -1,5 +1,6 @@
 import type { FC } from "react";
 import { useEffect } from "react";
+import L from "leaflet";
 import {
   MapContainer,
   TileLayer,
@@ -7,6 +8,21 @@ import {
   Tooltip,
   useMap,
 } from "react-leaflet";
+
+// Web Mercator world tiles are 256px square per zoom step (256 * 2^z).
+// Below this helper figures out the smallest integer zoom at which the
+// rendered world is at least as big as the map's own container, in both
+// dimensions. Anything lower than that and the container is bigger than
+// the world image, which is what produces a gray strip along an edge
+// (most visible after the map column is stretched to match the feed
+// column's height).
+const TILE_SIZE = 256;
+const WORLD_BOUNDS = L.latLngBounds([-85.05, -180], [85.05, 180]);
+
+function minZoomForContainer(width: number, height: number) {
+  const longestSide = Math.max(width, height, 1);
+  return Math.max(2, Math.ceil(Math.log2(longestSide / TILE_SIZE)));
+}
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low";
@@ -76,10 +92,31 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId }) => {
     });
   }, [highlightId, disasters, map]);
 
-  // The map stretches with the feed column, so tell Leaflet when its box changes size
+  // The map stretches with the feed column, so tell Leaflet when its box
+  // changes size, and recompute the minimum zoom that still fully covers
+  // the (now taller) container — otherwise the world render can end up
+  // shorter than the box and a gray strip shows above/below it.
   useEffect(() => {
-    const observer = new ResizeObserver(() => map.invalidateSize());
-    observer.observe(map.getContainer());
+    const container = map.getContainer();
+
+    const syncToContainerSize = () => {
+      map.invalidateSize();
+
+      const { x: width, y: height } = map.getSize();
+      const requiredMinZoom = minZoomForContainer(width, height);
+
+      if (map.getMinZoom() !== requiredMinZoom) {
+        map.setMinZoom(requiredMinZoom);
+      }
+      if (map.getZoom() < requiredMinZoom) {
+        map.setZoom(requiredMinZoom);
+      }
+    };
+
+    syncToContainerSize();
+
+    const observer = new ResizeObserver(syncToContainerSize);
+    observer.observe(container);
     return () => observer.disconnect();
   }, [map]);
 
@@ -110,7 +147,16 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId }) => {
               fillOpacity: isHighlight ? 1 : 0.95,
             }}
           >
-            <Tooltip direction="top" offset={[0, -4]} opacity={0.95}>
+            {/*
+              direction="auto" lets Leaflet flip the tooltip to whichever
+              side has room (right half of the map opens left, left half
+              opens right), so markers near the map's edges don't get their
+              tooltip clipped by the container. Paired with the
+              .leaflet-tooltip wrap override in App.css — the Leaflet
+              default is `white-space: nowrap`, which is what was pushing
+              long location names past the edge in the first place.
+            */}
+            <Tooltip direction="auto" offset={[0, -4]} opacity={0.95}>
               <div style={{ maxWidth: 200 }}>
                 <strong>{d.location}</strong>
                 <br />
@@ -136,6 +182,8 @@ const MapView: FC<MapViewProps> = ({ disasters, highlightId }) => {
       scrollWheelZoom={true}
       minZoom={2}
       maxZoom={10}
+      maxBounds={WORLD_BOUNDS}
+      maxBoundsViscosity={1.0}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors, and the GIS User Community'
