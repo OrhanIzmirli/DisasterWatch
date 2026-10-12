@@ -186,17 +186,18 @@ const MapView: FC<MapViewProps> = ({ disasters, highlightId }) => {
       maxBoundsViscosity={1.0}
     >
       {/*
-        Esri's World_Dark_Gray_Base layer (used previously) has no retina/@2x
-        tiles, so on any high-DPI screen the browser upscales its 256px
-        tiles and the whole map looks soft. CARTO's dark basemap serves a
-        real @2x image through the {r} placeholder — detectRetina tells
-        Leaflet to actually request it on high-DPI displays instead of
-        leaving {r} empty.
+        CARTO's free dark_all raster tiles (basemaps.cartocdn.com) now
+        require an API key — anonymous requests return a tile that just
+        says "API KEY REQUIRED" instead of a map. That's almost certainly
+        why this was on Esri's World_Dark_Gray_Base before. It has no
+        retina/@2x tiles (so it looks a bit soft on high-DPI screens at
+        world zoom), but it's free and keyless, which the app needs more
+        than extra sharpness. Don't swap this for a CARTO raster URL again
+        without an API key — it will silently break the whole map.
       */}
       <TileLayer
-        attribution='&copy; OpenStreetMap contributors &copy; CARTO'
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        detectRetina
+        attribution='&copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors, and the GIS User Community'
+        url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
       />
 
       <MapInner disasters={disasters} highlightId={highlightId} />
