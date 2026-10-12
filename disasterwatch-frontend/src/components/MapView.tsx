@@ -185,9 +185,18 @@ const MapView: FC<MapViewProps> = ({ disasters, highlightId }) => {
       maxBounds={WORLD_BOUNDS}
       maxBoundsViscosity={1.0}
     >
+      {/*
+        Esri's World_Dark_Gray_Base layer (used previously) has no retina/@2x
+        tiles, so on any high-DPI screen the browser upscales its 256px
+        tiles and the whole map looks soft. CARTO's dark basemap serves a
+        real @2x image through the {r} placeholder — detectRetina tells
+        Leaflet to actually request it on high-DPI displays instead of
+        leaving {r} empty.
+      */}
       <TileLayer
-        attribution='&copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors, and the GIS User Community'
-        url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+        attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        detectRetina
       />
 
       <MapInner disasters={disasters} highlightId={highlightId} />

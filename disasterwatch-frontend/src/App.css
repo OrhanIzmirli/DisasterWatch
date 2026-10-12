@@ -2136,6 +2136,19 @@ body {
   min-height: 640px;
 }
 
+/* ===== FIX: map no longer resizes when a "Today's events" card expands =====
+   .app-main is a grid with align-items: stretch, so .map-panel's box always
+   matches .list-panel's rendered height. .list-panel used to grow with its
+   own content (the timeline-hovercard expands inline on hover), which grew
+   the grid row — and dragged the map along with it, visibly resizing/
+   re-centering it (the map's own ResizeObserver reacts to that). Capping
+   list-panel's height and letting it scroll internally keeps the row
+   height — and the map — stable regardless of what's expanded inside it. */
+.list-panel {
+  max-height: 760px;
+  overflow-y: auto;
+}
+
 /* ===== FIX: background stops at viewport height on long pages ===== */
 /* #root has a fixed height, so let app-root grow past it instead of shrinking */
 .app-root {
@@ -2213,5 +2226,9 @@ body {
   .map-panel .map-leaflet-container,
   .map-panel .leaflet-container {
     min-height: 360px;
+  }
+
+  .list-panel {
+    max-height: 600px;
   }
 }
