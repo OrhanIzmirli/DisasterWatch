@@ -9,6 +9,7 @@ import { createUsersRouter } from "./routes/users.routes.js";
 import alertsRoutes from "./routes/alerts.routes.js";
 import notificationsRoutes from "./routes/notifications.routes.js";
 import { producerStatus } from "./services/kafkaProducer.js";
+import { countPendingOutbox } from "./jobs/ingest.js";
 
 /**
  * Build the Express app without starting a server or touching Kafka,
@@ -34,11 +35,19 @@ export function createApp(options = {}) {
     res.send("DisasterWatch Backend is running");
   });
 
-  app.get("/health", (req, res) => {
+  app.get("/health", async (req, res) => {
+    // Events recorded but not yet published to Kafka (null when the DB is unreachable)
+    let outboxPending = null;
+    try {
+      outboxPending = await countPendingOutbox();
+    } catch {
+      outboxPending = null;
+    }
     res.json({
       ok: true,
       service: "backend",
       kafka: producerStatus(),
+      outboxPending,
       time: new Date().toISOString(),
     });
   });

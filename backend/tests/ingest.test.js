@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { resetDb, prisma } from "./helpers.js";
-import { ingestOnce, recordNewEvents } from "../src/jobs/ingest.js";
+import { ingestOnce, recordNewEvents, publishOutbox, countPendingOutbox } from "../src/jobs/ingest.js";
 import { nasaEventsToContract, usgsFeaturesToContract } from "../src/events/mappers.js";
 
 // ---- fixtures shaped like the real feeds ----
@@ -51,6 +51,30 @@ function deps(overrides = {}) {
   };
 }
 
+/** Insert n synthetic unpublished rows, oldest first. */
+async function seedOutbox(n, prefix = "usgs:seed") {
+  const events = [];
+  for (let i = 0; i < n; i++) {
+    events.push({
+      eventId: `${prefix}-${String(i).padStart(3, "0")}`,
+      source: "usgs",
+      type: "earthquake",
+      severity: "low",
+      title: `Seed ${i}`,
+      lat: 1,
+      lng: 2,
+      occurredAt: "2026-10-13T10:00:00.000Z",
+    });
+  }
+  await recordNewEvents(events, { prisma });
+  return events;
+}
+
+const publishedIds = async () =>
+  (await prisma.ingestedEvent.findMany({ where: { publishedAt: { not: null } }, select: { eventId: true } }))
+    .map((r) => r.eventId)
+    .sort();
+
 beforeEach(resetDb);
 
 describe("mappers", () => {
@@ -78,7 +102,7 @@ describe("mappers", () => {
 });
 
 describe("recordNewEvents", () => {
-  it("returns only rows that were newly inserted", async () => {
+  it("returns only rows that were newly inserted, all unpublished", async () => {
     const { events } = nasaEventsToContract(NASA_RAW);
     const first = await recordNewEvents(events, { prisma });
     expect(first.map((e) => e.eventId)).toEqual(["nasa:EONET_1001", "nasa:EONET_1002"]);
@@ -91,22 +115,121 @@ describe("recordNewEvents", () => {
     expect(mixed.map((e) => e.eventId)).toEqual(["nasa:EONET_9999"]);
 
     expect(await prisma.ingestedEvent.count()).toBe(3);
+    expect(await countPendingOutbox({ prisma })).toBe(3);
+  });
+});
+
+describe("publishOutbox", () => {
+  it("(a) leaves rows unpublished when Kafka fails and publishes them on the next run", async () => {
+    await seedOutbox(3);
+    const publish = vi.fn(async () => {
+      throw new Error("broker down");
+    });
+
+    const failed = await publishOutbox({ prisma, publish, log: quiet });
+    expect(failed).toEqual({ published: 0, pending: 3, error: "broker down" });
+    expect(await publishedIds()).toEqual([]);
+
+    publish.mockImplementation(async () => {});
+    const retried = await publishOutbox({ prisma, publish, log: quiet });
+    expect(retried).toEqual({ published: 3, pending: 0, error: null });
+    expect(await publishedIds()).toHaveLength(3);
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish.mock.calls[1][0].map((e) => e.eventId)).toEqual([
+      "usgs:seed-000",
+      "usgs:seed-001",
+      "usgs:seed-002",
+    ]);
+  });
+
+  it("(b) never publishes an already published event again", async () => {
+    await seedOutbox(2);
+    const publish = vi.fn(async () => {});
+
+    await publishOutbox({ prisma, publish, log: quiet });
+    const second = await publishOutbox({ prisma, publish, log: quiet });
+    expect(second).toEqual({ published: 0, pending: 0, error: null });
+    expect(publish).toHaveBeenCalledTimes(1);
+
+    // a new row later is published alone
+    await seedOutbox(1, "usgs:late");
+    const third = await publishOutbox({ prisma, publish, log: quiet });
+    expect(third.published).toBe(1);
+    expect(publish.mock.calls[1][0].map((e) => e.eventId)).toEqual(["usgs:late-000"]);
+  });
+
+  it("(c) on a mid-batch failure the sent chunks are marked and the rest stay pending", async () => {
+    await seedOutbox(120);
+    let calls = 0;
+    const publish = vi.fn(async () => {
+      calls += 1;
+      if (calls === 3) throw new Error("timeout");
+    });
+
+    const result = await publishOutbox({ prisma, publish, chunkSize: 50, log: quiet });
+    expect(result).toEqual({ published: 100, pending: 20, error: "timeout" });
+
+    const marked = await publishedIds();
+    expect(marked).toHaveLength(100);
+    expect(marked[0]).toBe("usgs:seed-000");
+    expect(marked[99]).toBe("usgs:seed-099");
+
+    const pending = await prisma.ingestedEvent.findMany({ where: { publishedAt: null }, orderBy: { id: "asc" } });
+    expect(pending.map((r) => r.eventId)).toEqual(
+      Array.from({ length: 20 }, (_, i) => `usgs:seed-${String(100 + i).padStart(3, "0")}`)
+    );
+
+    // next run picks up exactly the 20 that were left
+    publish.mockImplementation(async () => {});
+    const next = await publishOutbox({ prisma, publish, chunkSize: 50, log: quiet });
+    expect(next).toEqual({ published: 20, pending: 0, error: null });
+  });
+
+  it("caps a run at `batch` rows, oldest first, and reports the rest as pending", async () => {
+    await seedOutbox(7);
+    const publish = vi.fn(async () => {});
+    const result = await publishOutbox({ prisma, publish, batch: 5, log: quiet });
+    expect(result).toEqual({ published: 5, pending: 2, error: null });
+    expect(publish.mock.calls[0][0].map((e) => e.eventId)).toEqual([
+      "usgs:seed-000",
+      "usgs:seed-001",
+      "usgs:seed-002",
+      "usgs:seed-003",
+      "usgs:seed-004",
+    ]);
+  });
+
+  it("publishes contract-shaped messages built from the stored rows", async () => {
+    await seedOutbox(1);
+    const publish = vi.fn(async () => {});
+    await publishOutbox({ prisma, publish, log: quiet });
+    expect(publish.mock.calls[0][0][0]).toEqual({
+      v: 1,
+      eventId: "usgs:seed-000",
+      source: "usgs",
+      type: "earthquake",
+      severity: "low",
+      title: "Seed 0",
+      lat: 1,
+      lng: 2,
+      occurredAt: "2026-10-13T10:00:00.000Z",
+    });
   });
 });
 
 describe("ingestOnce", () => {
-  it("publishes each event exactly once across runs (dedupe)", async () => {
+  it("records and publishes each event exactly once across runs (dedupe)", async () => {
     const d = deps();
 
     const first = await ingestOnce({ prisma, ...d });
-    expect(first).toMatchObject({ fetched: 3, inserted: 3, published: 3, errors: [] });
+    expect(first).toMatchObject({ fetched: 3, inserted: 3, published: 3, pending: 0, errors: [] });
     expect(d.publish).toHaveBeenCalledTimes(1);
-    const publishedIds = d.publish.mock.calls[0][0].map((e) => e.eventId).sort();
-    expect(publishedIds).toEqual(["nasa:EONET_1001", "nasa:EONET_1002", "usgs:us6000u25i"]);
+    const ids = d.publish.mock.calls[0][0].map((e) => e.eventId).sort();
+    expect(ids).toEqual(["nasa:EONET_1001", "nasa:EONET_1002", "usgs:us6000u25i"]);
 
     const second = await ingestOnce({ prisma, ...d });
-    expect(second).toMatchObject({ fetched: 3, inserted: 0, published: 0 });
-    expect(d.publish).toHaveBeenCalledTimes(1); // nothing new -> no publish call
+    expect(second).toMatchObject({ fetched: 3, inserted: 0, published: 0, pending: 0 });
+    expect(d.publish).toHaveBeenCalledTimes(1); // nothing pending -> no publish call
 
     expect(await prisma.ingestedEvent.count()).toBe(3);
   });
@@ -134,18 +257,22 @@ describe("ingestOnce", () => {
     expect(stats).toMatchObject({ fetched: 1, inserted: 1, published: 1 });
   });
 
-  it("records a publish failure without throwing", async () => {
+  it("keeps a failed publish in the outbox and drains it on the next run, even with nothing new fetched", async () => {
     const d = deps({ publish: vi.fn(async () => { throw new Error("broker down"); }) });
     const stats = await ingestOnce({ prisma, ...d });
-    expect(stats.inserted).toBe(3);
-    expect(stats.published).toBe(0);
+    expect(stats).toMatchObject({ inserted: 3, published: 0, pending: 3 });
     expect(stats.errors).toEqual(["publish: broker down"]);
+
+    const d2 = deps({ fetchNasa: vi.fn(async () => []), fetchUsgs: vi.fn(async () => []) });
+    const next = await ingestOnce({ prisma, ...d2 });
+    expect(next).toMatchObject({ fetched: 0, inserted: 0, published: 3, pending: 0, errors: [] });
+    expect(d2.publish).toHaveBeenCalledTimes(1);
   });
 
-  it("does nothing when both feeds are empty", async () => {
+  it("does nothing when both feeds are empty and the outbox is clear", async () => {
     const d = deps({ fetchNasa: vi.fn(async () => []), fetchUsgs: vi.fn(async () => []) });
     const stats = await ingestOnce({ prisma, ...d });
-    expect(stats).toMatchObject({ fetched: 0, inserted: 0, published: 0 });
+    expect(stats).toMatchObject({ fetched: 0, inserted: 0, published: 0, pending: 0 });
     expect(d.publish).not.toHaveBeenCalled();
   });
 });

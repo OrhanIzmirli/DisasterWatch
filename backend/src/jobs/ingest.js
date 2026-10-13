@@ -1,11 +1,18 @@
 /**
- * Feed ingestion job.
+ * Feed ingestion job with a transactional outbox.
  *
- * Every run fetches NASA EONET + USGS, maps them to the event contract,
- * inserts them into IngestedEvent with ON CONFLICT DO NOTHING and publishes
- * ONLY the rows that were actually inserted (= never seen before) to Kafka.
- * The public GET /disasters feed is untouched by this; it keeps its own
- * cache and fetch path.
+ * Every run has two independent phases:
+ *  (a) record: fetch NASA EONET + USGS, map them to the event contract and
+ *      INSERT ... ON CONFLICT DO NOTHING into IngestedEvent (publishedAt NULL);
+ *  (b) publish the outbox: rows with publishedAt IS NULL, oldest first, at
+ *      most OUTBOX_BATCH per run, are published to Kafka and then marked
+ *      publishedAt = now(). A failed publish leaves the rows NULL, so they
+ *      are retried on the next run instead of being lost (Aiven's free
+ *      tier powers off when idle, so this happens in practice).
+ *
+ * Together with the consumer's unique (userId, eventId) constraint this
+ * gives at-least-once delivery with at most one notification per event.
+ * The public GET /disasters feed is untouched by this job.
  *
  * Dependencies are injectable so tests can run it without network or Kafka.
  */
@@ -17,6 +24,8 @@ import { publishDisasterEvents } from "../services/kafkaProducer.js";
 import { nasaEventsToContract, usgsFeaturesToContract } from "../events/mappers.js";
 
 export const INGEST_INTERVAL_MS = 5 * 60 * 1000;
+export const OUTBOX_BATCH = 500; // rows considered per run
+export const PUBLISH_CHUNK = 50; // rows per Kafka send; marked after each successful send
 const INSERT_CHUNK = 200;
 const USGS_MIN_MAG = 4.5; // same threshold as the public feed; micro-quakes are not alerts
 
@@ -45,9 +54,74 @@ export async function recordNewEvents(events, { prisma = defaultPrisma } = {}) {
   return inserted;
 }
 
+/** IngestedEvent row -> contract message. */
+function rowToEvent(row) {
+  return {
+    v: 1,
+    eventId: row.eventId,
+    source: row.source,
+    type: row.type,
+    severity: row.severity,
+    title: row.title,
+    lat: row.lat,
+    lng: row.lng,
+    occurredAt: row.occurredAt.toISOString(),
+  };
+}
+
+/** Number of events still waiting in the outbox (surfaced on /health). */
+export async function countPendingOutbox({ prisma = defaultPrisma } = {}) {
+  return prisma.ingestedEvent.count({ where: { publishedAt: null } });
+}
+
 /**
- * One ingestion pass. Returns counts; never throws for a single failing
- * source (that source is skipped and the error is logged).
+ * Publishes unpublished rows (oldest first, up to `batch`) in chunks and
+ * marks each chunk as published right after its send succeeds. On a failure
+ * the remaining rows stay unpublished and the error is returned, not thrown.
+ * Returns { published, pending, error }.
+ */
+export async function publishOutbox({
+  prisma = defaultPrisma,
+  publish = publishDisasterEvents,
+  batch = OUTBOX_BATCH,
+  chunkSize = PUBLISH_CHUNK,
+  log = console,
+} = {}) {
+  const rows = await prisma.ingestedEvent.findMany({
+    where: { publishedAt: null },
+    orderBy: [{ firstSeenAt: "asc" }, { id: "asc" }],
+    take: batch,
+  });
+
+  let published = 0;
+  let error = null;
+
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    try {
+      await publish(chunk.map(rowToEvent));
+    } catch (err) {
+      error = err?.message || String(err);
+      log.error(`[outbox] publish failed after ${published} row(s); ${rows.length - published} stay pending:`, error);
+      break;
+    }
+
+    await prisma.ingestedEvent.updateMany({
+      where: { id: { in: chunk.map((r) => r.id) }, publishedAt: null },
+      data: { publishedAt: new Date() },
+    });
+    published += chunk.length;
+  }
+
+  const pending = await countPendingOutbox({ prisma });
+  return { published, pending, error };
+}
+
+/**
+ * One ingestion run: record new feed events, then drain the outbox.
+ * Never throws for a single failing source (that source is skipped and the
+ * error is logged); a publish failure is reported in `errors` and retried
+ * next run.
  */
 export async function ingestOnce({
   prisma = defaultPrisma,
@@ -57,7 +131,7 @@ export async function ingestOnce({
   log = console,
 } = {}) {
   const events = [];
-  const stats = { fetched: 0, dropped: 0, inserted: 0, published: 0, errors: [] };
+  const stats = { fetched: 0, dropped: 0, inserted: 0, published: 0, pending: 0, errors: [] };
 
   const sources = [
     ["nasa", async () => nasaEventsToContract(await fetchNasa())],
@@ -76,22 +150,16 @@ export async function ingestOnce({
     }
   }
 
-  if (events.length === 0) return stats;
-
-  const fresh = await recordNewEvents(events, { prisma });
-  stats.inserted = fresh.length;
-
-  if (fresh.length > 0) {
-    try {
-      await publish(fresh);
-      stats.published = fresh.length;
-    } catch (err) {
-      // Rows are already recorded, so these events will not be re-published
-      // later; log loudly. (A future pass could add a "published" flag.)
-      stats.errors.push(`publish: ${err?.message || err}`);
-      log.error(`[ingest] publishing ${fresh.length} event(s) failed:`, err?.message || err);
-    }
+  if (events.length > 0) {
+    const fresh = await recordNewEvents(events, { prisma });
+    stats.inserted = fresh.length;
   }
+
+  // Outbox runs even when nothing new was fetched: earlier failures are retried here.
+  const outbox = await publishOutbox({ prisma, publish, log });
+  stats.published = outbox.published;
+  stats.pending = outbox.pending;
+  if (outbox.error) stats.errors.push(`publish: ${outbox.error}`);
 
   return stats;
 }
@@ -109,7 +177,7 @@ export function startIngestion({ intervalMs = INGEST_INTERVAL_MS, log = console,
     try {
       const s = await ingestOnce({ log, ...deps });
       log.log(
-        `[ingest] fetched=${s.fetched} new=${s.inserted} published=${s.published}` +
+        `[ingest] fetched=${s.fetched} new=${s.inserted} published=${s.published} pending=${s.pending}` +
           (s.errors.length ? ` errors=${s.errors.join(" | ")}` : "")
       );
     } catch (err) {

@@ -93,4 +93,28 @@ describe("message handler", () => {
     const result = await handle(JSON.stringify(EVENT));
     expect(result).toMatchObject({ matches: 1, inserted: 0 });
   });
+
+  it("(d) at-least-once: the same event delivered twice yields one notification", async () => {
+    // Simulates the DB's ON CONFLICT (userId, eventId) DO NOTHING: the second
+    // insert of the same (user, event) pair inserts nothing.
+    const stored = new Set();
+    const insertNotifications = vi.fn(async (rows) => {
+      let inserted = 0;
+      for (const r of rows) {
+        const key = `${r.userId}:${r.eventId}`;
+        if (!stored.has(key)) {
+          stored.add(key);
+          inserted += 1;
+        }
+      }
+      return inserted;
+    });
+    const { handle } = makeHandler({ insertNotifications });
+
+    const first = await handle(JSON.stringify(EVENT));
+    const second = await handle(JSON.stringify(EVENT));
+    expect(first).toMatchObject({ status: "processed", matches: 1, inserted: 1 });
+    expect(second).toMatchObject({ status: "processed", matches: 1, inserted: 0 });
+    expect(stored.size).toBe(1);
+  });
 });
