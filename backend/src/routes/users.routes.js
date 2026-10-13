@@ -130,8 +130,36 @@ router.post("/logout", (req, res) => {
 /* ===========================
    GET /users/me
 =========================== */
-router.get("/me", requireAuth, (req, res) => {
-  res.json({ user: { email: req.user.email, role: req.user.role } });
+router.get("/me", requireAuth, async (req, res) => {
+  try {
+    // Read from the DB rather than the token so role changes take effect immediately
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        email: true,
+        role: true,
+        createdAt: true,
+        _count: { select: { subscriptions: true } },
+      },
+    });
+
+    if (!user) {
+      res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: undefined });
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    res.json({
+      user: {
+        email: user.email,
+        role: user.role,
+        createdAt: user.createdAt,
+        subscriptionCount: user._count.subscriptions,
+      },
+    });
+  } catch (err) {
+    console.error("ME ERROR:", err?.message || err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 export default router;

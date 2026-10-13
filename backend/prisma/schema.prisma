@@ -9,11 +9,31 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  role      String   @default("user")
-  createdAt DateTime @default(now())
+  id            Int                 @id @default(autoincrement())
+  email         String              @unique
+  password      String
+  role          String              @default("user")
+  createdAt     DateTime            @default(now())
+  subscriptions AlertSubscription[]
+}
+
+/// A user's request to be alerted about disasters of a given type and
+/// minimum severity within radiusKm of a point. Matching against live
+/// events happens in a later release.
+model AlertSubscription {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   @default("any")
+  minSeverity String   @default("low")
+  label       String
+  centerLat   Float
+  centerLng   Float
+  radiusKm    Int
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Disaster {

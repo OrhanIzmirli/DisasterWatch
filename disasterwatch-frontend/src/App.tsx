@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import {
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import DashboardPage from "./pages/DashboardPage";
 import AlertsPage from "./pages/AlertsPage";
 import AdminPage from "./pages/AdminPage";
+import AccountPage from "./pages/AccountPage";
 import SignInPage from "./pages/SignInPage";
 import SignUpPage from "./pages/SignUpPage";
 import NewsPanel from "./components/NewsPanel";
@@ -12,6 +20,8 @@ import NewsPanel from "./components/NewsPanel";
 export type AuthUser = {
   email: string;
   role: string;
+  createdAt?: string;
+  subscriptionCount?: number;
 };
 
 type ProtectedRouteProps = {
@@ -34,7 +44,18 @@ function ProtectedRoute({ user, authLoading, children }: ProtectedRouteProps) {
   return <>{children}</>;
 }
 
+// Keep long addresses from blowing up the header: "someverylongname@example.com" -> "someverylo…@example.com"
+function shortEmail(email: string, max = 22) {
+  if (email.length <= max) return email;
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return email.slice(0, max - 1) + "…";
+  const domain = email.slice(at);
+  const localMax = Math.max(4, max - domain.length - 1);
+  return email.slice(0, localMax) + "…" + domain;
+}
+
 export default function App() {
+  const navigate = useNavigate();
   const [isNewsOpen, setIsNewsOpen] = useState(false);
 
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -80,10 +101,9 @@ export default function App() {
       // Even if the request fails, drop the local session state
     } finally {
       setUser(null);
+      navigate("/", { replace: true });
     }
-  }, []);
-
-  const isAuthed = Boolean(user);
+  }, [navigate]);
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? "nav-btn active" : "nav-btn";
@@ -113,14 +133,28 @@ export default function App() {
               Admin
             </NavLink>
 
-            {!isAuthed ? (
+            {!user ? (
               <NavLink to="/signin" className={navClass}>
                 Sign in
               </NavLink>
             ) : (
-              <button type="button" className="nav-btn" onClick={signOut}>
-                Sign out
-              </button>
+              <>
+                <NavLink
+                  to="/account"
+                  className={({ isActive }) =>
+                    isActive ? "nav-user active" : "nav-user"
+                  }
+                  title={user.email}
+                >
+                  <span className="nav-user-email">{shortEmail(user.email)}</span>
+                  {user.role === "admin" && (
+                    <span className="nav-user-badge">Admin</span>
+                  )}
+                </NavLink>
+                <button type="button" className="nav-btn" onClick={signOut}>
+                  Sign out
+                </button>
+              </>
             )}
           </nav>
 
@@ -151,14 +185,25 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
 
-          {/* Pass isAuthed down to the page */}
-          <Route path="/alerts" element={<AlertsPage isAuthed={isAuthed} />} />
+          <Route
+            path="/alerts"
+            element={<AlertsPage user={user} authLoading={authLoading} />}
+          />
 
           <Route
             path="/admin"
             element={
               <ProtectedRoute user={user} authLoading={authLoading}>
                 <AdminPage user={user} />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/account"
+            element={
+              <ProtectedRoute user={user} authLoading={authLoading}>
+                <AccountPage user={user} onSignOut={signOut} />
               </ProtectedRoute>
             }
           />
