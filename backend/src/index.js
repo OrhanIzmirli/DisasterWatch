@@ -1,48 +1,7 @@
 import "dotenv/config";
-import express from "express";
-import cors from "cors";
-import cookieParser from "cookie-parser";
 
-import eventsRoutes from "./routes/events.routes.js";
-import disasterRoutes from "./routes/disaster.routes.js";
-import newsRoutes from "./routes/news.routes.js";
-import usersRoutes from "./routes/users.routes.js";
-import alertsRoutes from "./routes/alerts.routes.js";
-
+import app from "./app.js";
 import { initProducer, producer } from "./services/kafkaProducer.js";
-
-const app = express();
-
-// Render / other reverse proxies sit in front of the app: trust the first hop so
-// req.ip (used by the rate limiter) and secure cookies see the real client.
-app.set("trust proxy", 1);
-
-app.use(cors());
-app.use(cookieParser());
-app.use(express.json());
-
-app.get("/", (req, res) => {
-  res.send("DisasterWatch Backend is running");
-});
-
-app.get("/health", (req, res) => {
-  res.json({ ok: true, service: "backend", time: new Date().toISOString() });
-});
-
-// Kafka publish test endpoint
-app.use("/events", eventsRoutes);
-
-// Disasters API
-app.use("/disasters", disasterRoutes);
-
-// News API (frontend /api/news -> backend /news)
-app.use("/news", newsRoutes);
-
-// Auth / users API (frontend /api/users -> backend /users)
-app.use("/users", usersRoutes);
-
-// Alert subscriptions (frontend /api/alerts -> backend /alerts)
-app.use("/alerts", alertsRoutes);
 
 // Hosting platforms provide PORT; docker-compose sets it to 5000
 const PORT = Number(process.env.PORT) || 5000;
