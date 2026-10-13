@@ -31,7 +31,8 @@ function fmt(n) {
  */
 export function assessSeverity({ type, magnitude = null }) {
   if (type === "earthquake") {
-    const mag = Number(magnitude);
+    // null / undefined / "" mean "not reported" (Number(null) would be 0)
+    const mag = magnitude === null || magnitude === undefined || magnitude === "" ? NaN : Number(magnitude);
     if (!Number.isFinite(mag)) {
       return { severity: "low", reason: "Low: magnitude not reported by source" };
     }

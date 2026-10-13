@@ -30,6 +30,7 @@ function toIso(value) {
 }
 
 function numOrNull(v) {
+  if (v === null || v === undefined || v === "") return null; // Number(null) is 0
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
