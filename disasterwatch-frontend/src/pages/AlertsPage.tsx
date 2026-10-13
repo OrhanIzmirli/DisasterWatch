@@ -221,7 +221,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
           <h2>Create an account to get alerts for disasters near places you care about</h2>
           <p>
             Pick a location, a radius and the kinds of hazards you want to know
-            about. DisasterWatch keeps your subscriptions and will notify you
+            about. DisasterWatch keeps your subscriptions and notifies you
             in-app when a matching event is detected.
           </p>
           <div className="alerts-signed-out-actions">
@@ -398,7 +398,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
         <article className="card card-compact channel-card">
           <h3>Delivery channels</h3>
           <ul>
-            <li>In-app notifications (coming in next release)</li>
+            <li>In-app notifications: active</li>
           </ul>
         </article>
       </section>
