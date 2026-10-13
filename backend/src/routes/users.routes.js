@@ -1,6 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import prisma from "../prisma.js";
 import { signAccessToken } from "../utils/jwt.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
@@ -8,6 +9,15 @@ import { requireAuth } from "../middleware/auth.middleware.js";
 const router = express.Router();
 
 const COOKIE_NAME = process.env.COOKIE_NAME || "dw_session";
+
+// Brute-force protection for credential endpoints: 10 attempts per IP per 15 minutes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { message: "Too many attempts. Please try again in 15 minutes." },
+});
 
 const cookieOptions = {
   httpOnly: true,
@@ -38,7 +48,7 @@ function setSessionCookie(res, user) {
 /* ===========================
    POST /users/register
 =========================== */
-router.post("/register", async (req, res) => {
+router.post("/register", authLimiter, async (req, res) => {
   const parsed = credentialsSchema.safeParse(req.body);
   if (!parsed.success) {
     const message = parsed.error.issues[0]?.message || "Invalid input";
@@ -78,7 +88,7 @@ router.post("/register", async (req, res) => {
 /* ===========================
    POST /users/login
 =========================== */
-router.post("/login", async (req, res) => {
+router.post("/login", authLimiter, async (req, res) => {
   const parsed = z
     .object({
       email: z.string().trim().toLowerCase().min(1),

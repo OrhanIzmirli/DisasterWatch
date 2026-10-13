@@ -12,6 +12,10 @@ import { initProducer, producer } from "./services/kafkaProducer.js";
 
 const app = express();
 
+// Render / other reverse proxies sit in front of the app: trust the first hop so
+// req.ip (used by the rate limiter) and secure cookies see the real client.
+app.set("trust proxy", 1);
+
 app.use(cors());
 app.use(cookieParser());
 app.use(express.json());
