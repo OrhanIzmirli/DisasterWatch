@@ -139,10 +139,10 @@ const AdminPage = ({ user }: Props) => {
   };
 
   return (
-    <div className="admin-page">
-      <div className="admin-header">
-        <h1 className="admin-title">Admin console</h1>
-        <p className="admin-subtitle">
+    <div className="page admin-page">
+      <header className="page-header">
+        <h1 className="page-title">Admin console</h1>
+        <p className="page-subtitle">
           Operator-only panel for creating manual disaster entries.
           {user && (
             <>
@@ -151,18 +151,11 @@ const AdminPage = ({ user }: Props) => {
             </>
           )}
         </p>
-      </div>
+      </header>
 
-      {!isAdmin ? (
-        <div className="admin-form-card">
-          <div className="admin-notice">
-            Bu panel sadece admin rolü için. Hesabınızın rolü:{" "}
-            <strong>{user?.role ?? "unknown"}</strong>.
-          </div>
-        </div>
-      ) : (
-        <div className="admin-form-card">
-          <div className="admin-form-title">Create disaster entry</div>
+      {isAdmin && (
+        <section className="card">
+          <div className="card-title">Create disaster entry</div>
 
           <form className="admin-form" onSubmit={submit}>
             <div className="form-field">
@@ -185,7 +178,7 @@ const AdminPage = ({ user }: Props) => {
               />
             </div>
 
-            <div className="admin-form-row">
+            <div className="form-row">
               <div className="form-field">
                 <label>Latitude *</label>
                 <input
@@ -268,24 +261,24 @@ const AdminPage = ({ user }: Props) => {
               />
             </div>
 
-            {error && <div className="auth-error">{error}</div>}
+            {error && <div className="form-error">{error}</div>}
             {success && <div className="form-success">{success}</div>}
 
             <div className="form-actions">
-              <button className="admin-submit-btn" type="submit" disabled={submitting}>
+              <button className="btn btn-primary" type="submit" disabled={submitting}>
                 {submitting ? "Saving…" : "Save entry"}
               </button>
             </div>
           </form>
-        </div>
+        </section>
       )}
 
-      <div className="admin-form-card">
-        <div className="admin-form-title">
+      <section className="card">
+        <div className="card-title">
           Recent manual entries
           <button
             type="button"
-            className="admin-refresh-btn"
+            className="btn btn-secondary btn-sm"
             onClick={loadManual}
             disabled={listLoading}
           >
@@ -293,15 +286,15 @@ const AdminPage = ({ user }: Props) => {
           </button>
         </div>
 
-        {listError && <div className="auth-error">{listError}</div>}
+        {listError && <div className="form-error">{listError}</div>}
 
         {!listError && items.length === 0 && !listLoading && (
-          <div className="admin-empty">No manual entries yet.</div>
+          <div className="muted">No manual entries yet.</div>
         )}
 
         {items.length > 0 && (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
+          <div className="table-wrap">
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -320,7 +313,7 @@ const AdminPage = ({ user }: Props) => {
                     <td>
                       {d.title}
                       {d.description && (
-                        <div className="admin-table-desc">{d.description}</div>
+                        <div className="table-sub">{d.description}</div>
                       )}
                     </td>
                     <td>{d.severity ?? "-"}</td>
@@ -334,7 +327,7 @@ const AdminPage = ({ user }: Props) => {
             </table>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 };

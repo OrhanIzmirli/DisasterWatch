@@ -2531,3 +2531,381 @@ body {
     gap: 0.1rem;
   }
 }
+
+/* =====================================================================
+   UI SYSTEM (audit 2026-10-13): shared page shell, cards, buttons, forms,
+   tables for the Sign in / Sign up / Alerts / Account / Admin pages.
+   Map, dashboard and leaflet rules are intentionally not touched.
+   Text colours are chosen for WCAG AA (>= 4.5:1) on the dark cards.
+   ===================================================================== */
+:root {
+  --dw-cream: #f6e8d9;
+  --dw-text: #f3f4f6;        /* ~16:1 on the card background */
+  --dw-text-muted: #cbd5e1;  /* ~11:1 on the card background */
+  --dw-card: rgba(0, 21, 35, 0.92);
+  --dw-border: rgba(102, 155, 188, 0.6);
+  --dw-red: #c1121f;
+  --dw-red-dark: #780000;
+  --dw-focus: #fbbf24;
+}
+
+/* ---- page shell ---- */
+.page {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  color: var(--dw-text);
+}
+
+.page-narrow {
+  max-width: 820px;
+}
+
+.page-header {
+  margin-bottom: 1rem;
+}
+
+.page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dw-cream);
+}
+
+.page-subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: #e5e7eb;
+  max-width: 40rem;
+}
+
+/* ---- cards (same border / radius / shadow family as the dashboard panels) ---- */
+.card {
+  background: var(--dw-card);
+  border: 1px solid var(--dw-border);
+  border-radius: 1rem;
+  padding: 1.1rem 1.2rem;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.35);
+  color: var(--dw-text);
+  max-width: none;
+  margin: 0;
+}
+
+.card + .card,
+.page-header + .card,
+.form-error + .card {
+  margin-top: 1rem;
+}
+
+.card-compact {
+  padding: 0.8rem 1rem;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--dw-cream);
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.muted {
+  color: var(--dw-text-muted);
+  font-size: 0.85rem;
+}
+
+.text-link,
+.auth-link {
+  color: var(--dw-focus);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.text-link:hover,
+.auth-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- buttons: .btn + one variant ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1.05rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.05s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+.btn-primary {
+  background: var(--dw-red);
+  border-color: var(--dw-cream);
+  color: var(--dw-cream);
+}
+
+.btn-primary:hover {
+  background: var(--dw-red-dark);
+}
+
+.btn-secondary {
+  background: rgba(102, 155, 188, 0.12);
+  border-color: rgba(246, 232, 217, 0.55);
+  color: var(--dw-cream);
+}
+
+.btn-secondary:hover {
+  background: rgba(102, 155, 188, 0.25);
+  border-color: var(--dw-cream);
+}
+
+.btn-danger {
+  background: rgba(193, 18, 31, 0.12);
+  border-color: rgba(248, 113, 113, 0.7);
+  color: #fecaca;
+}
+
+.btn-danger:hover {
+  background: rgba(193, 18, 31, 0.4);
+  color: #ffffff;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: #e5e7eb;
+}
+
+.btn-ghost:hover {
+  background: rgba(246, 232, 217, 0.1);
+  color: var(--dw-cream);
+}
+
+.btn-sm {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.btn-block {
+  width: 100%;
+  margin-top: 0.3rem;
+}
+
+/* ---- forms ---- */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 1rem;
+}
+
+.form-field label {
+  color: var(--dw-text);
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+  width: 100%;
+  min-width: 0;
+  font-family: inherit;
+  background: #ffffff;
+  color: #111827;
+}
+
+.form-field input::placeholder,
+.form-field textarea::placeholder {
+  color: #6b7280; /* 4.6:1 on white */
+}
+
+.form-error {
+  margin-top: 0.2rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.6rem;
+  background: rgba(193, 18, 31, 0.16);
+  border: 1px solid rgba(248, 113, 113, 0.6);
+  color: #fecaca;
+  font-size: 0.85rem;
+}
+
+.form-success {
+  color: #bbf7d0;
+}
+
+.form-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.auth-footer {
+  margin-top: 0.9rem;
+  font-size: 0.85rem;
+  color: var(--dw-text-muted);
+}
+
+/* ---- tables ---- */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  color: var(--dw-text);
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.5rem 0.55rem;
+  border-bottom: 1px solid rgba(246, 232, 217, 0.12);
+  vertical-align: top;
+}
+
+.data-table th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dw-text-muted);
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.table-sub {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--dw-text-muted);
+}
+
+/* ---- account page ---- */
+.account-row dt {
+  opacity: 1;
+  color: var(--dw-text-muted);
+}
+
+.account-row dd {
+  color: var(--dw-text);
+}
+
+/* ---- alerts page ---- */
+.alerts-row-paused td {
+  opacity: 1;
+  color: var(--dw-text-muted);
+}
+
+.alert-status-btn {
+  font-weight: 600;
+}
+
+/* ---- header: let the nav wrap instead of overflowing on narrow screens ---- */
+@media (max-width: 900px) {
+  .header-right {
+    flex-wrap: wrap;
+  }
+
+  .nav-links {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 1rem;
+  }
+
+  .form-row,
+  .alerts-channels {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header-row .btn,
+  .card-actions .btn {
+    width: 100%;
+  }
+}
+
+/* alerts info cards: keep list indentation inside the shared card */
+.channel-card h3 {
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+  color: var(--dw-cream);
+}
+
+.channel-card ul {
+  padding-left: 1.1rem;
+  color: var(--dw-text);
+}
+
+.alerts-channels {
+  margin-top: 1rem;
+  align-items: stretch;
+}
+
+/* cards inside a grid row start at the same height */
+.alerts-channels > .card {
+  margin-top: 0;
+}
+
+/* on narrow screens scroll the table instead of squeezing its columns */
+.table-wrap .data-table {
+  min-width: 560px;
+}

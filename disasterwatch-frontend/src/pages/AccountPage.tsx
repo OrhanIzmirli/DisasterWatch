@@ -8,9 +8,9 @@ type Props = {
 };
 
 function formatDate(iso?: string) {
-  if (!iso) return "-";
+  if (!iso) return null;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-";
+  if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString(undefined, {
     year: "numeric",
     month: "long",
@@ -22,6 +22,7 @@ const AccountPage = ({ user, onSignOut }: Props) => {
   // Start from the session user, then refresh from the server so the
   // subscription count reflects changes made on the Alerts page.
   const [profile, setProfile] = useState<AuthUser | null>(user);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,6 +38,8 @@ const AccountPage = ({ user, onSignOut }: Props) => {
         if (!cancelled) setProfile(data.user);
       } catch {
         if (!cancelled) setError("Could not reach the server.");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
@@ -45,59 +48,64 @@ const AccountPage = ({ user, onSignOut }: Props) => {
   }, []);
 
   const p = profile ?? user;
-  const subscriptionCount = p?.subscriptionCount ?? 0;
+  const isAdmin = p?.role === "admin";
+  const memberSince = formatDate(p?.createdAt);
+  const subscriptionCount = p?.subscriptionCount;
+
+  // "…" while the profile is still loading, "-" only if the server really has no value
+  const pending = loading ? "…" : "-";
 
   return (
-    <div className="account-page">
-      <div className="account-header">
-        <h1 className="account-title">My account</h1>
-        <p className="account-subtitle">Your profile and alert preferences.</p>
-      </div>
+    <div className="page page-narrow account-page">
+      <header className="page-header">
+        <h1 className="page-title">My account</h1>
+        <p className="page-subtitle">Your profile and alert preferences.</p>
+      </header>
 
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="form-error">{error}</div>}
 
-      <div className="account-card">
+      <section className="card">
         <dl className="account-details">
           <div className="account-row">
             <dt>Email</dt>
-            <dd>{p?.email ?? "-"}</dd>
+            <dd>{p?.email ?? pending}</dd>
           </div>
           <div className="account-row">
             <dt>Role</dt>
             <dd>
-              {p?.role ?? "-"}
-              {p?.role === "admin" && <span className="nav-user-badge">Admin</span>}
+              {p?.role ?? pending}
+              {isAdmin && <span className="nav-user-badge">Admin</span>}
             </dd>
           </div>
           <div className="account-row">
             <dt>Member since</dt>
-            <dd>{formatDate(p?.createdAt)}</dd>
+            <dd>{memberSince ?? pending}</dd>
           </div>
           <div className="account-row">
             <dt>Alert subscriptions</dt>
             <dd>
-              {subscriptionCount}{" "}
-              <Link to="/alerts" className="auth-link">
+              {subscriptionCount ?? pending}{" "}
+              <Link to="/alerts" className="text-link">
                 Manage in Alert center
               </Link>
             </dd>
           </div>
         </dl>
 
-        <div className="account-actions">
-          <Link to="/alerts" className="alerts-add-btn">
+        <div className="card-actions">
+          <Link to="/alerts" className="btn btn-primary">
             Open Alert center
           </Link>
-          {p?.role === "admin" && (
-            <Link to="/admin" className="admin-refresh-btn">
+          {isAdmin && (
+            <Link to="/admin" className="btn btn-secondary">
               Admin console
             </Link>
           )}
-          <button type="button" className="account-signout-btn" onClick={onSignOut}>
+          <button type="button" className="btn btn-ghost" onClick={onSignOut}>
             Sign out
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 };

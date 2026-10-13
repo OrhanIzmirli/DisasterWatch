@@ -20,3 +20,6 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# UI audit screenshots (kept on disk, reported in PRs, never committed)
+screenshots/ui-audit/

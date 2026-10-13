@@ -91,7 +91,7 @@ const SignUpPage = ({ onSignedIn }: Props) => {
           </div>
 
           {error && (
-            <div className="auth-error">
+            <div className="form-error">
               {error}{" "}
               {error.startsWith("Bu e-posta") && (
                 <Link className="auth-link" to="/signin">
@@ -101,7 +101,7 @@ const SignUpPage = ({ onSignedIn }: Props) => {
             </div>
           )}
 
-          <button className="auth-btn" type="submit" disabled={submitting}>
+          <button className="btn btn-primary btn-block" type="submit" disabled={submitting}>
             {submitting ? "Creating account…" : "Create account"}
           </button>
         </form>

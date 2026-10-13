@@ -58,7 +58,7 @@ const SignInPage = ({ onSignedIn }: Props) => {
     <div className="auth-page">
       <div className="auth-card">
         <h1 className="auth-title">Sign in</h1>
-        <p className="auth-subtitle">Sign in to access the operator console.</p>
+        <p className="auth-subtitle">Sign in to manage your alert subscriptions.</p>
 
         <form className="auth-form" onSubmit={submit}>
           <div className="form-field">
@@ -83,9 +83,9 @@ const SignInPage = ({ onSignedIn }: Props) => {
             />
           </div>
 
-          {error && <div className="auth-error">{error}</div>}
+          {error && <div className="form-error">{error}</div>}
 
-          <button className="auth-btn" type="submit" disabled={submitting}>
+          <button className="btn btn-primary btn-block" type="submit" disabled={submitting}>
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
