@@ -46,18 +46,44 @@ const kafka = new Kafka({
 
 export const producer = kafka.producer();
 
+let connected = false;
+producer.on(producer.events.CONNECT, () => {
+  connected = true;
+});
+producer.on(producer.events.DISCONNECT, () => {
+  connected = false;
+});
+
+/** "connected" | "disconnected" | "misconfigured" — surfaced on /health. */
+export function producerStatus() {
+  if (kafkaConfigError) return "misconfigured";
+  return connected ? "connected" : "disconnected";
+}
+
 export async function initProducer() {
   if (kafkaConfigError) throw new Error(kafkaConfigError);
   await producer.connect();
+  connected = true;
   console.log(
     `Kafka producer connected (${useSasl ? "SASL_SSL" : "plaintext"}): ${brokers.join(", ")}`
   );
 }
 
+const TOPIC = "disaster-events";
+
 export async function publishDisasterEvent(event) {
+  return publishDisasterEvents([event]);
+}
+
+/** Publishes contract events in one batch, keyed by eventId for per-event ordering. */
+export async function publishDisasterEvents(events) {
   if (kafkaConfigError) throw new Error(kafkaConfigError);
+  if (!Array.isArray(events) || events.length === 0) return;
   await producer.send({
-    topic: "disaster-events",
-    messages: [{ value: JSON.stringify(event) }],
+    topic: TOPIC,
+    messages: events.map((event) => ({
+      key: event?.eventId ? String(event.eventId) : undefined,
+      value: JSON.stringify(event),
+    })),
   });
 }

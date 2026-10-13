@@ -7,6 +7,7 @@ import disasterRoutes from "./routes/disaster.routes.js";
 import newsRoutes from "./routes/news.routes.js";
 import { createUsersRouter } from "./routes/users.routes.js";
 import alertsRoutes from "./routes/alerts.routes.js";
+import { producerStatus } from "./services/kafkaProducer.js";
 
 /**
  * Build the Express app without starting a server or touching Kafka,
@@ -33,7 +34,12 @@ export function createApp(options = {}) {
   });
 
   app.get("/health", (req, res) => {
-    res.json({ ok: true, service: "backend", time: new Date().toISOString() });
+    res.json({
+      ok: true,
+      service: "backend",
+      kafka: producerStatus(),
+      time: new Date().toISOString(),
+    });
   });
 
   // Kafka publish test endpoint

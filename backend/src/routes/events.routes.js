@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { publishDisasterEvent } from "../services/kafkaProducer.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
+import { disasterEventSchema } from "../events/contract.js";
 
 const router = Router();
 
@@ -11,16 +12,21 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// POST /events -> publishes the request body to Kafka (admin only)
+// POST /events -> validates the body against the event contract and publishes it (admin only)
 router.post("/", requireAuth, requireAdmin, async (req, res) => {
+  const parsed = disasterEventSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const path = issue?.path?.join(".") || "body";
+    return res.status(400).json({
+      ok: false,
+      error: `Invalid event: ${path}: ${issue?.message || "invalid"}`,
+    });
+  }
+
+  const event = parsed.data;
+
   try {
-    const event = req.body;
-
-    // Reject empty bodies
-    if (!event || Object.keys(event).length === 0) {
-      return res.status(400).json({ ok: false, error: "Empty body" });
-    }
-
     await publishDisasterEvent(event);
     return res.json({ ok: true, published: true, event });
   } catch (e) {
