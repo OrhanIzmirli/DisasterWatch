@@ -2312,3 +2312,222 @@ body {
   font-size: 0.7rem;
   opacity: 0.7;
 }
+
+/* HEADER USER CHIP */
+.nav-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 240px;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(246, 232, 217, 0.25);
+  color: #f6e8d9;
+  font-size: 0.78rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-user:hover,
+.nav-user.active {
+  background: rgba(246, 232, 217, 0.1);
+}
+
+.nav-user-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-user-badge {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: #c1121f;
+  color: #f6e8d9;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ACCOUNT PAGE */
+.account-page {
+  padding: 1.5rem;
+  max-width: 720px;
+}
+
+.account-title {
+  margin: 0 0 0.3rem;
+  font-size: 1.4rem;
+}
+
+.account-subtitle {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.account-card {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(246, 232, 217, 0.15);
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+}
+
+.account-details {
+  margin: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.account-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.account-row dt {
+  opacity: 0.7;
+}
+
+.account-row dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  align-items: center;
+}
+
+.account-signout-btn {
+  background: transparent;
+  border: 1px solid rgba(246, 232, 217, 0.4);
+  color: #f6e8d9;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.account-signout-btn:hover {
+  background: rgba(193, 18, 31, 0.3);
+}
+
+/* ALERT CENTER (real subscriptions) */
+.alerts-signed-out {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(246, 232, 217, 0.15);
+  border-radius: 12px;
+  padding: 1.4rem;
+  max-width: 640px;
+}
+
+.alerts-signed-out h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.1rem;
+}
+
+.alerts-signed-out p {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.alerts-signed-out-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.alerts-signed-out-actions a {
+  text-decoration: none;
+}
+
+.alerts-form-card {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(246, 232, 217, 0.15);
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+}
+
+.alerts-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 1rem;
+}
+
+.alerts-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.8rem 0 0.4rem;
+  font-size: 0.75rem;
+  opacity: 0.9;
+}
+
+.alerts-preset-btn {
+  background: transparent;
+  border: 1px solid rgba(246, 232, 217, 0.35);
+  color: #f6e8d9;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.alerts-preset-btn:hover {
+  background: rgba(246, 232, 217, 0.1);
+}
+
+.alert-status-btn {
+  cursor: pointer;
+  border: none;
+  font: inherit;
+}
+
+.alert-status-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.alerts-row-paused td {
+  opacity: 0.6;
+}
+
+.alerts-delete-btn {
+  background: transparent;
+  border: 1px solid rgba(249, 115, 115, 0.5);
+  color: #fecaca;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.alerts-delete-btn:hover {
+  background: rgba(193, 18, 31, 0.3);
+}
+
+.alerts-delete-btn:disabled,
+.alerts-modal-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .alerts-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .account-row {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+}

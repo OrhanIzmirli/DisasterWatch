@@ -62,7 +62,10 @@ const SignUpPage = ({ onSignedIn }: Props) => {
     <div className="auth-page">
       <div className="auth-card">
         <h1 className="auth-title">Sign up</h1>
-        <p className="auth-subtitle">Create an account to access the operator console.</p>
+        <p className="auth-subtitle">
+          Create a free account to save alert subscriptions for places you care
+          about and get notified when a matching disaster is detected.
+        </p>
 
         <form className="auth-form" onSubmit={submit}>
           <div className="form-field">

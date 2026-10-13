@@ -1,10 +1,18 @@
 import { Router } from "express";
 import { publishDisasterEvent } from "../services/kafkaProducer.js";
+import { requireAuth } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
-// POST /events -> publishes the request body to Kafka
-router.post("/", async (req, res) => {
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+  next();
+}
+
+// POST /events -> publishes the request body to Kafka (admin only)
+router.post("/", requireAuth, requireAdmin, async (req, res) => {
   try {
     const event = req.body;
 
