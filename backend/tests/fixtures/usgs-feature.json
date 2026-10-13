@@ -1,0 +1,40 @@
+{
+  "type": "Feature",
+  "properties": {
+    "mag": 6,
+    "place": "126 km S of Kokopo, Papua New Guinea",
+    "time": 1791917103231,
+    "updated": 1791925814489,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u24c",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u24c.geojson",
+    "felt": 1,
+    "cdi": 3.4,
+    "mmi": 5.707,
+    "alert": "green",
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 554,
+    "net": "us",
+    "code": "6000u24c",
+    "ids": ",us6000u24c,",
+    "sources": ",us,",
+    "types": ",dyfi,ground-failure,losspager,moment-tensor,origin,phase-data,shakemap,",
+    "nst": 83,
+    "dmin": 1.284,
+    "rms": 0.7,
+    "gap": 34,
+    "magType": "mww",
+    "type": "earthquake",
+    "title": "M 6.0 - 126 km S of Kokopo, Papua New Guinea"
+  },
+  "geometry": {
+    "type": "Point",
+    "coordinates": [
+      152.1364,
+      -5.4832,
+      20.842
+    ]
+  },
+  "id": "us6000u24c"
+}

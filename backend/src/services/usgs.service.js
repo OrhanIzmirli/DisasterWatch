@@ -1,4 +1,6 @@
 // backend/src/services/usgs.service.js
+import { severityFromMag } from "../utils/severity.js";
+import { buildUsgsDetails } from "../utils/eventDetails.js";
 
 function toId(str) {
   let h = 0;
@@ -6,11 +8,9 @@ function toId(str) {
   return h;
 }
 
-function severityFromMag(mag) {
-  if (mag >= 6) return "high";
-  if (mag >= 5) return "medium";
-  return "low";
-}
+// Severity rules live in ../utils/severity.js (single source of truth);
+// re-exported so existing imports keep working.
+export { severityFromMag };
 
 export async function fetchUsgsEarthquakes() {
   // More stable + small enough: all_day
@@ -61,6 +61,8 @@ export function normalizeUsgsEarthquakes(features, { minMag = 4.5, limit = 300 }
         description: `Earthquake detected • Magnitude ${mag.toFixed(1)}`,
         lat,
         lng,
+        // Rich, source-faithful fields (new; everything above is unchanged)
+        details: buildUsgsDetails(f),
       };
     })
     .filter(Boolean);
