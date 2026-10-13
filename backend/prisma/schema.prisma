@@ -15,6 +15,7 @@ model User {
   role          String              @default("user")
   createdAt     DateTime            @default(now())
   subscriptions AlertSubscription[]
+  notifications Notification[]
 }
 
 /// A user's request to be alerted about disasters of a given type and
@@ -33,7 +34,49 @@ model AlertSubscription {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
 
+  notifications Notification[]
+
   @@index([userId])
+}
+
+/// Every disaster event the backend has seen from NASA, USGS or the admin
+/// console. eventId is the contract id ("nasa:EONET_1234"); inserting with
+/// ON CONFLICT DO NOTHING makes ingestion idempotent and tells us which
+/// events are genuinely new (only those are published to Kafka).
+model IngestedEvent {
+  id          Int      @id @default(autoincrement())
+  eventId     String   @unique
+  source      String
+  type        String
+  severity    String
+  title       String
+  lat         Float
+  lng         Float
+  occurredAt  DateTime
+  firstSeenAt DateTime @default(now())
+}
+
+/// An in-app notification produced by the notification-service when a
+/// published event matches one of the user's alert subscriptions.
+model Notification {
+  id             Int                @id @default(autoincrement())
+  userId         Int
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId Int?
+  subscription   AlertSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  eventId        String
+  title          String
+  type           String
+  severity       String
+  lat            Float
+  lng            Float
+  distanceKm     Float
+  occurredAt     DateTime
+  createdAt      DateTime           @default(now())
+  readAt         DateTime?
+
+  @@unique([userId, eventId])
+  @@index([userId, readAt])
 }
 
 model Disaster {
