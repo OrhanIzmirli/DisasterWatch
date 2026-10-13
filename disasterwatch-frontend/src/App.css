@@ -3479,3 +3479,9 @@ body {
     margin-top: 0.5rem;
   }
 }
+
+/* the dropdown floats over page content, so it must be opaque */
+.notif-panel {
+  background: #001523;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+}
