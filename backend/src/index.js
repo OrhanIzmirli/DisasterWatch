@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import app from "./app.js";
+import { newsService } from "./services/news.service.js";
 import { initProducer, producer } from "./services/kafkaProducer.js";
 
 // Hosting platforms provide PORT; docker-compose sets it to 5000
@@ -10,6 +11,11 @@ const PORT = Number(process.env.PORT) || 5000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Backend listening on port ${PORT}`);
 });
+
+// Background news refresh (GDELT every 15 minutes); requests only read its cache.
+if (process.env.NODE_ENV !== "test" && process.env.DISABLE_NEWS_JOB !== "1") {
+  newsService.start();
+}
 
 // Connect the Kafka producer in the background; a failure must not stop the server
 initProducer()
