@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuthUser } from "../App";
+import { formatDateTime } from "../utils/formatDate";
 
 type Severity = "high" | "medium" | "low";
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
@@ -19,6 +20,26 @@ type ManualDisaster = {
 
 type Props = {
   user: AuthUser | null;
+};
+
+// Same labels as the Alert center, so "flood" / "high" read as "Flood" / "High"
+const TYPE_LABELS: Record<string, string> = {
+  earthquake: "Earthquake",
+  flood: "Flood",
+  wildfire: "Wildfire",
+  storm: "Storm",
+};
+
+const SEVERITY_LABELS: Record<string, string> = {
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+const label = (map: Record<string, string>, value: string | null | undefined) => {
+  if (!value) return "-";
+  const key = value.toLowerCase();
+  return map[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
 };
 
 // Default value for the datetime-local input: now, in local time, minute precision
@@ -139,10 +160,10 @@ const AdminPage = ({ user }: Props) => {
   };
 
   return (
-    <div className="admin-page">
-      <div className="admin-header">
-        <h1 className="admin-title">Admin console</h1>
-        <p className="admin-subtitle">
+    <div className="page admin-page">
+      <header className="page-header">
+        <h1 className="page-title">Admin console</h1>
+        <p className="page-subtitle">
           Operator-only panel for creating manual disaster entries.
           {user && (
             <>
@@ -151,18 +172,11 @@ const AdminPage = ({ user }: Props) => {
             </>
           )}
         </p>
-      </div>
+      </header>
 
-      {!isAdmin ? (
-        <div className="admin-form-card">
-          <div className="admin-notice">
-            Bu panel sadece admin rolü için. Hesabınızın rolü:{" "}
-            <strong>{user?.role ?? "unknown"}</strong>.
-          </div>
-        </div>
-      ) : (
-        <div className="admin-form-card">
-          <div className="admin-form-title">Create disaster entry</div>
+      {isAdmin && (
+        <section className="card">
+          <div className="card-title">Create disaster entry</div>
 
           <form className="admin-form" onSubmit={submit}>
             <div className="form-field">
@@ -185,7 +199,7 @@ const AdminPage = ({ user }: Props) => {
               />
             </div>
 
-            <div className="admin-form-row">
+            <div className="form-row">
               <div className="form-field">
                 <label>Latitude *</label>
                 <input
@@ -268,24 +282,24 @@ const AdminPage = ({ user }: Props) => {
               />
             </div>
 
-            {error && <div className="auth-error">{error}</div>}
+            {error && <div className="form-error">{error}</div>}
             {success && <div className="form-success">{success}</div>}
 
             <div className="form-actions">
-              <button className="admin-submit-btn" type="submit" disabled={submitting}>
+              <button className="btn btn-primary" type="submit" disabled={submitting}>
                 {submitting ? "Saving…" : "Save entry"}
               </button>
             </div>
           </form>
-        </div>
+        </section>
       )}
 
-      <div className="admin-form-card">
-        <div className="admin-form-title">
+      <section className="card">
+        <div className="card-title">
           Recent manual entries
           <button
             type="button"
-            className="admin-refresh-btn"
+            className="btn btn-secondary btn-sm"
             onClick={loadManual}
             disabled={listLoading}
           >
@@ -293,15 +307,15 @@ const AdminPage = ({ user }: Props) => {
           </button>
         </div>
 
-        {listError && <div className="auth-error">{listError}</div>}
+        {listError && <div className="form-error">{listError}</div>}
 
         {!listError && items.length === 0 && !listLoading && (
-          <div className="admin-empty">No manual entries yet.</div>
+          <div className="muted">No manual entries yet.</div>
         )}
 
         {items.length > 0 && (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
+          <div className="table-wrap">
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -315,15 +329,15 @@ const AdminPage = ({ user }: Props) => {
               <tbody>
                 {items.map((d) => (
                   <tr key={d.id}>
-                    <td>{new Date(d.date).toLocaleString()}</td>
-                    <td>{d.type}</td>
+                    <td>{formatDateTime(d.date) ?? "-"}</td>
+                    <td>{label(TYPE_LABELS, d.type)}</td>
                     <td>
                       {d.title}
                       {d.description && (
-                        <div className="admin-table-desc">{d.description}</div>
+                        <div className="table-sub">{d.description}</div>
                       )}
                     </td>
-                    <td>{d.severity ?? "-"}</td>
+                    <td>{label(SEVERITY_LABELS, d.severity)}</td>
                     <td>
                       {d.lat.toFixed(3)}, {d.lng.toFixed(3)}
                     </td>
@@ -334,7 +348,7 @@ const AdminPage = ({ user }: Props) => {
             </table>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 };

@@ -264,7 +264,10 @@ Create two **Web Services** from this repository with the **Docker** runtime, ro
 | Variable | Backend | Notification | Example |
 |---|---|---|---|
 | `DATABASE_URL` | yes | | Neon connection string |
-| `JWT_SECRET` | yes | | a long random string |
+| `JWT_SECRET` | yes | | a long random string (32+ chars; production refuses to start otherwise) |
+| `ADMIN_EMAILS` | yes | | comma-separated e-mails that get the admin role, e.g. `owner@example.com,ops@example.com` |
+| `COOKIE_NAME` | optional | | session cookie name (default `dw_session`) |
+| `NODE_ENV` | yes | | `production` (enables the Secure cookie flag and the JWT secret check) |
 | `KAFKA_BROKER` | yes | yes | `kafka-xxxx.aivencloud.com:12345` (comma-separated for several brokers) |
 | `KAFKA_SASL_USERNAME` | yes | yes | `avnadmin` |
 | `KAFKA_SASL_PASSWORD` | yes | yes | from Aiven |
@@ -272,6 +275,8 @@ Create two **Web Services** from this repository with the **Docker** runtime, ro
 | `KAFKA_SSL_CA` | yes* | yes* | CA certificate (PEM); newlines may be written as `\n` |
 
 \* Not needed if `letsencrypt_sasl` is enabled on the Aiven service, since a public CA is used then.
+
+**Admin accounts:** roles are driven by `ADMIN_EMAILS`. An account whose e-mail is in the list gets the `admin` role at registration, and on every login the stored role is re-synced with the list (promoted if added, demoted if removed). There is no other way to become admin.
 
 Render provides `PORT` automatically; both services read it. Free Render web services sleep after inactivity, so the consumer only processes messages while the service is awake.
 

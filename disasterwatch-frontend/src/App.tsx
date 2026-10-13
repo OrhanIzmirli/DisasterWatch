@@ -24,22 +24,44 @@ export type AuthUser = {
   subscriptionCount?: number;
 };
 
-type ProtectedRouteProps = {
+type GuardProps = {
   user: AuthUser | null;
   authLoading: boolean;
   children: React.ReactNode;
 };
 
-function ProtectedRoute({ user, authLoading, children }: ProtectedRouteProps) {
+/** Any signed-in user. While the session check is in flight nothing is redirected. */
+function ProtectedRoute({ user, authLoading, children }: GuardProps) {
   const location = useLocation();
 
-  // Session check still in flight: don't redirect yet, show a brief placeholder
   if (authLoading) {
     return <div className="auth-loading">Checking session…</div>;
   }
 
   if (!user) {
     return <Navigate to="/signin" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
+/**
+ * Admins only. Signed-out users go to /signin, signed-in non-admins go home.
+ * Nothing of the admin UI is rendered for anyone else; the backend enforces
+ * the role on every admin endpoint regardless.
+ */
+function AdminRoute({ user, authLoading, children }: GuardProps) {
+  const location = useLocation();
+
+  if (authLoading) {
+    return <div className="auth-loading">Checking session…</div>;
+  }
+
+  if (!user) {
+    return <Navigate to="/signin" replace state={{ from: location.pathname }} />;
+  }
+
+  if (user.role !== "admin") {
+    return <Navigate to="/" replace />;
   }
   return <>{children}</>;
 }
@@ -105,6 +127,8 @@ export default function App() {
     }
   }, [navigate]);
 
+  const isAdmin = user?.role === "admin";
+
   const navClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? "nav-btn active" : "nav-btn";
 
@@ -129,9 +153,11 @@ export default function App() {
               Alerts
             </NavLink>
 
-            <NavLink to="/admin" className={navClass}>
-              Admin
-            </NavLink>
+            {isAdmin && (
+              <NavLink to="/admin" className={navClass}>
+                Admin
+              </NavLink>
+            )}
 
             {!user ? (
               <NavLink to="/signin" className={navClass}>
@@ -147,9 +173,7 @@ export default function App() {
                   title={user.email}
                 >
                   <span className="nav-user-email">{shortEmail(user.email)}</span>
-                  {user.role === "admin" && (
-                    <span className="nav-user-badge">Admin</span>
-                  )}
+                  {isAdmin && <span className="nav-user-badge">Admin</span>}
                 </NavLink>
                 <button type="button" className="nav-btn" onClick={signOut}>
                   Sign out
@@ -193,9 +217,9 @@ export default function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute user={user} authLoading={authLoading}>
+              <AdminRoute user={user} authLoading={authLoading}>
                 <AdminPage user={user} />
-              </ProtectedRoute>
+              </AdminRoute>
             }
           />
 

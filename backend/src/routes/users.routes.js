@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import prisma from "../prisma.js";
 import { signAccessToken } from "../utils/jwt.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
+import { roleForEmail } from "../utils/adminEmails.js";
 
 const router = express.Router();
 
@@ -37,7 +38,12 @@ const credentialsSchema = z.object({
 });
 
 function publicUser(user) {
-  return { email: user.email, role: user.role };
+  return {
+    email: user.email,
+    role: user.role,
+    createdAt: user.createdAt,
+    subscriptionCount: user._count?.subscriptions ?? 0,
+  };
 }
 
 function setSessionCookie(res, user) {
@@ -65,9 +71,8 @@ router.post("/register", authLimiter, async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // The very first account becomes the admin; everyone after that is a regular user.
-    const userCount = await prisma.user.count();
-    const role = userCount === 0 ? "admin" : "user";
+    // Role comes from the ADMIN_EMAILS env list; everyone else is a regular user.
+    const role = roleForEmail(email);
 
     const user = await prisma.user.create({
       data: { email, password: passwordHash, role },
@@ -103,12 +108,25 @@ router.post("/login", authLimiter, async (req, res) => {
   const { email, password } = parsed.data;
 
   try {
-    const user = await prisma.user.findUnique({ where: { email } });
+    let user = await prisma.user.findUnique({
+      where: { email },
+      include: { _count: { select: { subscriptions: true } } },
+    });
 
     // Same message whether the email or the password is wrong (no account enumeration)
     const passwordOk = user ? await bcrypt.compare(password, user.password) : false;
     if (!user || !passwordOk) {
       return res.status(401).json({ message: "Invalid email or password." });
+    }
+
+    // Keep the stored role in sync with ADMIN_EMAILS: promote if listed, demote if not.
+    const expectedRole = roleForEmail(user.email);
+    if (user.role !== expectedRole) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { role: expectedRole },
+        include: { _count: { select: { subscriptions: true } } },
+      });
     }
 
     setSessionCookie(res, user);

@@ -207,11 +207,11 @@ const AlertsPage = ({ user, authLoading }: Props) => {
   /* ---------- Signed-out view ---------- */
   if (!authLoading && !user) {
     return (
-      <div className="alerts-page">
-        <header className="alerts-header">
+      <div className="page alerts-page">
+        <header className="page-header page-header-row">
           <div>
-            <h1 className="alerts-title">Alert center</h1>
-            <p className="alerts-subtitle">
+            <h1 className="page-title">Alert center</h1>
+            <p className="page-subtitle">
               Get alerts for disasters near places you care about.
             </p>
           </div>
@@ -225,10 +225,10 @@ const AlertsPage = ({ user, authLoading }: Props) => {
             in-app when a matching event is detected.
           </p>
           <div className="alerts-signed-out-actions">
-            <Link to="/signin" state={{ from: "/alerts" }} className="alerts-add-btn">
+            <Link to="/signin" state={{ from: "/alerts" }} className="btn btn-primary">
               Sign in
             </Link>
-            <Link to="/signup" className="alerts-modal-btn alerts-modal-btn-secondary">
+            <Link to="/signup" className="btn btn-secondary">
               Create an account
             </Link>
           </div>
@@ -239,11 +239,11 @@ const AlertsPage = ({ user, authLoading }: Props) => {
 
   /* ---------- Signed-in view ---------- */
   return (
-    <div className="alerts-page">
-      <header className="alerts-header">
+    <div className="page alerts-page">
+      <header className="page-header page-header-row">
         <div>
-          <h1 className="alerts-title">Alert center</h1>
-          <p className="alerts-subtitle">
+          <h1 className="page-title">Alert center</h1>
+          <p className="page-subtitle">
             Your alert subscriptions: which hazards, how severe, and where.
           </p>
         </div>
@@ -251,7 +251,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
         {user && (
           <button
             type="button"
-            className="alerts-add-btn"
+            className={showForm ? "btn btn-secondary" : "btn btn-primary"}
             onClick={() => {
               setFormError(null);
               setShowForm((v) => !v);
@@ -265,8 +265,8 @@ const AlertsPage = ({ user, authLoading }: Props) => {
       {authLoading && <div className="auth-loading">Checking session…</div>}
 
       {showForm && (
-        <section className="alerts-form-card">
-          <div className="alerts-table-title">New alert</div>
+        <section className="card">
+          <div className="card-title">New alert</div>
 
           <form className="alerts-form" onSubmit={submit}>
             <div className="alerts-form-grid">
@@ -355,7 +355,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
                 <button
                   key={c.label}
                   type="button"
-                  className="alerts-preset-btn"
+                  className="btn btn-secondary btn-sm"
                   onClick={() => applyPreset(c)}
                 >
                   {c.label}
@@ -363,12 +363,12 @@ const AlertsPage = ({ user, authLoading }: Props) => {
               ))}
             </div>
 
-            {formError && <div className="auth-error">{formError}</div>}
+            {formError && <div className="form-error">{formError}</div>}
 
-            <div className="alerts-modal-actions">
+            <div className="form-actions-row">
               <button
                 type="button"
-                className="alerts-modal-btn alerts-modal-btn-secondary"
+                className="btn btn-secondary"
                 onClick={() => {
                   setShowForm(false);
                   setFormError(null);
@@ -376,7 +376,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
               >
                 Cancel
               </button>
-              <button type="submit" className="alerts-modal-btn" disabled={saving}>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
                 {saving ? "Saving…" : "Save alert"}
               </button>
             </div>
@@ -385,7 +385,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
       )}
 
       <section className="alerts-channels">
-        <article className="channel-card">
+        <article className="card card-compact channel-card">
           <h3>My subscriptions</h3>
           <ul>
             <li>
@@ -395,7 +395,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
           </ul>
         </article>
 
-        <article className="channel-card">
+        <article className="card card-compact channel-card">
           <h3>Delivery channels</h3>
           <ul>
             <li>In-app notifications (coming in next release)</li>
@@ -403,24 +403,25 @@ const AlertsPage = ({ user, authLoading }: Props) => {
         </article>
       </section>
 
-      <section className="alerts-table-wrapper">
-        <div className="alerts-table-title">Configured alerts</div>
+      <section className="card">
+        <div className="card-title">Configured alerts</div>
 
-        {listError && <div className="auth-error">{listError}</div>}
-        {rowError && <div className="auth-error">{rowError}</div>}
+        {listError && <div className="form-error">{listError}</div>}
+        {rowError && <div className="form-error">{rowError}</div>}
 
         {listLoading && items.length === 0 && (
-          <p className="alerts-footnote">Loading…</p>
+          <p className="muted">Loading…</p>
         )}
 
         {!listLoading && !listError && items.length === 0 && (
-          <p className="alerts-footnote">
+          <p className="muted">
             No alerts yet. Use “+ Add alert” to create your first one.
           </p>
         )}
 
         {items.length > 0 && (
-          <table className="alerts-table">
+          <div className="table-wrap">
+          <table className="data-table">
             <thead>
               <tr>
                 <th>Type</th>
@@ -438,7 +439,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
                   <td>{SEVERITY_LABELS[s.minSeverity] ?? s.minSeverity}</td>
                   <td>
                     {s.label}
-                    <div className="admin-table-desc">
+                    <div className="table-sub">
                       {s.centerLat.toFixed(3)}, {s.centerLng.toFixed(3)}
                     </div>
                   </td>
@@ -461,7 +462,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
                   <td>
                     <button
                       type="button"
-                      className="alerts-delete-btn"
+                      className="btn btn-danger btn-sm"
                       disabled={busyId === s.id}
                       onClick={() => remove(s)}
                     >
@@ -472,6 +473,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>
