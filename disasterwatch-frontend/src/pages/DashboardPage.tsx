@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import MapView from "../components/MapView";
+import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
+import { relativeTime } from "../utils/formatDate";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low";
@@ -14,6 +16,25 @@ type DisasterItem = {
   description: string;
   lat: number;
   lng: number;
+  /** Rich, source-faithful fields (present for live NASA/USGS items). */
+  details?: EventDetails;
+};
+
+/** Feed row title: clean title from the backend, else the raw location minus a trailing id. */
+const displayTitle = (item: DisasterItem) =>
+  item.details?.cleanTitle || item.location.replace(/\s+\d{4,}\s*$/, "");
+
+/** Feed row time: relative from occurredAt when available, else the backend's meta line. */
+const displayMeta = (item: DisasterItem) => {
+  const rel = item.details?.occurredAt ? relativeTime(item.details.occurredAt) : null;
+  if (!rel) return item.meta;
+  const extra =
+    item.type === "earthquake" && item.details?.magnitude != null
+      ? `M ${item.details.magnitude.toFixed(1)} · `
+      : item.details?.category
+      ? `${item.details.category} · `
+      : "";
+  return `${extra}${rel}`;
 };
 
 type TimelineEvent = {
@@ -781,6 +802,10 @@ const DashboardPage = () => {
             key={activeFilter}
             disasters={mapDisasters}
             highlightId={selectedDisaster?.id ?? null}
+            onSelect={(id) => {
+              const hit = disasters.find((d) => d.id === id);
+              if (hit) setSelectedDisaster(hit);
+            }}
           />
 
           {/* HORIZONTAL LEGEND */}
@@ -947,9 +972,9 @@ const DashboardPage = () => {
                       >
                         {getTypeLabel(item.type)}
                       </span>
-                      <span className="disaster-location">{item.location}</span>
+                      <span className="disaster-location">{displayTitle(item)}</span>
                     </div>
-                    <div className="disaster-meta">{item.meta}</div>
+                    <div className="disaster-meta">{displayMeta(item)}</div>
                   </div>
 
                   <span
@@ -1033,58 +1058,18 @@ const DashboardPage = () => {
         </section>
       </main>
 
-      {/* DETAIL DRAWER */}
+      {/* DETAIL DRAWER (shared by list rows and map markers) */}
       {selectedDisaster && (
-        <>
-          <div className="detail-overlay" onClick={() => setSelectedDisaster(null)} />
-          <aside className="detail-drawer">
-            <header className="detail-header">
-              <div className="detail-header-main">
-                <span
-                  className={
-                    "disaster-type-tag " +
-                    (selectedDisaster.type === "earthquake"
-                      ? "tag-earthquake"
-                      : selectedDisaster.type === "flood"
-                      ? "tag-flood"
-                      : selectedDisaster.type === "wildfire"
-                      ? "tag-wildfire"
-                      : "tag-storm")
-                  }
-                >
-                  {getTypeLabel(selectedDisaster.type)}
-                </span>
-                <h3 className="detail-title">{selectedDisaster.location}</h3>
-                <p className="detail-meta">{selectedDisaster.meta}</p>
-              </div>
-              <button type="button" className="detail-close-btn" onClick={() => setSelectedDisaster(null)}>
-                ✕
-              </button>
-            </header>
-
-            <div className="detail-body">
-              <p className="detail-description">{selectedDisaster.description}</p>
-
-              <div className="detail-footer">
-                <span
-                  className={
-                    "disaster-severity " +
-                    (selectedDisaster.severity === "high"
-                      ? "severity-high"
-                      : selectedDisaster.severity === "medium"
-                      ? "severity-medium"
-                      : "severity-low")
-                  }
-                >
-                  {getSeverityLabel(selectedDisaster.severity)}
-                </span>
-                <span className="detail-footnote">
-                  Live view • this panel can include links to external maps, emergency contacts and related news.
-                </span>
-              </div>
-            </div>
-          </aside>
-        </>
+        <EventDetailDrawer
+          event={selectedDisaster}
+          onClose={() => setSelectedDisaster(null)}
+          onZoomTo={() => {
+            // Re-trigger the map's flyTo for the same id by clearing and re-setting the selection
+            const current = selectedDisaster;
+            setSelectedDisaster(null);
+            window.setTimeout(() => setSelectedDisaster(current), 0);
+          }}
+        />
       )}
     </>
   );
