@@ -226,7 +226,7 @@ describe("news service cache and stale behaviour", () => {
   it("throws a meaningful error when nothing was ever cached", async () => {
     const svc = createNewsService({ gdelt: { searchArticles: async () => { throw new GdeltError("rate limit", "rate-limit", 429); } }, loadEvents: async () => EVENTS, log: quiet });
     await svc.refresh();
-    expect(() => svc.getNews()).toThrow(/News unavailable: rate limit/);
+    expect(() => svc.getNews()).toThrow(/News unavailable: all 4 GDELT searches failed \(last: rate limit\)/);
   });
 
   it("does not replace a good cache with an empty refresh", async () => {
