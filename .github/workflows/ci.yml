@@ -48,6 +48,27 @@ jobs:
 
       - run: npm test
 
+  notification-service-tests:
+    name: Notification service tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: notification-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: notification-service/package-lock.json
+
+      - run: npm ci
+
+      - run: npm test
+
   frontend-build:
     name: Frontend build
     runs-on: ubuntu-latest

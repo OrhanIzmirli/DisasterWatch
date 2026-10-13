@@ -112,6 +112,14 @@ describe("resolveTestDatabaseUrl (URL guard)", () => {
     ).toThrow(/not a valid/);
   });
 
+  it("the table list truncated before each file covers every model in the schema", () => {
+    const schema = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "prisma", "schema.prisma"), "utf8");
+    const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((m) => m[1]).sort();
+    const helpers = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "helpers.js"), "utf8");
+    const truncated = [...helpers.matchAll(/"(\w+)"/g)].map((m) => m[1]).filter((t) => models.includes(t)).sort();
+    expect(truncated).toEqual(models);
+  });
+
   it("the TEST_DATABASE_URL of this run is not the app database from backend/.env", () => {
     // setup.js overwrites DATABASE_URL in the worker with the test URL, so the
     // comparison here is made against backend/.env only (as the global setup
