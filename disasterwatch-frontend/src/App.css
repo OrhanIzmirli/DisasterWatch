@@ -3297,3 +3297,14 @@ body {
 .news-panel .news-content {
   background: transparent;
 }
+
+/* on phones the header wraps and grows, so a fixed 104px offset lands the
+   panel under the status bar: cover the viewport instead */
+@media (max-width: 900px) {
+  .news-panel {
+    top: 0;
+    height: 100vh;
+    width: 100%;
+    z-index: 1300;
+  }
+}
