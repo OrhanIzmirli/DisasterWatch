@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import type { AuthUser } from "../App";
 
 type Props = {
-  onSignedIn: (email: string) => void; // <-- IMPORTANT: email param
+  onSignedIn: (user: AuthUser) => void;
 };
 
 const SignInPage = ({ onSignedIn }: Props) => {
@@ -10,15 +11,16 @@ const SignInPage = ({ onSignedIn }: Props) => {
   const location = useLocation();
 
   const from = useMemo(() => {
-    const s = location.state as any;
+    const s = location.state as { from?: string } | null;
     return s?.from || "/admin";
   }, [location.state]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -27,16 +29,36 @@ const SignInPage = ({ onSignedIn }: Props) => {
       return;
     }
 
-    // Demo login
-    onSignedIn(email.trim()); // <-- send email
-    navigate(from, { replace: true });
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/users/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setError(data?.message || "Sign in failed.");
+        return;
+      }
+
+      onSignedIn(data.user);
+      navigate(from, { replace: true });
+    } catch {
+      setError("Could not reach the server. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="auth-page">
       <div className="auth-card">
         <h1 className="auth-title">Sign in</h1>
-        <p className="auth-subtitle">Demo authentication for front-end evaluation.</p>
+        <p className="auth-subtitle">Sign in to access the operator console.</p>
 
         <form className="auth-form" onSubmit={submit}>
           <div className="form-field">
@@ -46,6 +68,7 @@ const SignInPage = ({ onSignedIn }: Props) => {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@example.com"
               autoComplete="email"
+              type="email"
             />
           </div>
 
@@ -62,8 +85,8 @@ const SignInPage = ({ onSignedIn }: Props) => {
 
           {error && <div className="auth-error">{error}</div>}
 
-          <button className="auth-btn" type="submit">
-            Sign in
+          <button className="auth-btn" type="submit" disabled={submitting}>
+            {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
 

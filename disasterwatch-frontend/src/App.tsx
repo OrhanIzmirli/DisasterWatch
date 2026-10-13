@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
@@ -9,17 +9,26 @@ import SignInPage from "./pages/SignInPage";
 import SignUpPage from "./pages/SignUpPage";
 import NewsPanel from "./components/NewsPanel";
 
-const TOKEN_KEY = "dw_token";
+export type AuthUser = {
+  email: string;
+  role: string;
+};
 
-const getToken = () => localStorage.getItem(TOKEN_KEY);
-const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
-const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+type ProtectedRouteProps = {
+  user: AuthUser | null;
+  authLoading: boolean;
+  children: React.ReactNode;
+};
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ user, authLoading, children }: ProtectedRouteProps) {
   const location = useLocation();
-  const isAuthed = Boolean(getToken());
 
-  if (!isAuthed) {
+  // Session check still in flight: don't redirect yet, show a brief placeholder
+  if (authLoading) {
+    return <div className="auth-loading">Checking session…</div>;
+  }
+
+  if (!user) {
     return <Navigate to="/signin" replace state={{ from: location.pathname }} />;
   }
   return <>{children}</>;
@@ -27,19 +36,54 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const [isNewsOpen, setIsNewsOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  const isAuthed = useMemo(() => Boolean(getToken()), [refreshKey]);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  const onSignedIn = () => {
-    setToken("demo-token");
-    setRefreshKey((k) => k + 1);
-  };
+  // Real session check against the backend on mount (httpOnly cookie)
+  useEffect(() => {
+    let cancelled = false;
 
-  const signOut = () => {
-    clearToken();
-    setRefreshKey((k) => k + 1);
-  };
+    (async () => {
+      try {
+        const res = await fetch("/api/users/me", { credentials: "include" });
+        if (!res.ok) {
+          if (!cancelled) setUser(null);
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled) setUser(data?.user ?? null);
+      } catch {
+        if (!cancelled) setUser(null);
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onSignedIn = useCallback((signedInUser: AuthUser) => {
+    setUser(signedInUser);
+    setAuthLoading(false);
+  }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await fetch("/api/users/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Even if the request fails, drop the local session state
+    } finally {
+      setUser(null);
+    }
+  }, []);
+
+  const isAuthed = Boolean(user);
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? "nav-btn active" : "nav-btn";
@@ -113,14 +157,14 @@ export default function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute>
-                <AdminPage />
+              <ProtectedRoute user={user} authLoading={authLoading}>
+                <AdminPage user={user} />
               </ProtectedRoute>
             }
           />
 
           <Route path="/signin" element={<SignInPage onSignedIn={onSignedIn} />} />
-          <Route path="/signup" element={<SignUpPage />} />
+          <Route path="/signup" element={<SignUpPage onSignedIn={onSignedIn} />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
