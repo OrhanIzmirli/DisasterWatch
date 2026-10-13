@@ -2232,3 +2232,83 @@ body {
     max-height: 600px;
   }
 }
+
+/* AUTH / ADMIN (real auth) */
+.auth-loading {
+  padding: 2rem 1.5rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.admin-notice {
+  font-size: 0.85rem;
+  color: #fde68a;
+  background: rgba(180, 83, 9, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+
+.admin-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.admin-form-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.admin-refresh-btn {
+  background: transparent;
+  border: 1px solid rgba(246, 232, 217, 0.4);
+  color: #f6e8d9;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.admin-refresh-btn:disabled,
+.admin-submit-btn:disabled,
+.auth-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.admin-empty {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(246, 232, 217, 0.15);
+  vertical-align: top;
+}
+
+.admin-table th {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.admin-table-desc {
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  opacity: 0.7;
+}

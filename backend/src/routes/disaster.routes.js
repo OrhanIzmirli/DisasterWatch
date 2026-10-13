@@ -157,15 +157,38 @@ router.get("/nasa", async (req, res) => {
 router.use(requireAuth);
 
 /* ===========================
-   CREATE DISASTER
+   MANUAL DISASTERS (DB)
+   Admin-entered records, separate from the public NASA+USGS feed
+=========================== */
+router.get("/manual", async (req, res) => {
+  try {
+    const items = await prisma.disaster.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    res.json({ items, count: items.length, source: "DB" });
+  } catch (err) {
+    console.error("LIST MANUAL DISASTERS ERROR:", err?.message || err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===========================
+   CREATE DISASTER (admin only)
 =========================== */
 router.post("/", async (req, res) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ message: "Admin access required" });
+  }
+
   const schema = z.object({
-    type: z.string(),
-    title: z.string(),
-    lat: z.number(),
-    lng: z.number(),
-    date: z.string(),
+    type: z.string().trim().min(1),
+    title: z.string().trim().min(1),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    date: z.string().min(1),
+    severity: z.string().trim().optional(),
+    description: z.string().trim().optional(),
   });
 
   const parsed = schema.safeParse(req.body);
@@ -173,14 +196,25 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ message: "Invalid input" });
   }
 
-  const disaster = await prisma.disaster.create({
-    data: {
-      ...parsed.data,
-      date: new Date(parsed.data.date),
-    },
-  });
+  const date = new Date(parsed.data.date);
+  if (Number.isNaN(date.getTime())) {
+    return res.status(400).json({ message: "Invalid date" });
+  }
 
-  res.status(201).json(disaster);
+  try {
+    const disaster = await prisma.disaster.create({
+      data: {
+        ...parsed.data,
+        date,
+        createdBy: req.user.email ?? null,
+      },
+    });
+
+    res.status(201).json({ message: "Disaster created", disaster });
+  } catch (err) {
+    console.error("CREATE DISASTER ERROR:", err?.message || err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 export default router;

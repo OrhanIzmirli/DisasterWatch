@@ -17,13 +17,15 @@ model User {
 }
 
 model Disaster {
-  id        Int      @id @default(autoincrement())
-  type      String
-  title     String
-  severity  String?
-  magnitude Float?
-  lat       Float
-  lng       Float
-  date      DateTime
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  type        String
+  title       String
+  severity    String?
+  magnitude   Float?
+  lat         Float
+  lng         Float
+  date        DateTime
+  description String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
 }

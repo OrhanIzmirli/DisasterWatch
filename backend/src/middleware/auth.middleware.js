@@ -2,7 +2,7 @@ import { verifyAccessToken } from "../utils/jwt.js";
 
 export function requireAuth(req, res, next) {
   try {
-    const token = req.cookies?.[process.env.COOKIE_NAME];
+    const token = req.cookies?.[process.env.COOKIE_NAME || "dw_session"];
 
     if (!token) {
       return res.status(401).json({ message: "Not authenticated" });

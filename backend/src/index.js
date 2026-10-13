@@ -1,15 +1,19 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 
 import eventsRoutes from "./routes/events.routes.js";
 import disasterRoutes from "./routes/disaster.routes.js";
 import newsRoutes from "./routes/news.routes.js";
+import usersRoutes from "./routes/users.routes.js";
 
 import { initProducer, producer } from "./services/kafkaProducer.js";
 
 const app = express();
 
 app.use(cors());
+app.use(cookieParser());
 app.use(express.json());
 
 app.get("/", (req, res) => {
@@ -28,6 +32,9 @@ app.use("/disasters", disasterRoutes);
 
 // News API (frontend /api/news -> backend /news)
 app.use("/news", newsRoutes);
+
+// Auth / users API (frontend /api/users -> backend /users)
+app.use("/users", usersRoutes);
 
 // Hosting platforms provide PORT; docker-compose sets it to 5000
 const PORT = Number(process.env.PORT) || 5000;
