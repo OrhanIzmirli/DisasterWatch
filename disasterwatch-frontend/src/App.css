@@ -2909,3 +2909,9 @@ body {
 .table-wrap .data-table {
   min-width: 560px;
 }
+
+/* separator between a value and its action link, e.g. "2 subscriptions · Manage" */
+.dd-sep {
+  margin: 0 0.45rem;
+  color: var(--dw-text-muted);
+}

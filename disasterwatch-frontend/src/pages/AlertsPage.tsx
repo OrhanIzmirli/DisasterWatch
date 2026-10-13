@@ -251,7 +251,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
         {user && (
           <button
             type="button"
-            className="btn btn-primary"
+            className={showForm ? "btn btn-secondary" : "btn btn-primary"}
             onClick={() => {
               setFormError(null);
               setShowForm((v) => !v);

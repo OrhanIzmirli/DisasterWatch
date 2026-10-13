@@ -1,22 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AuthUser } from "../App";
+import { formatDate } from "../utils/formatDate";
 
 type Props = {
   user: AuthUser | null;
   onSignOut: () => void;
 };
-
-function formatDate(iso?: string) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
 
 const AccountPage = ({ user, onSignOut }: Props) => {
   // Start from the session user, then refresh from the server so the
@@ -84,9 +74,12 @@ const AccountPage = ({ user, onSignOut }: Props) => {
           <div className="account-row">
             <dt>Alert subscriptions</dt>
             <dd>
-              {subscriptionCount ?? pending}{" "}
+              {subscriptionCount === undefined
+                ? pending
+                : `${subscriptionCount} ${subscriptionCount === 1 ? "subscription" : "subscriptions"}`}
+              <span className="dd-sep">·</span>
               <Link to="/alerts" className="text-link">
-                Manage in Alert center
+                Manage
               </Link>
             </dd>
           </div>

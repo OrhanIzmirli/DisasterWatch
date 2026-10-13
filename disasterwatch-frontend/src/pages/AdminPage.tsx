@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuthUser } from "../App";
+import { formatDateTime } from "../utils/formatDate";
 
 type Severity = "high" | "medium" | "low";
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
@@ -19,6 +20,26 @@ type ManualDisaster = {
 
 type Props = {
   user: AuthUser | null;
+};
+
+// Same labels as the Alert center, so "flood" / "high" read as "Flood" / "High"
+const TYPE_LABELS: Record<string, string> = {
+  earthquake: "Earthquake",
+  flood: "Flood",
+  wildfire: "Wildfire",
+  storm: "Storm",
+};
+
+const SEVERITY_LABELS: Record<string, string> = {
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+const label = (map: Record<string, string>, value: string | null | undefined) => {
+  if (!value) return "-";
+  const key = value.toLowerCase();
+  return map[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
 };
 
 // Default value for the datetime-local input: now, in local time, minute precision
@@ -308,15 +329,15 @@ const AdminPage = ({ user }: Props) => {
               <tbody>
                 {items.map((d) => (
                   <tr key={d.id}>
-                    <td>{new Date(d.date).toLocaleString()}</td>
-                    <td>{d.type}</td>
+                    <td>{formatDateTime(d.date) ?? "-"}</td>
+                    <td>{label(TYPE_LABELS, d.type)}</td>
                     <td>
                       {d.title}
                       {d.description && (
                         <div className="table-sub">{d.description}</div>
                       )}
                     </td>
-                    <td>{d.severity ?? "-"}</td>
+                    <td>{label(SEVERITY_LABELS, d.severity)}</td>
                     <td>
                       {d.lat.toFixed(3)}, {d.lng.toFixed(3)}
                     </td>
