@@ -16,6 +16,7 @@ import AccountPage from "./pages/AccountPage";
 import SignInPage from "./pages/SignInPage";
 import SignUpPage from "./pages/SignUpPage";
 import NewsPanel from "./components/NewsPanel";
+import StatusBar from "./components/StatusBar";
 
 export type AuthUser = {
   email: string;
@@ -192,18 +193,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* GLOBAL STATUS BAR */}
-      <div className="status-bar">
-        <div className="status-left">
-          <span className="status-dot" />
-          <span>
-            <strong>System status:</strong> Operational
-          </span>
-          <span>•</span>
-          <span>Uptime: 0 min</span>
-        </div>
-        <div className="status-right">API latency: ~120 ms · News API: OK</div>
-      </div>
+      {/* GLOBAL STATUS BAR (measured, not hard-coded) */}
+      <StatusBar />
 
       <div className="page-content">
         <Routes>

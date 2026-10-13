@@ -1,51 +1,82 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-type ApiHealth = "OK" | "Degraded";
+type NewsState = "OK" | "Stale" | "Unavailable" | "…";
+type SystemState = "Operational" | "Degraded" | "Checking";
 
-const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+type Status = {
+  system: SystemState;
+  latencyMs: number | null;
+  news: NewsState;
+};
 
+const POLL_MS = 30_000;
+
+/**
+ * Real values only: the backend latency is measured client-side against
+ * /api/health, the news state comes from /api/news (OK / Stale /
+ * Unavailable). When the backend cannot be reached the system shows Degraded.
+ */
 const StatusBar = () => {
-  const [latency, setLatency] = useState(120);
-  const [newsApi, setNewsApi] = useState<ApiHealth>("OK");
-
-  const startedAt = useMemo(() => Date.now(), []);
+  const [status, setStatus] = useState<Status>({ system: "Checking", latencyMs: null, news: "…" });
 
   useEffect(() => {
-    const tick = () => {
-      // Vary latency slightly so the value looks live
-      const jitter = Math.round((Math.random() - 0.5) * 30);
-      setLatency((prev) => clamp(prev + jitter, 70, 240));
+    let cancelled = false;
 
-      // Occasionally show the News API as degraded
-      const roll = Math.random();
-      setNewsApi(roll < 0.12 ? "Degraded" : "OK");
+    const check = async () => {
+      let system: SystemState = "Operational";
+      let latencyMs: number | null = null;
+      let news: NewsState = "Unavailable";
+
+      try {
+        const t0 = performance.now();
+        const res = await fetch("/api/health", { cache: "no-store", headers: { Accept: "application/json" } });
+        latencyMs = Math.round(performance.now() - t0);
+        if (!res.ok) system = "Degraded";
+      } catch {
+        system = "Degraded";
+      }
+
+      if (system === "Operational") {
+        try {
+          const res = await fetch("/api/news?limit=1", { headers: { Accept: "application/json" } });
+          if (res.ok) {
+            const data = await res.json().catch(() => null);
+            news = data?.stale ? "Stale" : "OK";
+          } else {
+            news = "Unavailable";
+          }
+        } catch {
+          news = "Unavailable";
+        }
+      }
+
+      if (!cancelled) setStatus({ system, latencyMs, news });
     };
 
-    tick();
-    const id = setInterval(tick, 5000);
-    return () => clearInterval(id);
+    check();
+    const timer = window.setInterval(check, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
-  const uptimeMinutes = Math.floor((Date.now() - startedAt) / 60000);
+  const dotClass =
+    status.system === "Operational" ? "status-dot" : status.system === "Degraded" ? "status-dot status-dot-bad" : "status-dot status-dot-idle";
+
+  const newsClass = status.news === "OK" ? "status-ok" : status.news === "Stale" ? "status-warn" : status.news === "…" ? "" : "status-bad";
 
   return (
-    <div className="statusbar">
-      <div className="statusbar-left">
-        <span className="status-dot status-dot-green" />
-        <span className="status-label">System status: Operational</span>
-        <span className="status-sep">•</span>
-        <span className="status-muted">Uptime: {uptimeMinutes} min</span>
-      </div>
-
-      <div className="statusbar-right">
-        <span className="status-muted">API latency: ~{latency} ms</span>
-        <span className="status-sep">•</span>
-        <span className="status-muted">
-          News API:{" "}
-          <span className={newsApi === "OK" ? "status-ok" : "status-warn"}>
-            {newsApi}
-          </span>
+    <div className="status-bar">
+      <div className="status-left">
+        <span className={dotClass} />
+        <span>
+          <strong>System status:</strong> {status.system}
         </span>
+      </div>
+      <div className="status-right">
+        API latency: {status.latencyMs === null ? "…" : `${status.latencyMs} ms`} · News:{" "}
+        <span className={newsClass}>{status.news}</span>
       </div>
     </div>
   );

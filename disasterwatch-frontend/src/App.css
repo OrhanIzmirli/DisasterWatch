@@ -3103,3 +3103,197 @@ body {
 .edd .btn-secondary:hover {
   background: rgba(0, 48, 73, 0.16);
 }
+
+/* ===== NEWS PANEL (overhaul) ===== */
+.news-updated {
+  margin: 0.15rem 0 0;
+  font-size: 0.74rem;
+  color: var(--dw-text-muted);
+}
+
+.news-updated-stale {
+  color: #fde68a;
+}
+
+.news-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.6rem 0 0.2rem;
+}
+
+.news-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.news-card {
+  display: flex;
+  gap: 0.7rem;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(102, 155, 188, 0.35);
+  border-radius: 0.8rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.news-card-image {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  flex: none;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.news-card-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.news-card-meta {
+  font-size: 0.72rem;
+  color: var(--dw-text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.news-card-domain {
+  color: var(--dw-cream);
+  font-weight: 600;
+}
+
+.news-card-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.news-card-title a {
+  color: var(--dw-text);
+  text-decoration: none;
+}
+
+.news-card-title a:hover {
+  text-decoration: underline;
+}
+
+.news-card-event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.news-event-tag {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border: 1px solid rgba(246, 232, 217, 0.4);
+  color: var(--dw-cream);
+}
+
+.news-event-tag-high { border-color: rgba(248, 113, 113, 0.8); color: #fecaca; }
+.news-event-tag-medium { border-color: rgba(251, 191, 36, 0.8); color: #fde68a; }
+.news-event-tag-low { border-color: rgba(110, 231, 183, 0.8); color: #a7f3d0; }
+
+.news-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.4rem 0;
+}
+
+.news-stale-banner {
+  margin-bottom: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.6rem;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  color: #fde68a;
+  font-size: 0.78rem;
+}
+
+.news-card-skeleton {
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.news-skel {
+  height: 0.7rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.15), rgba(148, 163, 184, 0.35), rgba(148, 163, 184, 0.15));
+  background-size: 200% 100%;
+  animation: news-shimmer 1.2s linear infinite;
+}
+
+.news-skel-meta { width: 40%; }
+.news-skel-title { width: 95%; height: 0.9rem; }
+.news-skel-title.short { width: 70%; }
+
+@keyframes news-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* related news inside the event drawer */
+.edd-news {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+}
+
+/* status bar states */
+.status-dot-bad {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+}
+
+.status-dot-idle {
+  background: #9ca3af;
+  box-shadow: none;
+}
+
+.status-ok { color: #86efac; }
+.status-warn { color: #fde68a; }
+.status-bad { color: #fca5a5; }
+
+/* news panel surface: dark like the rest of the UI system so the shared
+   .btn / .card colours stay readable (the old panel was cream) */
+.news-panel {
+  background: #001523;
+  color: var(--dw-text);
+  border-left: 1px solid rgba(102, 155, 188, 0.6);
+}
+
+.news-panel .news-header {
+  background: transparent;
+  border-bottom: 1px solid rgba(102, 155, 188, 0.35);
+}
+
+.news-panel .news-header h2 {
+  color: var(--dw-cream);
+}
+
+.news-panel .news-close-btn {
+  color: var(--dw-text-muted);
+}
+
+.news-panel .news-close-btn:hover {
+  color: var(--dw-cream);
+}
+
+.news-panel .news-content {
+  background: transparent;
+}

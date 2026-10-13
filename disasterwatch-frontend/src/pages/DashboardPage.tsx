@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import MapView from "../components/MapView";
+import RelatedNews from "../components/RelatedNews";
 import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
 import { relativeTime } from "../utils/formatDate";
 
@@ -399,6 +401,22 @@ const DashboardPage = () => {
   );
   const [minutesSinceRefresh, setMinutesSinceRefresh] = useState(0);
   const [page, setPage] = useState(1);
+
+  // Deep link from the news panel: /?event=<feed id> selects that event
+  // (the existing highlight -> flyTo mechanism does the rest), then the
+  // parameter is removed so a refresh does not re-select it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const raw = searchParams.get("event");
+    if (!raw) return;
+    const id = Number(raw);
+    const hit = disasters.find((d) => d.id === id);
+    if (!hit) return; // feed not loaded yet (or unknown id): keep waiting
+    setSelectedDisaster(hit);
+    const next = new URLSearchParams(searchParams);
+    next.delete("event");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, disasters, setSearchParams]);
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -1062,6 +1080,7 @@ const DashboardPage = () => {
       {selectedDisaster && (
         <EventDetailDrawer
           event={selectedDisaster}
+          relatedNews={<RelatedNews eventId={selectedDisaster.id} />}
           onClose={() => setSelectedDisaster(null)}
           onZoomTo={() => {
             // Re-trigger the map's flyTo for the same id by clearing and re-setting the selection
