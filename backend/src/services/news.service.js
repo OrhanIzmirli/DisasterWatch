@@ -88,6 +88,7 @@ export function createNewsService({
 
         const linked = [];
         let failures = 0;
+        let lastFailure = null;
         for (const ev of top) {
           try {
             const articles = await findArticlesForEvent(
@@ -101,7 +102,8 @@ export function createNewsService({
             for (const a of articles) linked.push({ ...a, relatedEvent: relatedEventOf(ev) });
           } catch (err) {
             failures += 1;
-            log.warn(`[news] event search failed (${ev.type} ${ev.location}): ${err?.message || err}`);
+            lastFailure = err?.message || String(err);
+            log.warn(`[news] event search failed (${ev.type} ${ev.location}): ${lastFailure}`);
           }
         }
 
@@ -111,7 +113,8 @@ export function createNewsService({
           general = raw.map(normalizeArticle).filter(Boolean).map((a) => ({ ...a, relatedEvent: null }));
         } catch (err) {
           failures += 1;
-          log.warn(`[news] general search failed: ${err?.message || err}`);
+          lastFailure = err?.message || String(err);
+          log.warn(`[news] general search failed: ${lastFailure}`);
         }
 
         const items = dedupeArticles([...linked, ...general]);
@@ -121,7 +124,9 @@ export function createNewsService({
         // everywhere) must not wipe a good cache.
         if (items.length === 0) {
           throw new Error(
-            failures === attempted ? `all ${attempted} GDELT searches failed` : "GDELT returned no articles"
+            failures === attempted
+              ? `all ${attempted} GDELT searches failed (last: ${lastFailure})`
+              : "GDELT returned no articles"
           );
         }
 

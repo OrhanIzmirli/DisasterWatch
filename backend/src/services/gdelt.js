@@ -27,11 +27,11 @@ export class GdeltError extends Error {
 /** Serialises calls and enforces the minimum gap between them. */
 export function createThrottle({ minGapMs = MIN_GAP_MS, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   let chain = Promise.resolve();
-  let lastStart = 0;
+  let lastStart = null; // no request yet: the first one never waits
 
   return function throttled(fn) {
     const run = async () => {
-      const wait = lastStart + minGapMs - now();
+      const wait = lastStart === null ? 0 : lastStart + minGapMs - now();
       if (wait > 0) await sleep(wait);
       lastStart = now();
       return fn();
