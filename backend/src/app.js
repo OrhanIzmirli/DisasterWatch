@@ -7,6 +7,7 @@ import disasterRoutes from "./routes/disaster.routes.js";
 import newsRoutes from "./routes/news.routes.js";
 import { createUsersRouter } from "./routes/users.routes.js";
 import alertsRoutes from "./routes/alerts.routes.js";
+import notificationsRoutes from "./routes/notifications.routes.js";
 import { producerStatus } from "./services/kafkaProducer.js";
 
 /**
@@ -56,6 +57,9 @@ export function createApp(options = {}) {
 
   // Alert subscriptions (frontend /api/alerts -> backend /alerts)
   app.use("/alerts", alertsRoutes);
+
+  // In-app notifications (frontend /api/notifications -> backend /notifications)
+  app.use("/notifications", notificationsRoutes);
 
   return app;
 }
