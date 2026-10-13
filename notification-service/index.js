@@ -1,5 +1,8 @@
 import http from "node:http";
 import { Kafka } from "kafkajs";
+import { TOPIC } from "./src/contract.js";
+import { createPool, loadActiveSubscriptions, insertNotifications } from "./src/db.js";
+import { createMessageHandler } from "./src/handler.js";
 
 const broker =
   process.env.KAFKA_BROKER ||
@@ -47,7 +50,31 @@ const kafka = new Kafka({
 
 const consumer = kafka.consumer({ groupId: "disaster-group" });
 
+// ---- state surfaced on /health ----
 let kafkaConnected = false;
+let dbStatus = "connecting";
+const stats = {
+  processed: 0, // messages that passed validation and were matched
+  invalid: 0, // messages skipped because they violate the contract
+  notificationsCreated: 0,
+  lastProcessedAt: null,
+  lastEventId: null,
+  lastError: null,
+};
+
+// ---- database + handler ----
+const pool = createPool();
+
+pool.on("error", (err) => {
+  dbStatus = "error";
+  stats.lastError = err?.message || String(err);
+  console.error("[db] pool error:", err?.message || err);
+});
+
+const handleMessage = createMessageHandler({
+  loadSubscriptions: () => loadActiveSubscriptions(pool),
+  insertNotifications: (rows) => insertNotifications(pool, rows),
+});
 
 // Minimal HTTP server so hosting platforms can health-check the service.
 const PORT = Number(process.env.PORT) || 3000;
@@ -60,6 +87,13 @@ const server = http.createServer((req, res) => {
         ok: true,
         service: "notification-service",
         kafka: kafkaConnected ? "connected" : "connecting",
+        db: dbStatus,
+        processedCount: stats.processed,
+        invalidCount: stats.invalid,
+        notificationsCreated: stats.notificationsCreated,
+        lastProcessedAt: stats.lastProcessedAt,
+        lastEventId: stats.lastEventId,
+        lastError: stats.lastError,
         time: new Date().toISOString(),
       })
     );
@@ -75,11 +109,22 @@ server.listen(PORT, () => {
 
 async function start() {
   if (kafkaConfigError) throw new Error(kafkaConfigError);
+
+  try {
+    await pool.query("SELECT 1");
+    dbStatus = "connected";
+    console.log("Database connection OK");
+  } catch (err) {
+    dbStatus = "error";
+    stats.lastError = err?.message || String(err);
+    console.error("Database connection failed (will retry per message):", err?.message || err);
+  }
+
   await consumer.connect();
-  await consumer.subscribe({ topic: "disaster-events", fromBeginning: true });
+  await consumer.subscribe({ topic: TOPIC, fromBeginning: true });
   kafkaConnected = true;
 
-  console.log("Notification service listening on topic: disaster-events");
+  console.log(`Notification service listening on topic: ${TOPIC}`);
   console.log(
     `Connected to Kafka broker(s) (${useSasl ? "SASL_SSL" : "plaintext"}):`,
     brokers.join(", ")
@@ -88,7 +133,25 @@ async function start() {
   await consumer.run({
     eachMessage: async ({ message }) => {
       const value = message.value?.toString() ?? "";
-      console.log("EVENT RECEIVED:", value);
+      try {
+        const result = await handleMessage(value);
+        if (result.status === "invalid") {
+          stats.invalid += 1;
+          return;
+        }
+        stats.processed += 1;
+        stats.notificationsCreated += result.inserted;
+        stats.lastProcessedAt = new Date().toISOString();
+        stats.lastEventId = result.eventId;
+        dbStatus = "connected";
+      } catch (err) {
+        // Database (or other infrastructure) failure: rethrow so KafkaJS
+        // retries the message instead of silently dropping it.
+        stats.lastError = err?.message || String(err);
+        dbStatus = "error";
+        console.error("[consumer] processing failed, will retry:", err?.message || err);
+        throw err;
+      }
     },
   });
 }
@@ -102,6 +165,9 @@ async function shutdown() {
   server.close();
   try {
     await consumer.disconnect();
+  } catch {}
+  try {
+    await pool.end();
   } catch {}
   process.exit(0);
 }
