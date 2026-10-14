@@ -9,7 +9,27 @@
  * feed immediately and only re-fetches when it is older than FEED_FRESH_MS.
  */
 
-export type CachedFeed<T> = { items: T[]; fetchedAt: number };
+/**
+ * Per-source status reported by the backend: "ok" (answered), "stale" (down,
+ * but its recent data is still served) or "error" (down, items dropped).
+ */
+export type FeedSourceStatus = "ok" | "stale" | "error";
+export type FeedSources = { nasa: FeedSourceStatus; usgs: FeedSourceStatus };
+/** ISO time of the data served per source (null when that source contributed nothing). */
+export type FeedSourcesUpdatedAt = { nasa: string | null; usgs: string | null };
+
+export type CachedFeed<T> = {
+  items: T[];
+  /** When the browser received it (drives the re-fetch decision only). */
+  fetchedAt: number;
+  /** When the data was fetched from the sources, as reported by the backend (ISO); drives every "ago" label. */
+  updatedAt: string | null;
+  /** The backend served older data because both sources failed. */
+  stale: boolean;
+  /** Which source answered; null when the backend did not say. */
+  sources: FeedSources | null;
+  sourcesUpdatedAt: FeedSourcesUpdatedAt | null;
+};
 
 export const FEED_FRESH_MS = 2 * 60_000;
 
@@ -19,16 +39,20 @@ export function getCachedFeed<T>(): CachedFeed<T> | null {
   return cached as CachedFeed<T> | null;
 }
 
-export function setCachedFeed<T>(items: T[], fetchedAt = Date.now()) {
-  cached = { items, fetchedAt };
+export function setCachedFeed<T>(
+  items: T[],
+  {
+    stale = false,
+    sources = null as FeedSources | null,
+    sourcesUpdatedAt = null as FeedSourcesUpdatedAt | null,
+    updatedAt = null as string | null,
+    fetchedAt = Date.now(),
+  } = {}
+) {
+  cached = { items, fetchedAt, updatedAt, stale, sources, sourcesUpdatedAt };
 }
 
 /** True when the cache exists and is younger than FEED_FRESH_MS. */
 export function isFeedFresh(now = Date.now()) {
   return cached !== null && now - cached.fetchedAt < FEED_FRESH_MS;
-}
-
-/** Minutes since the cached feed was fetched (0 without a cache). */
-export function cachedFeedAgeMinutes(now = Date.now()) {
-  return cached ? Math.floor((now - cached.fetchedAt) / 60_000) : 0;
 }

@@ -2,6 +2,7 @@
 import { severityFromMag } from "../utils/severity.js";
 import { buildUsgsDetails } from "../utils/eventDetails.js";
 import { formatMagnitude } from "../utils/magnitude.js";
+import { countryFromPlace } from "../utils/country.js";
 
 function toId(str) {
   let h = 0;
@@ -50,7 +51,7 @@ export function normalizeUsgsEarthquakes(features, { minMag = 4.5, limit = 300 }
       if (!Number.isFinite(time)) return null;
 
       const timeMinutesAgo = Math.max(0, Math.floor((Date.now() - time) / 60000));
-      const severity = severityFromMag(mag); // threshold on the raw value
+      const severity = severityFromMag(mag); // threshold on the rounded value (see utils/severity.js)
       const magLabel = formatMagnitude(mag); // one rounding rule for every displayed magnitude
 
       return {
@@ -63,6 +64,8 @@ export function normalizeUsgsEarthquakes(features, { minMag = 4.5, limit = 300 }
         description: `Earthquake detected • Magnitude ${magLabel}`,
         lat,
         lng,
+        // Country from the USGS place string only (null for oceans/ridges)
+        country: countryFromPlace(place),
         // Rich, source-faithful fields (new; everything above is unchanged)
         details: buildUsgsDetails(f),
       };

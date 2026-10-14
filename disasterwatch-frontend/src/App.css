@@ -3245,6 +3245,91 @@ body {
   font-size: 0.78rem;
 }
 
+/* ===== FEED STATES (no demo data: skeleton / stale / error / empty) ===== */
+.badge-stale {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+}
+
+.feed-stale-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.6rem;
+  /* sits on the cream feed panel: dark amber text, not the header badge's light yellow */
+  background: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.55);
+  color: #78350f;
+  font-size: 0.78rem;
+}
+
+/* one source failed on the backend: the feed is live but incomplete */
+.feed-partial-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.6rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.6rem;
+  background: rgba(180, 83, 9, 0.08);
+  border: 1px dashed rgba(180, 83, 9, 0.55);
+  color: #7c3f06;
+  font-size: 0.76rem;
+}
+
+.feed-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.6rem 0.2rem;
+  font-size: 0.85rem;
+}
+
+/* the feed sits on the cream panel: dark text, not the dark-theme error colours */
+.feed-state-text {
+  margin: 0;
+  color: #7f1d1d;
+  font-weight: 600;
+}
+
+.feed-state .muted {
+  color: #4b5563;
+  margin: 0;
+}
+
+.disaster-row-skeleton {
+  cursor: default;
+  pointer-events: none;
+}
+
+.disaster-row-skeleton .disaster-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.timeline-empty {
+  margin: 0.3rem 0 0.6rem;
+  font-size: 0.82rem;
+}
+
 /* provider attribution on each card and the Guardian licence logo */
 .news-card-provider {
   color: var(--dw-text-muted);
