@@ -7,6 +7,9 @@ import disasterRoutes from "./routes/disaster.routes.js";
 import newsRoutes from "./routes/news.routes.js";
 import { createUsersRouter } from "./routes/users.routes.js";
 import alertsRoutes from "./routes/alerts.routes.js";
+import notificationsRoutes from "./routes/notifications.routes.js";
+import { producerStatus } from "./services/kafkaProducer.js";
+import { countPendingOutbox } from "./jobs/ingest.js";
 
 /**
  * Build the Express app without starting a server or touching Kafka,
@@ -32,8 +35,21 @@ export function createApp(options = {}) {
     res.send("DisasterWatch Backend is running");
   });
 
-  app.get("/health", (req, res) => {
-    res.json({ ok: true, service: "backend", time: new Date().toISOString() });
+  app.get("/health", async (req, res) => {
+    // Events recorded but not yet published to Kafka (null when the DB is unreachable)
+    let outboxPending = null;
+    try {
+      outboxPending = await countPendingOutbox();
+    } catch {
+      outboxPending = null;
+    }
+    res.json({
+      ok: true,
+      service: "backend",
+      kafka: producerStatus(),
+      outboxPending,
+      time: new Date().toISOString(),
+    });
   });
 
   // Kafka publish test endpoint
@@ -50,6 +66,9 @@ export function createApp(options = {}) {
 
   // Alert subscriptions (frontend /api/alerts -> backend /alerts)
   app.use("/alerts", alertsRoutes);
+
+  // In-app notifications (frontend /api/notifications -> backend /notifications)
+  app.use("/notifications", notificationsRoutes);
 
   return app;
 }

@@ -187,6 +187,68 @@ In-app modal showing disaster-related news.
 `GET /news` is served from a cache that a background job refreshes every 15 minutes (`src/services/news.service.js`). Each refresh picks the ~10 most important feed events (high severity first, then newest), cleans their location text (`"Flood in Nepal 1104225"` -> `Nepal`, `"53 km S of Kushiro, Japan"` -> `Kushiro Japan`, in `src/services/newsLinking.js`) and runs one targeted, English-only, last-72-hours GDELT search per event plus one general disaster search. Articles are deduplicated by URL and near-identical title and linked to their event, which powers the "Show on map" button in the news panel and the "Related news" section of the event drawer.
 
 GDELT allows one request every 5 seconds and answers violations with HTTP 429 and a plain-text body; the client (`src/services/gdelt.js`) throttles requests, times them out (`GDELT_TIMEOUT_MS`) and treats 429 / non-JSON as failures. A failed refresh keeps the previous articles and marks the response `stale: true`; with no cache at all the endpoint answers 503 and the panel shows a retry button. Response shape: `{ items: [{ title, url, domain, publishedAt, image, relatedEvent }], count, updatedAt, stale }`, filterable with `?type=` and `?event=`.
+---
+## Event-Driven Notification Pipeline
+
+```
+NASA EONET ──┐                                   ┌─> AlertSubscription rules
+             ├─> backend ingestion job (5 min) ──┤   (type, min severity, radius)
+USGS ────────┘   IngestedEvent (ON CONFLICT      │
+                 DO NOTHING) -> only NEW events  ▼
+                 ──publish──> Kafka topic ──> notification-service ──> Notification table
+                              disaster-events    (consumer, pg)          │
+Admin POST /events ──validate contract──┘                                ▼
+                                                     backend GET /notifications ──> header bell
+```
+
+1. **Ingestion (backend, `src/jobs/ingest.js`)** runs at start-up and every 5 minutes: fetches NASA EONET and USGS (M ≥ 4.5), maps them to the event contract and inserts into `IngestedEvent` with `ON CONFLICT DO NOTHING` (`publishedAt = NULL`). It then drains the **outbox**: unpublished rows, oldest first, up to 500 per run, are published and marked `publishedAt`. The public `GET /disasters` feed is a separate path and is not affected.
+2. **Kafka topic `disaster-events`** carries one JSON message per event (contract below).
+3. **notification-service** validates each message, loads active `AlertSubscription` rows and creates a `Notification` when the rule matches (type is `any` or equal, event severity ≥ `minSeverity`, haversine distance ≤ `radiusKm`), the event is at most 48 h old and the subscription was created before the event. Inserts are `ON CONFLICT (userId, eventId) DO NOTHING`; invalid messages are logged and skipped, database errors make Kafka redeliver the message.
+4. **Backend API** `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` (all scoped to the signed-in user) feed the **bell in the header**, which polls every 60 s.
+
+Admin entries from `POST /disasters` are stored but **not** published yet; a verification step for manual entries comes in a later release. Admins can publish a test event with `POST /events`.
+
+### Event contract (v1)
+
+Defined in `backend/src/events/contract.js` and `notification-service/src/contract.js` (kept identical; both validate with zod).
+
+| Field | Type | Notes |
+|---|---|---|
+| `v` | `1` | contract version |
+| `eventId` | string | stable id from the source: `nasa:EONET_1234`, `usgs:us7000abcd`, `manual:42` |
+| `source` | `nasa` \| `usgs` \| `manual` | |
+| `type` | string | lower-case hazard type: `earthquake`, `flood`, `wildfire`, `storm` |
+| `severity` | `low` \| `medium` \| `high` | |
+| `title` | string | 1–200 chars |
+| `lat`, `lng` | number | WGS84 |
+| `occurredAt` | string | ISO-8601 with timezone |
+
+```json
+{ "v": 1, "eventId": "usgs:us7000abcd", "source": "usgs", "type": "earthquake",
+  "severity": "high", "title": "M6.1 earthquake, 12 km E of Izmit, Turkey",
+  "lat": 40.77, "lng": 30.0, "occurredAt": "2026-10-13T23:40:00.000Z" }
+```
+
+### Known limitations
+
+- **Render free tier sleeps** after ~15 minutes without traffic. While the backend sleeps no ingestion runs and nothing is published; while the notification service sleeps nothing is consumed. Both catch up when they wake: Kafka keeps the messages, so the consumer resumes from its committed offset.
+- **Aiven free Kafka powers off** after a period without traffic and has to be started from the Aiven console. The backend keeps serving the public feed without Kafka; events recorded meanwhile wait in the outbox and are published once the broker is back (see Reliability).
+- Notifications are **in-app only**; there is no e-mail, SMS or push channel.
+- Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
+
+### Reliability
+
+- **Transactional outbox (producer).** Recording an event and publishing it are separate steps. `IngestedEvent.publishedAt` stays `NULL` until Kafka has accepted the message; a failed send (broker asleep, timeout) leaves the rows untouched and the next run retries them, so no event is lost. `GET /health` reports the number of rows still waiting as `outboxPending`.
+- **Idempotent consumer.** Notifications are inserted with `ON CONFLICT (userId, eventId) DO NOTHING`, so a message delivered twice (a retried publish, a Kafka redelivery after a consumer error) produces exactly one notification.
+- Together: **at-least-once delivery, at most one notification per user and event.**
+
+### Future work
+
+- The "subscription must predate the event" rule compares against `occurredAt`; for long-running EONET events (a wildfire first seen days after it started) it should compare against the time the event entered the system (`firstSeenAt` / the Kafka message time) so such events can still notify.
+- Pre-filter subscriptions in SQL with a bounding box around the event before the haversine check, instead of loading every active subscription per message.
+- Clean up the 6 ESLint errors and 1 warning in the frontend (`any` in `api/client.ts` and `api/config.ts`, setState-in-effect in `RelatedNews`/`NewsPanel`, a non-component export in `NewsPanel`) and add `npm run lint` to CI.
+
+---
 
 ## Tech Stack
 - **Frontend:** React, TypeScript, Vite, Leaflet  
@@ -271,7 +333,7 @@ Create two **Web Services** from this repository with the **Docker** runtime, ro
 
 | Variable | Backend | Notification | Example |
 |---|---|---|---|
-| `DATABASE_URL` | yes | | Neon connection string |
+| `DATABASE_URL` | yes | yes | Neon connection string (pooler host). The notification service reads subscriptions and writes notifications with it |
 | `JWT_SECRET` | yes | | a long random string (32+ chars; production refuses to start otherwise) |
 | `ADMIN_EMAILS` | yes | | comma-separated e-mails that get the admin role, e.g. `owner@example.com,ops@example.com` |
 | `COOKIE_NAME` | optional | | session cookie name (default `dw_session`) |
@@ -313,7 +375,7 @@ The frontend calls relative `/api/...` paths, so the first rule plays the role o
 ### Future Improvements
 
 - WebSocket live broadcasting (real-time UI updates)
-- Severity-based notification pipeline (Email/SMS/Push)
+- E-mail / SMS / push delivery channels (in-app notifications exist today)
 - Persist alert rules in DB
 - Observability: metrics + tracing (Prometheus/Grafana)
 - Multi-region cloud deployment hardening

@@ -1,8 +1,17 @@
-﻿{
+{
   "name": "notification-service",
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "kafkajs": "^2.2.4"
+    "kafkajs": "^2.2.4",
+    "pg": "^8.13.0",
+    "zod": "^4.2.1"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.4"
   }
 }

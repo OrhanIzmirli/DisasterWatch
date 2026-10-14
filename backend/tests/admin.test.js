@@ -46,9 +46,10 @@ describe("POST /disasters (manual entry)", () => {
     expect(await prisma.disaster.count()).toBe(0);
   });
 
-  it("returns 201 for an admin and stores the row with createdBy", async () => {
+  it("returns 201 for an admin, stores the row with createdBy and does not publish to Kafka", async () => {
     const res = await admin.post("/disasters").send(DISASTER);
     expect(res.status).toBe(201);
+    expect(publishDisasterEvent).not.toHaveBeenCalled(); // manual entries get a verification step first
     expect(res.body.disaster).toMatchObject({
       type: "flood",
       title: "Test flood",
@@ -93,7 +94,17 @@ describe("GET /disasters/manual", () => {
 });
 
 describe("POST /events (Kafka publish)", () => {
-  const EVENT = { type: "earthquake", title: "Test quake", lat: 1, lng: 2 };
+  const EVENT = {
+    v: 1,
+    eventId: "manual:test-1",
+    source: "manual",
+    type: "earthquake",
+    severity: "high",
+    title: "Test quake",
+    lat: 1,
+    lng: 2,
+    occurredAt: "2026-10-13T10:00:00.000Z",
+  };
 
   it("returns 401 without a session and does not publish", async () => {
     const res = await request(app).post("/events").send(EVENT);
@@ -120,6 +131,28 @@ describe("POST /events (Kafka publish)", () => {
     const res = await admin.post("/events").send({});
     expect(res.status).toBe(400);
     expect(publishDisasterEvent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing version", { ...EVENT, v: undefined }, /v/],
+    ["wrong version", { ...EVENT, v: 2 }, /v/],
+    ["eventId without source prefix", { ...EVENT, eventId: "test-1" }, /eventId/],
+    ["unknown source", { ...EVENT, source: "twitter" }, /source/],
+    ["unknown severity", { ...EVENT, severity: "catastrophic" }, /severity/],
+    ["latitude out of range", { ...EVENT, lat: 91 }, /lat/],
+    ["occurredAt not ISO", { ...EVENT, occurredAt: "yesterday" }, /occurredAt/],
+    ["empty title", { ...EVENT, title: "  " }, /title/],
+  ])("returns 400 for %s and does not publish", async (_name, body, field) => {
+    const res = await admin.post("/events").send(body);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(field);
+    expect(publishDisasterEvent).not.toHaveBeenCalled();
+  });
+
+  it("normalises the type to lower case before publishing", async () => {
+    const res = await admin.post("/events").send({ ...EVENT, type: "Earthquake" });
+    expect(res.status).toBe(200);
+    expect(publishDisasterEvent).toHaveBeenCalledWith({ ...EVENT, type: "earthquake" });
   });
 
   it("returns 500 when publishing fails", async () => {

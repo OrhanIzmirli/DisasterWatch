@@ -17,6 +17,7 @@ import SignInPage from "./pages/SignInPage";
 import SignUpPage from "./pages/SignUpPage";
 import NewsPanel from "./components/NewsPanel";
 import StatusBar from "./components/StatusBar";
+import NotificationBell from "./components/NotificationBell";
 
 export type AuthUser = {
   email: string;
@@ -166,6 +167,7 @@ export default function App() {
               </NavLink>
             ) : (
               <>
+                <NotificationBell />
                 <NavLink
                   to="/account"
                   className={({ isActive }) =>
