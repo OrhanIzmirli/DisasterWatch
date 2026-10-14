@@ -119,19 +119,42 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
     const target = disasters.find((d) => d.id === highlightId);
     if (!target) return;
 
-    const fly = () => map.flyTo([target.lat, target.lng], 4.5, { duration: 0.7 });
+    // The resize listener lives only while a flight is pending or running:
+    // it is removed at the flight's moveend (or 2 s after take-off at the
+    // latest), otherwise a later manual pan followed by a window resize would
+    // snap the map back to the event.
     let timer: number | null = null;
+    let armed = false; // resize listener attached
+    let guard: number | null = null; // hard stop for the listener
+    const disarm = () => {
+      if (!armed) return;
+      armed = false;
+      map.off("resize", onResize);
+      map.off("moveend", disarm);
+      if (guard !== null) window.clearTimeout(guard);
+      guard = null;
+    };
+    const fly = () => {
+      timer = null;
+      map.flyTo([target.lat, target.lng], 4.5, { duration: 0.7 });
+      map.once("moveend", disarm);
+      if (guard !== null) window.clearTimeout(guard);
+      guard = window.setTimeout(disarm, 2000);
+    };
     const schedule = (delay: number) => {
       if (timer !== null) window.clearTimeout(timer);
       timer = window.setTimeout(fly, delay);
     };
-    const onResize = () => schedule(80);
+    function onResize() {
+      schedule(80);
+    }
 
-    schedule(Date.now() - mountedAt.current < 1000 ? 120 : 0);
+    armed = true;
     map.on("resize", onResize);
+    schedule(Date.now() - mountedAt.current < 1000 ? 120 : 0);
     return () => {
       if (timer !== null) window.clearTimeout(timer);
-      map.off("resize", onResize);
+      disarm();
     };
   }, [highlightId, disasters, map]);
 
