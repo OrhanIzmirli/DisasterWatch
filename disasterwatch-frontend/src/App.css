@@ -3269,10 +3269,27 @@ body {
   margin: 0 0 0.6rem;
   padding: 0.5rem 0.7rem;
   border-radius: 0.6rem;
-  background: rgba(251, 191, 36, 0.12);
-  border: 1px solid rgba(251, 191, 36, 0.5);
-  color: #fde68a;
+  /* sits on the cream feed panel: dark amber text, not the header badge's light yellow */
+  background: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.55);
+  color: #78350f;
   font-size: 0.78rem;
+}
+
+/* one source failed on the backend: the feed is live but incomplete */
+.feed-partial-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.6rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.6rem;
+  background: rgba(180, 83, 9, 0.08);
+  border: 1px dashed rgba(180, 83, 9, 0.55);
+  color: #7c3f06;
+  font-size: 0.76rem;
 }
 
 .feed-state {

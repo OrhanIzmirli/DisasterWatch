@@ -5,7 +5,7 @@ import RelatedNews from "../components/RelatedNews";
 import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
-import { cachedFeedAgeMinutes, getCachedFeed, isFeedFresh, setCachedFeed } from "../services/feedCache";
+import { cachedFeedAgeMinutes, getCachedFeed, isFeedFresh, setCachedFeed, type FeedSources } from "../services/feedCache";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low";
@@ -46,6 +46,14 @@ const displayMeta = (item: DisasterItem) => {
         : null
       : item.details?.category ?? getTypeLabel(item.type);
   return [lead, rel].filter(Boolean).join(" · ");
+};
+
+/** Narrows the backend's `sources` field; anything unexpected counts as "not reported". */
+const readSources = (raw: unknown): FeedSources | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const ok = (v: unknown): v is "ok" | "error" => v === "ok" || v === "error";
+  return ok(r.nasa) && ok(r.usgs) ? { nasa: r.nasa, usgs: r.usgs } : null;
 };
 
 type TimelineEvent = {
@@ -143,7 +151,9 @@ const DashboardPage = () => {
   // list is empty and the skeleton is shown until the backend answers. Never demo rows.
   const [disasters, setDisasters] = useState<DisasterItem[]>(() => getCachedFeed<DisasterItem>()?.items ?? []);
   const [feedStatus, setFeedStatus] = useState<FeedStatus>(() => (getCachedFeed() ? "ready" : "loading"));
-  const [feedStale, setFeedStale] = useState(false);
+  const [feedStale, setFeedStale] = useState(() => getCachedFeed()?.stale ?? false);
+  // Per-source status from the backend; a feed with one source in error is "partial"
+  const [feedSources, setFeedSources] = useState<FeedSources | null>(() => getCachedFeed()?.sources ?? null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<"all" | DisasterType>("all");
   const [search, setSearch] = useState("");
@@ -188,6 +198,8 @@ const DashboardPage = () => {
   /* =========================
      FETCH – Backend (NASA EONET + USGS merged)
      - success: real items only (an empty feed stays empty)
+     - partial: one source failed on the backend; its items are missing and a
+       note says which source is unavailable (the rest is live)
      - failure: the previous real feed (if any) with a stale warning, else an
        explicit error state with "Try again"; demo rows are never shown
   ========================= */
@@ -201,9 +213,12 @@ const DashboardPage = () => {
       if (!res.ok) throw new Error(data?.message || `Feed request failed (${res.status})`);
       const items: DisasterItem[] = Array.isArray(data?.items) ? data.items : [];
       if (signal?.aborted) return;
-      setCachedFeed(items);
+      const stale = Boolean(data?.stale);
+      const sources = readSources(data?.sources);
+      setCachedFeed(items, { stale, sources });
       setDisasters(items);
-      setFeedStale(Boolean(data?.stale));
+      setFeedStale(stale);
+      setFeedSources(sources);
       setMinutesSinceRefresh(0);
       setFeedStatus("ready");
     } catch (e) {
@@ -214,6 +229,7 @@ const DashboardPage = () => {
         // keep the last real data on screen, flagged as stale
         setDisasters(cached.items);
         setFeedStale(true);
+        setFeedSources(cached.sources);
         setFeedStatus("ready");
       } else {
         setDisasters([]);
@@ -349,12 +365,22 @@ const DashboardPage = () => {
 
   // same wording as every other relative time in the UI ("5 minutes ago")
   const hasData = feedStatus === "ready" && disasters.length > 0;
+  // Source that failed on the backend while the other answered (null when both answered or both failed)
+  const unavailableSource: "nasa" | "usgs" | null =
+    feedStatus === "ready" && !feedStale && feedSources
+      ? feedSources.nasa === "error" && feedSources.usgs === "ok"
+        ? "nasa"
+        : feedSources.usgs === "error" && feedSources.nasa === "ok"
+          ? "usgs"
+          : null
+      : null;
+  const sourcesLabel = unavailableSource === "nasa" ? "USGS only, NASA unavailable" : unavailableSource === "usgs" ? "NASA only, USGS unavailable" : "NASA + USGS";
   const updatedLabel =
     feedStatus === "loading"
       ? "Loading live data (NASA + USGS)…"
       : feedStatus === "error"
         ? "Live data unavailable"
-        : `Last updated: ${relativeTime(new Date(Date.now() - minutesSinceRefresh * 60_000)) ?? "just now"} (NASA + USGS${feedStale ? ", last successful fetch" : " live data"})`;
+        : `Last updated: ${relativeTime(new Date(Date.now() - minutesSinceRefresh * 60_000)) ?? "just now"} (${sourcesLabel}${feedStale ? ", last successful fetch" : ", live data"})`;
   // KPI numbers only exist for real data
   const kpi = (n: number) => (hasData ? n : "—");
 
@@ -448,7 +474,7 @@ const DashboardPage = () => {
         <div className="kpi-card">
           <span className="kpi-label">Disasters</span>
           <span className="kpi-value">{kpi(totalDisasters)}</span>
-          <span className="kpi-footnote">NASA + USGS</span>
+          <span className="kpi-footnote">{unavailableSource === "nasa" ? "USGS only" : unavailableSource === "usgs" ? "NASA only" : "NASA + USGS"}</span>
         </div>
 
         <div className="kpi-card">
@@ -632,6 +658,17 @@ const DashboardPage = () => {
           {feedStale && feedStatus === "ready" && (
             <div className="feed-stale-banner" role="status">
               Live sources could not be reached; showing the last successful update ({updatedLabel.replace(/^Last updated: /, "").replace(/ \(.*$/, "")}).
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => loadFeed()}>
+                Try again
+              </button>
+            </div>
+          )}
+
+          {unavailableSource && (
+            <div className="feed-partial-note" role="status">
+              {unavailableSource === "nasa"
+                ? "NASA EONET unavailable: wildfires, storms and floods are missing from this update."
+                : "USGS unavailable: earthquakes are missing from this update."}
               <button type="button" className="btn btn-primary btn-sm" onClick={() => loadFeed()}>
                 Try again
               </button>

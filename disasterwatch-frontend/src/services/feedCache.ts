@@ -9,7 +9,17 @@
  * feed immediately and only re-fetches when it is older than FEED_FRESH_MS.
  */
 
-export type CachedFeed<T> = { items: T[]; fetchedAt: number };
+/** Per-source status reported by the backend ("ok" | "error"). */
+export type FeedSources = { nasa: "ok" | "error"; usgs: "ok" | "error" };
+
+export type CachedFeed<T> = {
+  items: T[];
+  fetchedAt: number;
+  /** The backend served older data because both sources failed. */
+  stale: boolean;
+  /** Which source answered; null when the backend did not say. */
+  sources: FeedSources | null;
+};
 
 export const FEED_FRESH_MS = 2 * 60_000;
 
@@ -19,8 +29,8 @@ export function getCachedFeed<T>(): CachedFeed<T> | null {
   return cached as CachedFeed<T> | null;
 }
 
-export function setCachedFeed<T>(items: T[], fetchedAt = Date.now()) {
-  cached = { items, fetchedAt };
+export function setCachedFeed<T>(items: T[], { stale = false, sources = null as FeedSources | null, fetchedAt = Date.now() } = {}) {
+  cached = { items, fetchedAt, stale, sources };
 }
 
 /** True when the cache exists and is younger than FEED_FRESH_MS. */
