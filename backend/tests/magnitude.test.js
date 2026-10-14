@@ -48,13 +48,15 @@ describe("formatMagnitude: one rounding rule, half-up on the decimal value (like
   });
 });
 
-describe("every surface shows the same magnitude", () => {
+describe("every surface shows the same magnitude and the rating follows the displayed value", () => {
   it.each([
-    // raw, label, severity decided on the RAW value
+    // raw, label, severity decided on the ROUNDED (displayed) value
     [6.05, "6.1", "high"],
-    [5.95, "6.0", "medium"], // displays as 6.0 but 5.95 < 6.0, so it stays medium
-    [4.45, "4.5", "low"], // displays as 4.5 but 4.45 < 5.0, so it stays low
-    [4.95, "5.0", "low"],
+    [5.95, "6.0", "high"], // shown as 6.0, so rated high ("High: magnitude 6.0 (≥ 6.0)")
+    [5.949, "5.9", "medium"], // rounds down, stays medium
+    [4.95, "5.0", "medium"], // shown as 5.0, so rated medium
+    [4.949, "4.9", "low"],
+    [4.45, "4.5", "low"],
     [5.0, "5.0", "medium"],
     [6.0, "6.0", "high"],
   ])("raw %s -> label %s, severity %s", (raw, label, severity) => {

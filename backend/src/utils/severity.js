@@ -12,7 +12,7 @@
  *   anything else: low
  */
 
-import { formatMagnitude } from "./magnitude.js";
+import { formatMagnitude, roundMagnitude } from "./magnitude.js";
 
 export const EARTHQUAKE_HIGH_MAG = 6.0;
 export const EARTHQUAKE_MEDIUM_MAG = 5.0;
@@ -23,9 +23,9 @@ const FIXED_BY_TYPE = {
   flood: ["medium", "Medium: floods are always rated medium"],
 };
 
-// Displayed numbers use the shared magnitude formatter so the explanation
-// shows exactly what the title, feed row and tooltip show. The comparisons
-// below stay on the raw value.
+// The rating and the explanation both work from the ROUNDED magnitude (the
+// one every surface displays, see magnitude.js): a quake shown as "M 6.0"
+// is rated high, never "medium (5.0–5.9)". Raw 5.95 -> 6.0 -> high.
 const fmt = formatMagnitude;
 
 /**
@@ -34,9 +34,9 @@ const fmt = formatMagnitude;
  */
 export function assessSeverity({ type, magnitude = null }) {
   if (type === "earthquake") {
-    // null / undefined / "" mean "not reported" (Number(null) would be 0)
-    const mag = magnitude === null || magnitude === undefined || magnitude === "" ? NaN : Number(magnitude);
-    if (!Number.isFinite(mag)) {
+    // null / undefined / "" / non-numeric mean "not reported"
+    const mag = roundMagnitude(magnitude);
+    if (mag === null) {
       return { severity: "low", reason: "Low: magnitude not reported by source" };
     }
     if (mag >= EARTHQUAKE_HIGH_MAG) {
