@@ -190,6 +190,8 @@ In-app modal showing disaster-related news.
 
 **Providers and failover** (`src/services/newsProviders/`). GDELT DOC 2.0 is the primary provider; The Guardian Open Platform is the fallback and is only enabled when `GUARDIAN_API_KEY` is set (without it the service runs on GDELT plus the database cache). A refresh runs the same plan on GDELT first and, only if that produced nothing (rate limit, timeouts, backoff), on The Guardian. The provider that served the cache sets the next refresh interval: GDELT 15 minutes, The Guardian 30 minutes (<= 4 requests per refresh, so <= 200 of the developer key's 500 requests/day). Every card says which provider it came from (`via GDELT` / `via The Guardian`) and the response carries `source` and `provider`.
 
+**Relevance.** Guardian searches are restricted to regular articles (`type=article`, so no live blogs, galleries or interactives; "– as it happened" titles and `/live/` URLs are dropped locally as well) and matched on the headline and standfirst only (`query-fields=headline,trailText`). General-search results from any provider are kept only when the headline or standfirst names a hazard (earthquake, flood, wildfire, bushfire, storm, hurricane, cyclone, typhoon, tsunami, eruption, landslide, ...). Article-event linking looks at the headline and the story slug only; section segments such as `/australia-news/live/` never link an article to a place.
+
 **Guardian licence** (developer key, non-commercial): headlines and links are passed through unchanged, Guardian cards never show an image, the "Powered by The Guardian" logo (linking to theguardian.com) is shown next to Guardian content, and Guardian rows are deleted from the cache 24 hours after they were fetched (`NewsCache.expiresAt`).
 
 **Backoff.** GDELT allows one request every 5 seconds and answers violations with HTTP 429 and a plain-text body; The Guardian allows 1 request/second and 500/day. Both clients space their requests and, after any failure, back off exponentially with jitter (`src/services/backoff.js`: 30 s, 60 s, ... up to 15 min, +/- 25 %); calls made inside the window fail at once with kind `backoff` and send nothing, so a 429 is never retried immediately.
@@ -260,7 +262,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 - Clean up the 6 ESLint errors and 1 warning in the frontend (`any` in `api/client.ts` and `api/config.ts`, setState-in-effect in `RelatedNews`/`NewsPanel`, a non-component export in `NewsPanel`) and add `npm run lint` to CI.
 - News: when the cache is empty and every provider failed, retry after a couple of minutes instead of waiting the full refresh interval (shorter cold start after a Render wake-up).
 - News: keep the first real provider error (the 429 or timeout) in `lastError` instead of the local backoff refusal that follows it, so `/health` and the 503 body explain the cause.
-- News: restrict Guardian searches to the headline and standfirst (`query-fields=headline,trailText`) so the general query stops matching articles that only mention a hazard word in the body, and ignore section-like URL segments (`/australia-news/`) when linking articles to events by URL path.
+- Wildfire severity is always rated high. EONET reports an area for some fires (for example 9,965 ha); when it is present the severity should be derived from the area instead.
 
 ---
 

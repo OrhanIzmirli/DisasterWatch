@@ -20,7 +20,7 @@
  *
  * Everything external is injectable for tests.
  */
-import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, MAX_EVENT_QUERIES } from "./newsLinking.js";
+import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, mentionsDisaster, MAX_EVENT_QUERIES } from "./newsLinking.js";
 import { createNewsProviders } from "./newsProviders/index.js";
 import { fetchNasaEvents } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
@@ -88,7 +88,8 @@ function withinEventWindow(article, ev) {
 }
 
 function attachEvent(article, ev) {
-  const { event, ...rest } = article;
+  // `summary` (the provider's standfirst) only serves the relevance check; it is neither cached nor served.
+  const { event, summary, ...rest } = article;
   const linked = ev && withinEventWindow(rest, ev) ? ev : null;
   return { ...rest, relatedEvent: linked ? relatedEventOf(linked) : null };
 }
@@ -121,7 +122,12 @@ async function runPlan(provider, plan, top, log) {
   requests += 1;
   try {
     const articles = await provider.searchGeneral({ maxRecords: GENERAL_LIMIT });
-    general = linkArticlesToEvents(articles, top, { requireHazard: true }).map((a) => attachEvent(a, a.event));
+    // The provider matched the query somewhere in the article; the headline or standfirst must name a hazard.
+    const relevant = articles.filter(mentionsDisaster);
+    if (relevant.length < articles.length) {
+      log.log(`[news] ${provider.label} general search: ${articles.length - relevant.length} of ${articles.length} articles dropped (no hazard word in headline/standfirst)`);
+    }
+    general = linkArticlesToEvents(relevant, top, { requireHazard: true }).map((a) => attachEvent(a, a.event));
   } catch (err) {
     failures += 1;
     lastFailure = err?.message || String(err);

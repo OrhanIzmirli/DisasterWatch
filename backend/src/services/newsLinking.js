@@ -29,6 +29,27 @@ export const HAZARD_TERMS = {
 };
 export const GENERAL_TERMS = ["earthquake", "flood", "wildfire", "forest fire", "hurricane", "cyclone", "typhoon", "natural disaster"];
 
+/**
+ * Words that make an article a disaster story. General-search results must
+ * name one of these in the headline or standfirst; the provider may have
+ * matched a hazard word anywhere in the body ("Did Trump get one thing
+ * right about Greenland?" matched "storm" in the text).
+ */
+export const DISASTER_KEYWORDS = [
+  "earthquake", "earthquakes", "quake", "quakes", "tremor", "tremors", "aftershock", "aftershocks",
+  "flood", "floods", "flooding", "flooded", "flash flood", "deluge",
+  "wildfire", "wildfires", "bushfire", "bushfires", "forest fire", "forest fires", "brush fire", "brushfire",
+  "storm", "storms", "hurricane", "cyclone", "typhoon", "tornado", "tornadoes",
+  "tsunami", "eruption", "erupts", "volcano", "volcanic", "landslide", "landslides", "mudslide", "mudslides",
+  "natural disaster", "evacuated", "evacuation", "evacuations",
+];
+
+/** True when the headline or the standfirst/summary names a hazard (whole words, case-insensitive). */
+export function mentionsDisaster(article) {
+  const text = `${article?.title ?? ""} ${article?.summary ?? ""}`.toLowerCase();
+  return DISASTER_KEYWORDS.some((k) => containsWord(text, k));
+}
+
 /** Place words too generic to identify an event on their own. */
 const PLACE_STOPWORDS = new Set(["the", "and", "of", "de", "del", "la", "le", "north", "south", "east", "west", "central", "new", "islands", "island", "coast", "sea", "ocean", "gulf", "bay"]);
 
@@ -217,14 +238,38 @@ export function buildSearchPlan(events, { maxQueries = MAX_EVENT_QUERIES, maxPla
   return [...groups.values()].slice(0, maxQueries);
 }
 
-function searchableText(article) {
-  let path = "";
+/** Path segments that name a section, format or date rather than the story. */
+const SECTION_SEGMENT =
+  /^(world|news|uk|us|australia|environment|commentisfree|business|politics|sport|culture|lifeandstyle|film|music|society|science|technology|money|travel|global-development|cities|video|gallery|interactive|ng-interactive|live|liveblog|blog|article|articles|story|stories|[a-z]+-news|\d+|[a-z]{3})$/i;
+const SLUG_NOISE = new Set(["live", "news", "blog", "liveblog", "updates", "latest"]);
+
+/**
+ * Words of the story slug (the last path segment) with section names,
+ * dates, ids and format markers removed, including words that merely repeat
+ * an earlier path segment ("/australia-news/live/.../australia-news-live-…"
+ * keeps only the story words). Used so an article is linked to a place by
+ * its headline or its real slug, never by the section it was filed under.
+ */
+export function slugWords(url) {
+  let segments;
   try {
-    path = decodeURIComponent(new URL(article.url).pathname);
+    segments = decodeURIComponent(new URL(url).pathname).split("/").filter(Boolean);
   } catch {
-    path = "";
+    return [];
   }
-  return `${article.title ?? ""} ${path.replace(/[-_/.+]+/g, " ")}`.toLowerCase();
+  if (segments.length === 0) return [];
+  const slug = segments[segments.length - 1].replace(/\.[a-z0-9]{2,5}$/i, "");
+  if (segments.length > 1 && SECTION_SEGMENT.test(slug)) return [];
+  const sectionWords = new Set();
+  for (const seg of segments.slice(0, -1)) for (const w of seg.toLowerCase().split(/[-_]+/)) sectionWords.add(w);
+  return slug
+    .toLowerCase()
+    .split(/[-_+.]+/)
+    .filter((w) => w && !/^\d+$/.test(w) && !SLUG_NOISE.has(w) && !sectionWords.has(w));
+}
+
+function searchableText(article) {
+  return `${article.title ?? ""} ${slugWords(article.url).join(" ")}`.toLowerCase();
 }
 
 const WORD_CHAR = /[\p{L}\p{N}]/u;

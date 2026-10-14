@@ -6,6 +6,12 @@
  * and asks the service for a 30-minute refresh interval (<= 4 requests per
  * refresh, i.e. <= 200 requests/day while GDELT stays down).
  *
+ * Relevance: the query matches the headline and standfirst only
+ * (query-fields=headline,trailText), only regular articles are requested
+ * (type=article: no live blogs, galleries, interactives) and the standfirst
+ * is returned (show-fields=trailText) so the service can confirm an article
+ * really is about a disaster before showing it.
+ *
  * Licence obligations handled here and in the UI:
  *  - headline is passed through untouched (webTitle, no trimming/rewriting);
  *  - the link to the original article is kept (webUrl);
@@ -43,11 +49,20 @@ function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-/** Content search URL: newest first, last `days` days, headline/url/date only. */
+export const GUARDIAN_QUERY_FIELDS = "headline,trailText";
+
+/**
+ * Content search URL: regular articles only (no live blogs, galleries or
+ * interactives), the query matched on headline + standfirst only, newest
+ * first, last `days` days; the standfirst is returned for the relevance check.
+ */
 export function buildGuardianUrl({ q, apiKey, pageSize = 20, fromDate, now = new Date(), days = 3 }) {
   const from = fromDate ?? isoDate(new Date(now.getTime() - days * 24 * 3600 * 1000));
   const params = new URLSearchParams({
     q,
+    "query-fields": GUARDIAN_QUERY_FIELDS,
+    type: "article",
+    "show-fields": "trailText",
     "order-by": "newest",
     "from-date": from,
     "page-size": String(pageSize),
@@ -81,11 +96,32 @@ export async function guardianRequest(url, { fetchImpl = fetch, timeoutMs = DEFA
   }
 }
 
-/** Guardian result -> article. The headline and link are kept exactly as supplied; no image. */
+/** Live blogs are rolling coverage, not disaster reporting: the API is asked for articles only, this is the local guard. */
+const LIVE_BLOG_TITLE = /[–—-]\s*(as it happened|[a-z ]*live)\s*$/i;
+
+const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+
+function stripHtml(s) {
+  return String(s ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(#?\w+);/g, (m, e) => ENTITIES[e] ?? m)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Guardian result -> article. The headline and link are kept exactly as
+ * supplied; no image. Returns null for anything that is not a regular
+ * article (type liveblog/gallery/interactive, "– as it happened" titles,
+ * /live/ urls). `summary` (the standfirst, plain text) only serves the
+ * relevance check and is never cached.
+ */
 export function normalizeGuardianResult(r) {
   const url = typeof r?.webUrl === "string" ? r.webUrl : "";
   const title = typeof r?.webTitle === "string" ? r.webTitle : "";
   if (!url || !title) return null;
+  if (r.type && r.type !== "article") return null;
+  if (LIVE_BLOG_TITLE.test(title) || /\/live\//.test(url)) return null;
   const d = new Date(r.webPublicationDate ?? "");
   return {
     title,
@@ -94,6 +130,7 @@ export function normalizeGuardianResult(r) {
     publishedAt: Number.isNaN(d.getTime()) ? null : d.toISOString(),
     image: null,
     provider: "guardian",
+    summary: stripHtml(r.fields?.trailText) || null,
   };
 }
 
