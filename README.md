@@ -235,6 +235,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 - **Aiven free Kafka powers off** after a period without traffic and has to be started from the Aiven console. The backend keeps serving the public feed without Kafka; events recorded meanwhile wait in the outbox and are published once the broker is back (see Reliability).
 - Notifications are **in-app only**; there is no e-mail, SMS or push channel.
 - Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
+- **Deploy order:** deploy the consumer before (or together with) producer changes that alter the event contract. A consumer running an older build commits offsets for messages it cannot handle, so those events never produce notifications unless the group offset is reset.
 
 ### Reliability
 
