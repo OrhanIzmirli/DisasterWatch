@@ -355,6 +355,7 @@ Create two **Web Services** from this repository with the **Docker** runtime, ro
 | `COOKIE_NAME` | optional | | session cookie name (default `dw_session`) |
 | `GDELT_TIMEOUT_MS` | optional | | per-request timeout for GDELT news searches (default `8000`; GDELT is often slower than that, see News) |
 | `GUARDIAN_API_KEY` | optional | | Guardian Open Platform developer key; enables The Guardian as the fallback news provider (see News) |
+| `CORS_ORIGINS` | optional | | comma-separated browser origins allowed to call the API directly (default: the live frontend and localhost 8080/5173/4173); the frontend's own `/api` proxy never needs it |
 | `DISABLE_NEWS_JOB` | optional | | `1` disables the background news refresh |
 | `NODE_ENV` | yes | | `production` (enables the Secure cookie flag and the JWT secret check) |
 | `KAFKA_BROKER` | yes | yes | `kafka-xxxx.aivencloud.com:12345` (comma-separated for several brokers) |
