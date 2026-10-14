@@ -4,7 +4,7 @@ import prisma from "../prisma.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
 import { writeAudit } from "../utils/audit.js";
 
-import { feedService, FeedUnavailableError } from "../services/feed.service.js";
+import { feedService, FeedUnavailableError, FEED_PARAM_LIMITS } from "../services/feed.service.js";
 
 // import { publishDisasterEvent } from "../services/kafkaProducer.js";
 // Kafka publishing is disabled here for now to avoid request timeouts
@@ -21,19 +21,26 @@ function toFloat(val, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Clamps a query value into its accepted range; non-numeric input falls back to the default. */
+function bounded(val, { min, max, fallback }, parse = toInt) {
+  return Math.min(max, Math.max(min, parse(val, fallback)));
+}
+
 /* =====================================================
-   PUBLIC FEED (NASA EONET + USGS, 5-minute cache)
-   GET /disasters?force=1&minutes=10080&limit=50&minMag=4.5&cacheMs=300000
-   -> { items, count, source, stale, updatedAt, params }
-   503 { message, retryAfterSeconds } when the sources fail and nothing is cached.
+   PUBLIC FEED (NASA EONET + USGS, 5-minute server-side cache)
+   GET /disasters?minutes=10080&limit=50&minMag=4.5
+   -> { items, count, source, stale, partial, sources, updatedAt, params }
+   The cache lifetime is fixed on the server: there is no query parameter to
+   force a live fetch or shorten the cache, so anonymous callers cannot make
+   NASA/USGS calls go through this server. limit is clamped to 1..200,
+   minutes to 60..43200, minMag to 0..10.
+   503 { message, retryAfterSeconds } when both sources fail and nothing is cached.
 ===================================================== */
 router.get("/", async (req, res) => {
   const options = {
-    forceLive: String(req.query.force || "") === "1",
-    minutesWindow: toInt(req.query.minutes, 7 * 24 * 60), // default: 7 days
-    limit: Math.min(toInt(req.query.limit, 50), 200), // default 50, max 200
-    minMag: toFloat(req.query.minMag, 4.5),
-    cacheMs: toInt(req.query.cacheMs, 5 * 60 * 1000),
+    minutesWindow: bounded(req.query.minutes, FEED_PARAM_LIMITS.minutes),
+    limit: bounded(req.query.limit, FEED_PARAM_LIMITS.limit),
+    minMag: bounded(req.query.minMag, FEED_PARAM_LIMITS.minMag, toFloat),
   };
   try {
     res.json(await feedService.getFeed(options));
@@ -43,18 +50,6 @@ router.get("/", async (req, res) => {
     }
     console.error("DISASTER FEED ERROR:", err);
     res.status(500).json({ message: "Disaster feed unavailable" });
-  }
-});
-
-/* ===========================
-   NASA RAW (optional)
-=========================== */
-router.get("/nasa", async (req, res) => {
-  try {
-    const events = await fetchNasaEvents();
-    res.json(events);
-  } catch (err) {
-    res.status(500).json({ message: "NASA API error" });
   }
 });
 
