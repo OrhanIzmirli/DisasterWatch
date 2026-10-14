@@ -9,12 +9,21 @@ export type RelatedEvent = {
   lng: number;
 };
 
+export type NewsProvider = "gdelt" | "guardian";
+
+export const PROVIDER_LABELS: Record<NewsProvider, string> = {
+  gdelt: "GDELT",
+  guardian: "The Guardian",
+};
+
 export type NewsItem = {
   title: string;
   url: string;
   domain: string;
   publishedAt: string | null;
   image?: string | null;
+  /** Which news provider supplied the article (shown as "via …" on the card). */
+  provider?: NewsProvider;
   relatedEvent?: RelatedEvent | null;
 };
 
@@ -23,7 +32,9 @@ export type NewsResponse = {
   count: number;
   updatedAt: string | null;
   stale: boolean;
+  /** Label of the provider that produced the current cache ("GDELT" | "The Guardian"). */
   source?: string;
+  provider?: NewsProvider | null;
 };
 
 export class NewsError extends Error {
@@ -69,5 +80,6 @@ export async function getDisasterNews(
     updatedAt: body.updatedAt ?? null,
     stale: Boolean(body.stale),
     source: body.source,
+    provider: body.provider ?? null,
   };
 }

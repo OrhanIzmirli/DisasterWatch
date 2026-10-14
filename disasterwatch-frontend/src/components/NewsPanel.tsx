@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getDisasterNews, NewsError, type NewsItem, type NewsType } from "../services/newsService";
+import { getDisasterNews, NewsError, PROVIDER_LABELS, type NewsItem, type NewsType } from "../services/newsService";
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle } from "../utils/eventText";
 
@@ -27,6 +27,11 @@ const TYPE_LABELS: Record<NewsType, string> = {
 };
 
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** "via GDELT" / "via The Guardian"; unknown provider (old cache) shows nothing. */
+export function providerText(item: NewsItem) {
+  return item.provider && PROVIDER_LABELS[item.provider] ? `via ${PROVIDER_LABELS[item.provider]}` : null;
+}
 
 export function eventTagText(item: NewsItem) {
   const e = item.relatedEvent;
@@ -102,6 +107,9 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
   };
 
   const updatedText = updatedAt ? relativeTime(updatedAt) : null;
+  // Guardian Open Platform terms: the "Powered by The Guardian" logo must sit on the
+  // same page as Guardian content and link back to theguardian.com.
+  const showsGuardian = status === "ready" && items.some((a) => a.provider === "guardian");
 
   return (
     <>
@@ -154,6 +162,18 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
             </div>
           )}
 
+          {showsGuardian && (
+            <a
+              className="news-powered-by"
+              href="https://www.theguardian.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Powered by The Guardian (opens theguardian.com)"
+            >
+              <img src="/powered-by-guardian.png" alt="Powered by The Guardian" width={140} height={45} />
+            </a>
+          )}
+
           {status === "ready" && items.length === 0 && (
             <div className="news-state muted">
               {filter === "all" ? "No news available right now." : `No ${FILTERS.find((f) => f.key === filter)?.label.toLowerCase()} news in the last 72 hours.`}
@@ -164,15 +184,17 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
             <ul className="news-list">
               {items.map((a) => {
                 const tag = eventTagText(a);
+                const via = providerText(a);
                 return (
-                  <li key={a.url} className="news-card">
-                    {a.image && (
+                  <li key={a.url} className={a.provider ? `news-card news-card-${a.provider}` : "news-card"}>
+                    {a.image && a.provider !== "guardian" && (
                       <img className="news-card-image" src={a.image} alt="" loading="lazy" referrerPolicy="no-referrer" />
                     )}
                     <div className="news-card-body">
                       <div className="news-card-meta">
                         <span className="news-card-domain">{a.domain || "unknown source"}</span>
                         {a.publishedAt && <span> · {relativeTime(a.publishedAt)}</span>}
+                        {via && <span className="news-card-provider"> · {via}</span>}
                       </div>
                       <h3 className="news-card-title">
                         <a href={a.url} target="_blank" rel="noopener noreferrer">

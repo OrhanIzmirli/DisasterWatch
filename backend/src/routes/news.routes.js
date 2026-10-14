@@ -8,8 +8,10 @@ const TYPES = new Set(["earthquake", "flood", "wildfire", "storm"]);
 
 /**
  * GET /news?type=earthquake|flood|wildfire|storm&event=<feed id>&limit=50
- * -> { items, count, updatedAt, stale, source }
- * Served from the background-refreshed cache; never calls GDELT itself.
+ * -> { items, count, updatedAt, stale, source, provider }
+ * Served from the background-refreshed cache; never calls a provider itself.
+ * Each item carries provider ("gdelt" | "guardian"); source is the label of
+ * the provider that produced the current cache.
  */
 router.get("/", (req, res) => {
   const type = typeof req.query.type === "string" ? req.query.type.toLowerCase() : null;
@@ -29,9 +31,9 @@ router.get("/", (req, res) => {
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 100) : 50;
 
   try {
-    const { items, updatedAt, stale } = newsService.getNews({ type, eventId, limit });
+    const { items, updatedAt, stale, source, provider } = newsService.getNews({ type, eventId, limit });
     res.set("Cache-Control", "public, max-age=60");
-    res.json({ items, count: items.length, updatedAt, stale, source: "GDELT" });
+    res.json({ items, count: items.length, updatedAt, stale, source, provider });
   } catch (err) {
     if (err instanceof NewsUnavailableError) {
       return res.status(503).json({ message: err.message, retryAfterSeconds: 60 });

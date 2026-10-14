@@ -5,6 +5,12 @@
  *
  *   findArticlesForEvent({ type, locationText, occurredAt }, { searchArticles })
  *     -> [{ title, url, domain, publishedAt, image }]
+ *
+ * The news refresh no longer searches once per event: buildSearchPlan()
+ * folds the top events into at most a few provider-neutral queries (one per
+ * hazard type, places OR-ed together) and linkArticlesToEvents() assigns the
+ * returned articles to events on our side, by place and hazard words in the
+ * title and URL.
  */
 
 const TYPE_KEYWORDS = {
@@ -13,6 +19,18 @@ const TYPE_KEYWORDS = {
   wildfire: '(wildfire OR "forest fire" OR bushfire OR "brush fire")',
   storm: "(storm OR hurricane OR cyclone OR typhoon)",
 };
+
+/** Same hazard vocabulary as TYPE_KEYWORDS, as plain terms for providers and matching. */
+export const HAZARD_TERMS = {
+  earthquake: ["earthquake", "quake", "tremor"],
+  flood: ["flood", "flooding", "floods"],
+  wildfire: ["wildfire", "forest fire", "bushfire", "brush fire"],
+  storm: ["storm", "hurricane", "cyclone", "typhoon"],
+};
+export const GENERAL_TERMS = ["earthquake", "flood", "wildfire", "forest fire", "hurricane", "cyclone", "typhoon", "natural disaster"];
+
+/** Place words too generic to identify an event on their own. */
+const PLACE_STOPWORDS = new Set(["the", "and", "of", "de", "del", "la", "le", "north", "south", "east", "west", "central", "new", "islands", "island", "coast", "sea", "ocean", "gulf", "bay"]);
 
 export const GENERAL_QUERY =
   '(earthquake OR flood OR wildfire OR "forest fire" OR hurricane OR cyclone OR typhoon OR "natural disaster")';
@@ -164,4 +182,100 @@ export async function findArticlesForEvent(event, { searchArticles, maxRecords =
       : normalized;
 
   return dedupeArticles(inWindow);
+}
+
+/** Significant, lower-cased words of a cleaned place ("Kokopo Papua New Guinea" -> kokopo, papua, guinea). */
+export function placeTokens(locationText) {
+  const place = cleanLocationText(locationText).toLowerCase();
+  return [...new Set(place.split(" ").filter((w) => w.length >= 3 && !PLACE_STOPWORDS.has(w)))];
+}
+
+export const MAX_EVENT_QUERIES = 3;
+export const MAX_PLACES_PER_QUERY = 12;
+
+/**
+ * Folds the ranked top events into at most `maxQueries` provider-neutral
+ * searches: one per hazard type (types ordered by their best-ranked event),
+ * each carrying the events' cleaned places. Events of a type that did not
+ * make the cut, or without a usable place, are left out of the plan (the
+ * general search can still link them).
+ *
+ *   -> [{ type, terms: string[], places: string[], events: [...] }]
+ */
+export function buildSearchPlan(events, { maxQueries = MAX_EVENT_QUERIES, maxPlaces = MAX_PLACES_PER_QUERY } = {}) {
+  const groups = new Map();
+  for (const ev of events) {
+    if (!HAZARD_TERMS[ev.type]) continue;
+    const place = cleanLocationText(ev.locationText);
+    if (!place) continue;
+    if (!groups.has(ev.type)) groups.set(ev.type, { type: ev.type, terms: HAZARD_TERMS[ev.type], places: [], events: [] });
+    const g = groups.get(ev.type);
+    if (g.places.length >= maxPlaces) continue;
+    if (!g.places.includes(place)) g.places.push(place);
+    g.events.push({ ...ev, place });
+  }
+  return [...groups.values()].slice(0, maxQueries);
+}
+
+function searchableText(article) {
+  let path = "";
+  try {
+    path = decodeURIComponent(new URL(article.url).pathname);
+  } catch {
+    path = "";
+  }
+  return `${article.title ?? ""} ${path.replace(/[-_/.+]+/g, " ")}`.toLowerCase();
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/** Whole-word match: "quake" is found in "hokkaido quake" but not in "earthquakes". */
+function containsWord(text, word) {
+  let from = 0;
+  for (;;) {
+    const i = text.indexOf(word, from);
+    if (i === -1) return false;
+    const before = i === 0 ? "" : text[i - 1];
+    const after = text[i + word.length] ?? "";
+    if (!WORD_CHAR.test(before) && !WORD_CHAR.test(after)) return true;
+    from = i + 1;
+  }
+}
+
+function mentionsHazard(text, type) {
+  return (HAZARD_TERMS[type] ?? []).some((t) => containsWord(text, t));
+}
+
+/**
+ * Assigns articles to events. An article is linked to the event whose place
+ * words it mentions most (title + URL path); ties go to the better-ranked
+ * event. With `requireHazard` the article must also mention one of the
+ * event type's hazard words (used for the general search, whose results
+ * were not filtered by hazard type per event). When no place matches and the
+ * candidate list holds exactly one event, the article is linked to it when
+ * `single` is set: a one-event query only returned it because that event's
+ * place matched in the article body.
+ *
+ *   -> [{ ...article, event: <event | null> }]
+ */
+export function linkArticlesToEvents(articles, events, { requireHazard = false, single = false } = {}) {
+  const candidates = events.map((ev) => ({ ev, tokens: placeTokens(ev.locationText ?? ev.place), phrase: cleanLocationText(ev.locationText ?? ev.place).toLowerCase() }));
+  return articles.map((article) => {
+    const text = searchableText(article);
+    let best = null;
+    let bestScore = 0;
+    for (const c of candidates) {
+      if (requireHazard && !mentionsHazard(text, c.ev.type)) continue;
+      let score = c.tokens.filter((t) => containsWord(text, t)).length;
+      if (score && c.phrase && text.includes(c.phrase)) score += 1;
+      if (score > bestScore) {
+        best = c.ev;
+        bestScore = score;
+      }
+    }
+    if (!best && single && candidates.length === 1 && (!requireHazard || mentionsHazard(text, candidates[0].ev.type))) {
+      best = candidates[0].ev;
+    }
+    return { ...article, event: best };
+  });
 }

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { cleanLocationText, buildEventQuery, dedupeArticles, normalizeArticle, parseGdeltDate, findArticlesForEvent } from "../src/services/newsLinking.js";
 import { gdeltRequest, createThrottle, buildGdeltUrl, GdeltError } from "../src/services/gdelt.js";
-import { createNewsService, pickTopEvents, NewsUnavailableError } from "../src/services/news.service.js";
+import { createNewsService, pickTopEvents, NewsUnavailableError, MAX_REQUESTS_PER_REFRESH } from "../src/services/news.service.js";
+import { createMemoryNewsStore } from "../src/services/newsStore.js";
 
 const quiet = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
@@ -159,26 +160,48 @@ describe("createThrottle", () => {
   });
 });
 
-describe("news service cache and stale behaviour", () => {
+describe("news service: combined searches, failover, persistence and stale behaviour", () => {
   const EVENTS = [
     { id: 1, type: "earthquake", severity: "high", timeMinutesAgo: 60, location: "53 km S of Kushiro, Japan", lat: 42.5, lng: 144.4, details: { cleanTitle: "M 6.1 - 53 km S of Kushiro, Japan", occurredAt: "2026-10-13T09:00:00.000Z" } },
     { id: 2, type: "flood", severity: "medium", timeMinutesAgo: 600, location: "Flood in Nepal 1104225", lat: 27.9, lng: 85.3, details: { cleanTitle: "Flood in Nepal", occurredAt: "2026-10-13T00:00:00.000Z" } },
     { id: 3, type: "wildfire", severity: "high", timeMinutesAgo: 1300, location: "Wildfire in Botswana 1032764", lat: -18, lng: 25 },
   ];
-  const article = (title, url) => ({ title, url, domain: new URL(url).hostname, seendate: "20261013T120000Z" });
+  const T0 = new Date("2026-10-14T10:00:00Z");
+  const article = (title, url, extra = {}) => ({ title, url, domain: new URL(url).hostname, publishedAt: "2026-10-13T12:00:00.000Z", image: null, ...extra });
+
+  /** Fake provider: searchGroup/searchGeneral are vi.fn so call counts can be asserted. */
+  function fakeProvider(name, { group = async () => [], general = async () => [], refreshIntervalMs = 15 * 60_000, retentionMs = null } = {}) {
+    return {
+      name,
+      label: name === "guardian" ? "The Guardian" : "GDELT",
+      refreshIntervalMs,
+      retentionMs,
+      searchGroup: vi.fn(group),
+      searchGeneral: vi.fn(general),
+    };
+  }
+  const gdeltOk = () =>
+    fakeProvider("gdelt", {
+      group: async (g) => {
+        if (g.type === "earthquake") return [article("Quake near Kushiro", "https://a.jp/1", { provider: "gdelt" })];
+        if (g.type === "flood") return [article("Nepal floods", "https://b.np/2", { provider: "gdelt" })];
+        return [];
+      },
+      general: async () => [article("Disasters 2026 in review", "https://c.com/3", { provider: "gdelt" }), article("Quake near Kushiro", "https://a.jp/1", { provider: "gdelt" })],
+    });
+  const failing = (name, message = "rate limit") =>
+    fakeProvider(name, {
+      group: async () => { throw new GdeltError(message, "rate-limit", 429); },
+      general: async () => { throw new GdeltError(message, "rate-limit", 429); },
+    });
 
   it("pickTopEvents puts high severity first, then newest", () => {
     expect(pickTopEvents(EVENTS, 2).map((e) => e.id)).toEqual([1, 3]);
   });
 
-  it("links articles to events, adds the general list and serves filters", async () => {
-    const searchArticles = vi.fn(async ({ query }) => {
-      if (query.includes("Kushiro")) return [article("Quake near Kushiro", "https://a.jp/1")];
-      if (query.includes("Nepal")) return [article("Nepal floods", "https://b.np/2")];
-      if (query.includes("Botswana")) return [];
-      return [article("Disasters 2026 in review", "https://c.com/3"), article("Quake near Kushiro", "https://a.jp/1")]; // general; dup dropped
-    });
-    const svc = createNewsService({ gdelt: { searchArticles }, loadEvents: async () => EVENTS, now: () => new Date("2026-10-14T10:00:00Z"), log: quiet });
+  it("links articles to events through combined searches, adds the general list and serves filters", async () => {
+    const gdelt = gdeltOk();
+    const svc = createNewsService({ providers: [gdelt], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
 
     expect(() => svc.getNews()).toThrow(NewsUnavailableError);
     await svc.refresh();
@@ -186,24 +209,93 @@ describe("news service cache and stale behaviour", () => {
     const all = svc.getNews();
     expect(all.stale).toBe(false);
     expect(all.updatedAt).toBe("2026-10-14T10:00:00.000Z");
+    expect(all.source).toBe("GDELT");
+    expect(all.provider).toBe("gdelt");
     expect(all.items.map((a) => a.url)).toEqual(["https://a.jp/1", "https://b.np/2", "https://c.com/3"]);
     expect(all.items[0].relatedEvent).toEqual({ id: 1, type: "earthquake", severity: "high", location: "M 6.1 - 53 km S of Kushiro, Japan", lat: 42.5, lng: 144.4 });
+    expect(all.items[0].provider).toBe("gdelt");
     expect(all.items[2].relatedEvent).toBeNull();
+    expect(all.items[0]).not.toHaveProperty("expiresAt");
 
     expect(svc.getNews({ type: "flood" }).items.map((a) => a.url)).toEqual(["https://b.np/2"]);
     expect(svc.getNews({ eventId: 1 }).items).toHaveLength(1);
     expect(svc.getNews({ type: "storm" }).items).toEqual([]);
-    expect(searchArticles).toHaveBeenCalledTimes(4); // 3 events + general
+
+    // one combined search per hazard type present, in rank order (high severity first) + general
+    expect(gdelt.searchGroup).toHaveBeenCalledTimes(3);
+    expect(gdelt.searchGroup.mock.calls.map(([g]) => g.type)).toEqual(["earthquake", "wildfire", "flood"]);
+    expect(gdelt.searchGeneral).toHaveBeenCalledTimes(1);
   });
 
-  it("serves the last good cache with stale: true when GDELT times out or answers non-JSON", async () => {
-    let mode = "ok";
-    const searchArticles = vi.fn(async () => {
-      if (mode === "timeout") throw new GdeltError("timed out", "timeout");
-      if (mode === "nonjson") throw new GdeltError("non-json", "non-json", 200);
-      return [article("Nepal floods", "https://b.np/2")];
+  it("never issues more than MAX_REQUESTS_PER_REFRESH requests, whatever the number of top events", async () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      id: 100 + i,
+      type: ["earthquake", "flood", "wildfire", "storm"][i % 4],
+      severity: "high",
+      timeMinutesAgo: i,
+      location: `Place${i}, Country${i}`,
+      lat: 0,
+      lng: 0,
+    }));
+    const gdelt = failing("gdelt");
+    const guardian = failing("guardian");
+    const svc = createNewsService({ providers: [gdelt, guardian], store: createMemoryNewsStore(), loadEvents: async () => many, now: () => T0, log: quiet });
+    await svc.refresh();
+    expect(MAX_REQUESTS_PER_REFRESH).toBe(4);
+    expect(gdelt.searchGroup.mock.calls.length + gdelt.searchGeneral.mock.calls.length).toBe(4);
+    expect(guardian.searchGroup.mock.calls.length + guardian.searchGeneral.mock.calls.length).toBe(4);
+  });
+
+  it("falls back to the next provider when the primary yields nothing, and switches to its 30-minute interval", async () => {
+    const gdelt = failing("gdelt");
+    const guardian = fakeProvider("guardian", {
+      group: async (g) => (g.type === "flood" ? [article("Nepal monsoon floods", "https://www.theguardian.com/world/nepal-floods", { provider: "guardian" })] : []),
+      refreshIntervalMs: 30 * 60_000,
+      retentionMs: 24 * 3600_000,
     });
-    const svc = createNewsService({ gdelt: { searchArticles }, loadEvents: async () => EVENTS, now: () => new Date("2026-10-14T10:00:00Z"), log: quiet });
+    const store = createMemoryNewsStore();
+    const svc = createNewsService({ providers: [gdelt, guardian], store, loadEvents: async () => EVENTS, now: () => T0, log: quiet });
+    await svc.refresh();
+
+    const res = svc.getNews();
+    expect(res.source).toBe("The Guardian");
+    expect(res.provider).toBe("guardian");
+    expect(res.stale).toBe(false);
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].relatedEvent?.id).toBe(2);
+    expect(svc.nextIntervalMs()).toBe(30 * 60_000);
+    expect(gdelt.searchGeneral).toHaveBeenCalledTimes(1);
+    // persisted with the licence expiry
+    expect(store.saved.items[0].expiresAt).toBe("2026-10-15T10:00:00.000Z");
+  });
+
+  it("does not call the fallback when the primary partially succeeded", async () => {
+    const gdelt = fakeProvider("gdelt", {
+      group: async () => { throw new GdeltError("timed out", "timeout"); },
+      general: async () => [article("x", "https://x.com/1", { provider: "gdelt" })],
+    });
+    const guardian = fakeProvider("guardian");
+    const svc = createNewsService({ providers: [gdelt, guardian], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
+    await svc.refresh();
+    expect(svc.getNews().items).toHaveLength(1);
+    expect(guardian.searchGroup).not.toHaveBeenCalled();
+    expect(guardian.searchGeneral).not.toHaveBeenCalled();
+  });
+
+  it("serves the last good cache with stale: true when every provider fails, and recovers", async () => {
+    let mode = "ok";
+    const gdelt = fakeProvider("gdelt", {
+      group: async () => {
+        if (mode === "timeout") throw new GdeltError("timed out", "timeout");
+        if (mode === "nonjson") throw new GdeltError("non-json", "non-json", 200);
+        return [];
+      },
+      general: async () => {
+        if (mode !== "ok") throw new GdeltError("down", mode);
+        return [article("Nepal floods", "https://b.np/2", { provider: "gdelt" })];
+      },
+    });
+    const svc = createNewsService({ providers: [gdelt], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
     await svc.refresh();
     expect(svc.getNews().stale).toBe(false);
 
@@ -223,20 +315,62 @@ describe("news service cache and stale behaviour", () => {
     expect(svc.getNews().stale).toBe(false);
   });
 
-  it("throws a meaningful error when nothing was ever cached", async () => {
-    const svc = createNewsService({ gdelt: { searchArticles: async () => { throw new GdeltError("rate limit", "rate-limit", 429); } }, loadEvents: async () => EVENTS, log: quiet });
+  it("explains which providers failed when nothing was ever cached", async () => {
+    const svc = createNewsService({ providers: [failing("gdelt", "rate limit"), failing("guardian", "quota")], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
     await svc.refresh();
-    expect(() => svc.getNews()).toThrow(/News unavailable: all 4 GDELT searches failed \(last: rate limit\)/);
+    expect(() => svc.getNews()).toThrow(/News unavailable: GDELT: all 4 searches failed \(last: rate limit\); The Guardian: all 4 searches failed \(last: quota\)/);
   });
 
   it("does not replace a good cache with an empty refresh", async () => {
     let empty = false;
-    const svc = createNewsService({ gdelt: { searchArticles: async () => (empty ? [] : [article("x", "https://x.com/1")]) }, loadEvents: async () => EVENTS, log: quiet });
+    const gdelt = fakeProvider("gdelt", { general: async () => (empty ? [] : [article("x", "https://x.com/1", { provider: "gdelt" })]) });
+    const svc = createNewsService({ providers: [gdelt], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
     await svc.refresh();
     empty = true;
     await svc.refresh();
     const res = svc.getNews();
     expect(res.items).toHaveLength(1);
     expect(res.stale).toBe(true);
+  });
+
+  it("restores the persisted cache on start-up, with a correct 'last updated' and stale flag", async () => {
+    const store = createMemoryNewsStore();
+    const first = createNewsService({ providers: [gdeltOk()], store, loadEvents: async () => EVENTS, now: () => T0, log: quiet });
+    await first.refresh();
+
+    // "restart": a new service instance sharing only the store
+    let clock = new Date(T0.getTime() + 5 * 60_000);
+    const second = createNewsService({ providers: [gdeltOk()], store, loadEvents: async () => EVENTS, now: () => clock, log: quiet });
+    expect(() => second.getNews()).toThrow(NewsUnavailableError);
+    await second.restore();
+    const res = second.getNews();
+    expect(res.items.map((a) => a.url)).toEqual(["https://a.jp/1", "https://b.np/2", "https://c.com/3"]);
+    expect(res.items[0].relatedEvent?.id).toBe(1);
+    expect(res.updatedAt).toBe("2026-10-14T10:00:00.000Z");
+    expect(res.stale).toBe(false); // 5 minutes old, within one refresh interval
+
+    clock = new Date(T0.getTime() + 40 * 60_000);
+    expect(second.getNews().stale).toBe(true); // older than the interval and not refreshed in this process yet
+  });
+
+  it("drops Guardian articles 24 hours after they were fetched (licence), in memory and in the store", async () => {
+    const guardian = fakeProvider("guardian", {
+      general: async () => [article("Floods", "https://www.theguardian.com/world/floods", { provider: "guardian" })],
+      refreshIntervalMs: 30 * 60_000,
+      retentionMs: 24 * 3600_000,
+    });
+    const store = createMemoryNewsStore();
+    let clock = T0;
+    const svc = createNewsService({ providers: [failing("gdelt"), guardian], store, loadEvents: async () => EVENTS, now: () => clock, log: quiet });
+    await svc.refresh();
+    expect(svc.getNews().items).toHaveLength(1);
+
+    clock = new Date(T0.getTime() + 24 * 3600_000 + 1000);
+    expect(() => svc.getNews()).toThrow(NewsUnavailableError);
+    expect(svc.status().articles).toBe(0);
+
+    const fresh = createNewsService({ providers: [failing("gdelt"), guardian], store, loadEvents: async () => EVENTS, now: () => clock, log: quiet });
+    expect(await fresh.restore()).toBeNull();
+    expect(await store.load(clock)).toBeNull();
   });
 });

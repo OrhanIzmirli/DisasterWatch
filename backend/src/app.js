@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import eventsRoutes from "./routes/events.routes.js";
 import disasterRoutes from "./routes/disaster.routes.js";
 import newsRoutes from "./routes/news.routes.js";
+import { newsService } from "./services/news.service.js";
 import { createUsersRouter } from "./routes/users.routes.js";
 import alertsRoutes from "./routes/alerts.routes.js";
 import notificationsRoutes from "./routes/notifications.routes.js";
@@ -36,6 +37,12 @@ export function createApp(options = {}) {
     res.send("DisasterWatch Backend is running");
   });
 
+  // Compact news-cache status for /health: which provider served it, when, and whether it is stale.
+  const newsStatus = () => {
+    const s = newsService.status();
+    return { provider: s.provider, updatedAt: s.updatedAt, stale: s.stale, articles: s.articles };
+  };
+
   app.get("/health", async (req, res) => {
     // Events recorded but not yet published to Kafka (null when the DB is unreachable)
     let outboxPending = null;
@@ -49,6 +56,7 @@ export function createApp(options = {}) {
       service: "backend",
       kafka: producerStatus(),
       outboxPending,
+      news: newsStatus(),
       time: new Date().toISOString(),
     });
   });
