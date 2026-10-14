@@ -3301,11 +3301,11 @@ body {
   font-size: 0.85rem;
 }
 
-/* the feed sits on the cream panel: the shared dark-theme error/button colours would be unreadable there */
-.feed-state .form-error {
-  background: rgba(185, 28, 28, 0.1);
-  border: 1px solid rgba(185, 28, 28, 0.45);
+/* the feed sits on the cream panel: dark text, not the dark-theme error colours */
+.feed-state-text {
+  margin: 0;
   color: #7f1d1d;
+  font-weight: 600;
 }
 
 .feed-state .muted {

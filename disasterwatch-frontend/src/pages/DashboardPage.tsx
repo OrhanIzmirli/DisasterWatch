@@ -5,7 +5,7 @@ import RelatedNews from "../components/RelatedNews";
 import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
-import { cachedFeedAgeMinutes, getCachedFeed, isFeedFresh, setCachedFeed, type FeedSources } from "../services/feedCache";
+import { getCachedFeed, isFeedFresh, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt } from "../services/feedCache";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low";
@@ -52,9 +52,23 @@ const displayMeta = (item: DisasterItem) => {
 const readSources = (raw: unknown): FeedSources | null => {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const ok = (v: unknown): v is "ok" | "error" => v === "ok" || v === "error";
+  const ok = (v: unknown): v is "ok" | "stale" | "error" => v === "ok" || v === "stale" || v === "error";
   return ok(r.nasa) && ok(r.usgs) ? { nasa: r.nasa, usgs: r.usgs } : null;
 };
+
+/** Narrows the backend's `sourcesUpdatedAt` field (ISO strings or null per source). */
+const readSourcesUpdatedAt = (raw: unknown): FeedSourcesUpdatedAt | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const t = (v: unknown) => (typeof v === "string" && !Number.isNaN(new Date(v).getTime()) ? v : null);
+  return { nasa: t(r.nasa), usgs: t(r.usgs) };
+};
+
+/** ISO string or null; used for the backend's `updatedAt`. */
+const readIso = (raw: unknown): string | null => (typeof raw === "string" && !Number.isNaN(new Date(raw).getTime()) ? raw : null);
+
+const SOURCE_LABEL = { nasa: "NASA EONET", usgs: "USGS" } as const;
+const SOURCE_ITEMS = { nasa: "wildfires, storms and floods", usgs: "earthquakes" } as const;
 
 type TimelineEvent = {
   time: string;
@@ -154,14 +168,18 @@ const DashboardPage = () => {
   const [feedStale, setFeedStale] = useState(() => getCachedFeed()?.stale ?? false);
   // Per-source status from the backend; a feed with one source in error is "partial"
   const [feedSources, setFeedSources] = useState<FeedSources | null>(() => getCachedFeed()?.sources ?? null);
-  const [feedError, setFeedError] = useState<string | null>(null);
+  const [feedSourcesUpdatedAt, setFeedSourcesUpdatedAt] = useState<FeedSourcesUpdatedAt | null>(() => getCachedFeed()?.sourcesUpdatedAt ?? null);
+  // When the data was fetched from the sources, as reported by the backend: every "ago" label
+  // on the page derives from this, never from the time the browser received the response.
+  const [feedUpdatedAt, setFeedUpdatedAt] = useState<string | null>(() => getCachedFeed()?.updatedAt ?? null);
   const [activeFilter, setActiveFilter] = useState<"all" | DisasterType>("all");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"time" | "severity">("time");
   const [selectedDisaster, setSelectedDisaster] = useState<DisasterItem | null>(
     null
   );
-  const [minutesSinceRefresh, setMinutesSinceRefresh] = useState(() => cachedFeedAgeMinutes());
+  // re-renders the relative "ago" labels once a minute
+  const [, setClockTick] = useState(0);
   const [page, setPage] = useState(1);
 
   // Deep link from the news panel: /?event=<feed id> selects that event
@@ -198,44 +216,48 @@ const DashboardPage = () => {
   /* =========================
      FETCH – Backend (NASA EONET + USGS merged)
      - success: real items only (an empty feed stays empty)
-     - partial: one source failed on the backend; its items are missing and a
-       note says which source is unavailable (the rest is live)
+     - per-source trouble: a source the backend could not reach is either
+       "stale" (its recent items are still served, the note says how old) or
+       "error" (its items are missing from this update)
      - failure: the previous real feed (if any) with a stale warning, else an
-       explicit error state with "Try again"; demo rows are never shown
+       explicit error state with "Try again"; demo rows are never shown.
+       Upstream error details are never shown (the backend does not send them).
   ========================= */
   const loadFeed = useCallback(async (signal?: AbortSignal) => {
     const hasCache = Boolean(getCachedFeed());
     if (!hasCache) setFeedStatus("loading");
-    setFeedError(null);
     try {
       const res = await fetch("/api/disasters", { signal });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.message || `Feed request failed (${res.status})`);
+      if (!res.ok) throw new Error(`Feed request failed (${res.status})`);
       const items: DisasterItem[] = Array.isArray(data?.items) ? data.items : [];
       if (signal?.aborted) return;
       const stale = Boolean(data?.stale);
       const sources = readSources(data?.sources);
-      setCachedFeed(items, { stale, sources });
+      const sourcesUpdatedAt = readSourcesUpdatedAt(data?.sourcesUpdatedAt);
+      const updatedAt = readIso(data?.updatedAt);
+      setCachedFeed(items, { stale, sources, sourcesUpdatedAt, updatedAt });
       setDisasters(items);
       setFeedStale(stale);
       setFeedSources(sources);
-      setMinutesSinceRefresh(0);
+      setFeedSourcesUpdatedAt(sourcesUpdatedAt);
+      setFeedUpdatedAt(updatedAt);
       setFeedStatus("ready");
-    } catch (e) {
+    } catch {
       if (signal?.aborted) return;
-      const message = e instanceof Error ? e.message : "Could not reach the disaster feed.";
       const cached = getCachedFeed<DisasterItem>();
       if (cached) {
-        // keep the last real data on screen, flagged as stale
+        // keep the last real data on screen, flagged as stale; its age is still the backend's updatedAt
         setDisasters(cached.items);
         setFeedStale(true);
         setFeedSources(cached.sources);
+        setFeedSourcesUpdatedAt(cached.sourcesUpdatedAt);
+        setFeedUpdatedAt(cached.updatedAt);
         setFeedStatus("ready");
       } else {
         setDisasters([]);
         setFeedStatus("error");
       }
-      setFeedError(message);
     }
   }, []);
 
@@ -253,11 +275,7 @@ const DashboardPage = () => {
      TIMER
   ========================= */
   useEffect(() => {
-    const i = setInterval(() => {
-      // measured from the cached feed's fetch time, so "Last updated" survives route changes
-      const fetchedAt = getCachedFeed()?.fetchedAt ?? Date.now();
-      setMinutesSinceRefresh(Math.floor((Date.now() - fetchedAt) / 60000));
-    }, 60000);
+    const i = setInterval(() => setClockTick((n) => n + 1), 60000);
     return () => clearInterval(i);
   }, []);
 
@@ -365,22 +383,35 @@ const DashboardPage = () => {
 
   // same wording as every other relative time in the UI ("5 minutes ago")
   const hasData = feedStatus === "ready" && disasters.length > 0;
-  // Source that failed on the backend while the other answered (null when both answered or both failed)
+  // Source whose items are missing because it failed on the backend while the other answered
   const unavailableSource: "nasa" | "usgs" | null =
     feedStatus === "ready" && !feedStale && feedSources
-      ? feedSources.nasa === "error" && feedSources.usgs === "ok"
+      ? feedSources.nasa === "error" && feedSources.usgs !== "error"
         ? "nasa"
-        : feedSources.usgs === "error" && feedSources.nasa === "ok"
+        : feedSources.usgs === "error" && feedSources.nasa !== "error"
           ? "usgs"
           : null
       : null;
+  // Per-source notes (not shown while the whole feed is stale: the stale banner covers that)
+  const sourceNotes =
+    feedStatus === "ready" && !feedStale && feedSources
+      ? (["nasa", "usgs"] as const)
+          .filter((name) => feedSources[name] !== "ok")
+          .map((name) =>
+            feedSources[name] === "stale"
+              ? `${SOURCE_LABEL[name]} unreachable: showing ${SOURCE_ITEMS[name]} from ${relativeTime(feedSourcesUpdatedAt?.[name]) ?? "the last successful fetch"}.`
+              : `${SOURCE_LABEL[name]} unavailable: ${SOURCE_ITEMS[name]} are missing from this update.`
+          )
+      : [];
   const sourcesLabel = unavailableSource === "nasa" ? "USGS only, NASA unavailable" : unavailableSource === "usgs" ? "NASA only, USGS unavailable" : "NASA + USGS";
+  // Data age as reported by the backend (never the browser's fetch time)
+  const dataAge = relativeTime(feedUpdatedAt) ?? "unknown";
   const updatedLabel =
     feedStatus === "loading"
       ? "Loading live data (NASA + USGS)…"
       : feedStatus === "error"
         ? "Live data unavailable"
-        : `Last updated: ${relativeTime(new Date(Date.now() - minutesSinceRefresh * 60_000)) ?? "just now"} (${sourcesLabel}${feedStale ? ", last successful fetch" : ", live data"})`;
+        : `Last updated: ${dataAge} (${sourcesLabel}${feedStale ? ", last successful fetch" : ", live data"})`;
   // KPI numbers only exist for real data
   const kpi = (n: number) => (hasData ? n : "—");
 
@@ -657,18 +688,20 @@ const DashboardPage = () => {
 
           {feedStale && feedStatus === "ready" && (
             <div className="feed-stale-banner" role="status">
-              Live sources could not be reached; showing the last successful update ({updatedLabel.replace(/^Last updated: /, "").replace(/ \(.*$/, "")}).
+              Live sources could not be reached; showing the last successful update ({dataAge}).
               <button type="button" className="btn btn-primary btn-sm" onClick={() => loadFeed()}>
                 Try again
               </button>
             </div>
           )}
 
-          {unavailableSource && (
+          {sourceNotes.length > 0 && (
             <div className="feed-partial-note" role="status">
-              {unavailableSource === "nasa"
-                ? "NASA EONET unavailable: wildfires, storms and floods are missing from this update."
-                : "USGS unavailable: earthquakes are missing from this update."}
+              <div>
+                {sourceNotes.map((note) => (
+                  <div key={note}>{note}</div>
+                ))}
+              </div>
               <button type="button" className="btn btn-primary btn-sm" onClick={() => loadFeed()}>
                 Try again
               </button>
@@ -691,8 +724,7 @@ const DashboardPage = () => {
 
           {feedStatus === "error" && (
             <div className="feed-state" role="alert">
-              <div className="form-error">{feedError ?? "The disaster feed is unavailable."}</div>
-              <p className="muted">No events are shown until the live sources answer; nothing on this page is simulated.</p>
+              <p className="feed-state-text">Live sources are not responding right now. Nothing on this page is simulated.</p>
               <button type="button" className="btn btn-primary btn-sm" onClick={() => loadFeed()}>
                 Try again
               </button>
