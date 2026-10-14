@@ -564,6 +564,23 @@ const DashboardPage = () => {
                 <span>Storm</span>
               </div>
             </div>
+            {/* cluster colours: a numbered circle takes the highest severity inside it */}
+            <span className="legend-divider" aria-hidden="true" />
+            <span className="legend-title legend-title-sub">Clusters</span>
+            <div className="legend-pills legend-clusters" aria-label="Cluster colours by highest severity">
+              <div className="legend-pill">
+                <span className="legend-cluster legend-cluster-high" aria-hidden="true">3</span>
+                <span>High</span>
+              </div>
+              <div className="legend-pill">
+                <span className="legend-cluster legend-cluster-medium" aria-hidden="true">3</span>
+                <span>Medium</span>
+              </div>
+              <div className="legend-pill">
+                <span className="legend-cluster legend-cluster-low" aria-hidden="true">3</span>
+                <span>Low</span>
+              </div>
+            </div>
             <span className="legend-hint">Numbered circles group nearby events</span>
           </div>
         </section>

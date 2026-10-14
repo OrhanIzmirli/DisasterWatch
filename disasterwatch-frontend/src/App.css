@@ -577,6 +577,7 @@
 .map-legend {
   margin-top: 0.75rem;
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   padding: 0.45rem 0.6rem;
@@ -638,6 +639,52 @@
 
 .legend-dot-storm {
   background: #4b5563;
+}
+
+/* cluster colours (severity), kept apart from the type dots by a divider and their own caption */
+.legend-divider {
+  width: 1px;
+  align-self: stretch;
+  min-height: 18px;
+  background: rgba(120, 0, 0, 0.25);
+}
+
+.legend-title-sub {
+  letter-spacing: 0.08em;
+}
+
+.legend-cluster {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid #f6e8d9;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.45);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.legend-cluster-high {
+  background: #c1121f;
+}
+
+.legend-cluster-medium {
+  background: #b45309;
+}
+
+.legend-cluster-low {
+  background: #1f7a4d;
+}
+
+/* on phones the legend wraps onto several rows: a pill radius would turn it into an ellipse */
+@media (max-width: 600px) {
+  .map-legend {
+    border-radius: 1rem;
+  }
 }
 
 /* DISASTER LIST + FILTERS + TOOLS */
