@@ -53,14 +53,14 @@ describe("general search: headline or standfirst must name a hazard", () => {
     const articles = live.general.map(normalizeGuardianResult).filter(Boolean); // live blogs already gone
     const kept = articles.filter(mentionsDisaster);
     expect(titled(kept)).toEqual([
-      "An eerie trip inside Thailand’s oldest amusement park, deserted after flooding",
-      "Intense waves and floods batter California waterfront homes and boardwalks",
-      "Indonesia wildfire fuelled by El Niño razes almost 300 homes ",
-      "Hurricane Simon and Tropical Storm Rachel kill five people on Mexico’s Pacific coast",
+      "Inside an abandoned Thai theme park, empty since the flooding",
+      "Huge surf and floods damage California beachfront homes and piers",
+      "Wildfire driven by El Niño destroys nearly 300 homes in Indonesia",
+      "Hurricane Simon and Tropical Storm Rachel leave five dead on Mexico's Pacific coast",
     ]);
     const dropped = titled(articles.filter((a) => !mentionsDisaster(a)));
-    expect(dropped).toContain("Did Trump get one thing right about Greenland?");
-    expect(dropped).toContain("Pope Leo recovering from surgery after lung cancer diagnosis | First Thing");
+    expect(dropped).toContain("Was the president right about Greenland after all?");
+    expect(dropped).toContain("Pontiff recovering after surgery following a cancer diagnosis | First Thing");
     expect(dropped).toHaveLength(10);
   });
 
@@ -78,7 +78,7 @@ describe("general search: headline or standfirst must name a hazard", () => {
       retentionMs: null,
       searchGroup: async () => [],
       searchGeneral: async () => [
-        { title: "Did Trump get one thing right about Greenland?", url: "https://a.com/1", domain: "a.com", publishedAt: null, image: null, provider: "gdelt" },
+        { title: "Was the president right about Greenland after all?", url: "https://a.com/1", domain: "a.com", publishedAt: null, image: null, provider: "gdelt" },
         { title: "Quake rattles Hokkaido", url: "https://a.com/2", domain: "a.com", publishedAt: null, image: null, provider: "gdelt" },
       ],
     };
@@ -106,7 +106,7 @@ describe("linking by headline and story slug only (section segments ignored)", (
 
     // the real pipeline: live blogs removed by the provider, the Sydney article linked as the single event of its group
     const normalized = live.group.map(normalizeGuardianResult).filter(Boolean);
-    expect(titled(normalized)).toEqual(["Total fire ban for Sydney, with high temperatures and risk of bushfires from ‘dry lightning’"]);
+    expect(titled(normalized)).toEqual(["Total fire ban declared for Sydney as heat and dry lightning raise the bushfire risk"]);
     const [sydney] = linkArticlesToEvents(normalized, [event], { single: true });
     expect(sydney.event?.id).toBe(event.id);
   });
