@@ -258,6 +258,9 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 - The "subscription must predate the event" rule compares against `occurredAt`; for long-running EONET events (a wildfire first seen days after it started) it should compare against the time the event entered the system (`firstSeenAt` / the Kafka message time) so such events can still notify.
 - Pre-filter subscriptions in SQL with a bounding box around the event before the haversine check, instead of loading every active subscription per message.
 - Clean up the 6 ESLint errors and 1 warning in the frontend (`any` in `api/client.ts` and `api/config.ts`, setState-in-effect in `RelatedNews`/`NewsPanel`, a non-component export in `NewsPanel`) and add `npm run lint` to CI.
+- News: when the cache is empty and every provider failed, retry after a couple of minutes instead of waiting the full refresh interval (shorter cold start after a Render wake-up).
+- News: keep the first real provider error (the 429 or timeout) in `lastError` instead of the local backoff refusal that follows it, so `/health` and the 503 body explain the cause.
+- News: restrict Guardian searches to the headline and standfirst (`query-fields=headline,trailText`) so the general query stops matching articles that only mention a hazard word in the body, and ignore section-like URL segments (`/australia-news/`) when linking articles to events by URL path.
 
 ---
 
