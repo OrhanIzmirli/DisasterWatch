@@ -84,6 +84,8 @@ describe("mappers", () => {
     expect(events.map((e) => e.eventId)).toEqual(["nasa:EONET_1001", "nasa:EONET_1002"]);
     expect(events[0]).toMatchObject({ source: "nasa", type: "wildfire", severity: "high", lat: -18.2436, lng: 25.2047 });
     expect(events[1]).toMatchObject({ type: "flood", lat: 17.7858, lng: 97.7421 });
+    // notification titles carry no EONET source id, same as the feed and news cards
+    expect(events.map((e) => e.title)).toEqual(["Wildfire in Botswana", "Flood in Thailand"]);
   });
 
   it("maps USGS features above the magnitude threshold", () => {

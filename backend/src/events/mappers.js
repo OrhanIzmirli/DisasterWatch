@@ -8,7 +8,9 @@ import {
   severityFromType,
   pickBestLatLngFromGeometryArray,
 } from "../utils/normalizeDisasters.js";
-import { severityFromMag } from "../services/usgs.service.js";
+import { severityFromMag } from "../utils/severity.js";
+import { formatMagnitude } from "../utils/magnitude.js";
+import { cleanTitle } from "../utils/eventDetails.js";
 import { disasterEventSchema } from "./contract.js";
 
 const ID_CHARS = /[^A-Za-z0-9_.-]/g;
@@ -64,7 +66,8 @@ export function nasaEventsToContract(rawEvents) {
       source: "nasa",
       type,
       severity: severityFromType(type),
-      title: String(ev?.title || "Unnamed event").slice(0, 200),
+      // trailing EONET source id dropped, same as the public feed and news cards
+      title: (cleanTitle(ev?.title) || "Unnamed event").slice(0, 200),
       lat,
       lng,
       occurredAt,
@@ -90,8 +93,8 @@ export function usgsFeaturesToContract(features, { minMag = 4.5 } = {}) {
       eventId: `usgs:${id}`,
       source: "usgs",
       type: "earthquake",
-      severity: severityFromMag(mag),
-      title: `M${mag.toFixed(1)} earthquake, ${place}`.slice(0, 200),
+      severity: severityFromMag(mag), // same rule as the feed: rated on the rounded magnitude
+      title: `M${formatMagnitude(mag)} earthquake, ${place}`.slice(0, 200),
       lat: Number(coords[1]),
       lng: Number(coords[0]),
       occurredAt,

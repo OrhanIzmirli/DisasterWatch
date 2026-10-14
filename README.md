@@ -187,7 +187,7 @@ In-app modal showing disaster-related news.
 `GET /news` is served from a cache that a background job refreshes every 15 minutes (`src/services/news.service.js`). Each refresh picks the ~10 most important feed events (high severity first, then newest), cleans their location text (`"Flood in Nepal 1104225"` -> `Nepal`, `"53 km S of Kushiro, Japan"` -> `Kushiro Japan`, in `src/services/newsLinking.js`) and runs one targeted, English-only, last-72-hours GDELT search per event plus one general disaster search. Articles are deduplicated by URL and near-identical title and linked to their event, which powers the "Show on map" button in the news panel and the "Related news" section of the event drawer.
 
 GDELT allows one request every 5 seconds and answers violations with HTTP 429 and a plain-text body; the client (`src/services/gdelt.js`) throttles requests, times them out (`GDELT_TIMEOUT_MS`) and treats 429 / non-JSON as failures. A failed refresh keeps the previous articles and marks the response `stale: true`; with no cache at all the endpoint answers 503 and the panel shows a retry button. Response shape: `{ items: [{ title, url, domain, publishedAt, image, relatedEvent }], count, updatedAt, stale }`, filterable with `?type=` and `?event=`.
-=======
+---
 ## Event-Driven Notification Pipeline
 
 ```
@@ -246,6 +246,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 
 - The "subscription must predate the event" rule compares against `occurredAt`; for long-running EONET events (a wildfire first seen days after it started) it should compare against the time the event entered the system (`firstSeenAt` / the Kafka message time) so such events can still notify.
 - Pre-filter subscriptions in SQL with a bounding box around the event before the haversine check, instead of loading every active subscription per message.
+- Clean up the 6 ESLint errors and 1 warning in the frontend (`any` in `api/client.ts` and `api/config.ts`, setState-in-effect in `RelatedNews`/`NewsPanel`, a non-component export in `NewsPanel`) and add `npm run lint` to CI.
 
 ---
 
