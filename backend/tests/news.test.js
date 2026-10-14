@@ -187,7 +187,7 @@ describe("news service: combined searches, failover, persistence and stale behav
         if (g.type === "flood") return [article("Nepal floods", "https://b.np/2", { provider: "gdelt" })];
         return [];
       },
-      general: async () => [article("Disasters 2026 in review", "https://c.com/3", { provider: "gdelt" }), article("Quake near Kushiro", "https://a.jp/1", { provider: "gdelt" })],
+      general: async () => [article("Earthquakes of 2026 in review", "https://c.com/3", { provider: "gdelt" }), article("Quake near Kushiro", "https://a.jp/1", { provider: "gdelt" })],
     });
   const failing = (name, message = "rate limit") =>
     fakeProvider(name, {
@@ -272,7 +272,7 @@ describe("news service: combined searches, failover, persistence and stale behav
   it("does not call the fallback when the primary partially succeeded", async () => {
     const gdelt = fakeProvider("gdelt", {
       group: async () => { throw new GdeltError("timed out", "timeout"); },
-      general: async () => [article("x", "https://x.com/1", { provider: "gdelt" })],
+      general: async () => [article("Flood watch", "https://x.com/1", { provider: "gdelt" })],
     });
     const guardian = fakeProvider("guardian");
     const svc = createNewsService({ providers: [gdelt, guardian], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
@@ -323,7 +323,7 @@ describe("news service: combined searches, failover, persistence and stale behav
 
   it("does not replace a good cache with an empty refresh", async () => {
     let empty = false;
-    const gdelt = fakeProvider("gdelt", { general: async () => (empty ? [] : [article("x", "https://x.com/1", { provider: "gdelt" })]) });
+    const gdelt = fakeProvider("gdelt", { general: async () => (empty ? [] : [article("Flood watch", "https://x.com/1", { provider: "gdelt" })]) });
     const svc = createNewsService({ providers: [gdelt], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
     await svc.refresh();
     empty = true;

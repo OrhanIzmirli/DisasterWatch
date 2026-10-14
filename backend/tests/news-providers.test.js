@@ -214,6 +214,7 @@ describe("The Guardian provider", () => {
       publishedAt: "2026-10-13T10:15:00.000Z",
       image: null,
       provider: "guardian",
+      summary: null,
     });
     expect(normalizeGuardianResult({ webTitle: "no url" })).toBeNull();
   });
