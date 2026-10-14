@@ -16,6 +16,7 @@ import { createGdeltClient } from "./gdelt.js";
 import { findArticlesForEvent, normalizeArticle, dedupeArticles, GENERAL_QUERY } from "./newsLinking.js";
 import { fetchNasaEvents } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
+import { cleanTitle } from "../utils/eventDetails.js";
 import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
 
 export const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
@@ -51,12 +52,17 @@ export function pickTopEvents(events, limit = TOP_EVENTS) {
     .slice(0, limit);
 }
 
+/** Event label shown on a news card; never the raw source title with its numeric id. */
+function eventLabel(ev) {
+  return ev.details?.cleanTitle || cleanTitle(ev.location);
+}
+
 function relatedEventOf(ev) {
   return {
     id: ev.id,
     type: ev.type,
     severity: ev.severity,
-    location: ev.details?.cleanTitle || ev.location,
+    location: eventLabel(ev),
     lat: ev.lat,
     lng: ev.lng,
   };
@@ -94,7 +100,7 @@ export function createNewsService({
             const articles = await findArticlesForEvent(
               {
                 type: ev.type,
-                locationText: ev.details?.cleanTitle || ev.location,
+                locationText: eventLabel(ev),
                 occurredAt: ev.details?.occurredAt ?? null,
               },
               { searchArticles: (o) => gdelt.searchArticles(o), maxRecords: 8 }

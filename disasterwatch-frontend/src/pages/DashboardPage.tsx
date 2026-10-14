@@ -4,6 +4,7 @@ import MapView from "../components/MapView";
 import RelatedNews from "../components/RelatedNews";
 import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
 import { relativeTime } from "../utils/formatDate";
+import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low";
@@ -23,20 +24,23 @@ type DisasterItem = {
 };
 
 /** Feed row title: clean title from the backend, else the raw location minus a trailing id. */
-const displayTitle = (item: DisasterItem) =>
-  item.details?.cleanTitle || item.location.replace(/\s+\d{4,}\s*$/, "");
+const displayTitle = (item: DisasterItem) => eventTitle(item);
 
-/** Feed row time: relative from occurredAt when available, else the backend's meta line. */
+/**
+ * Feed row meta: "M 6.1 · 1 hour ago" / "Wildfires · 21 hours ago". The time
+ * is always relative (from occurredAt, else the minutes-ago counter) and the
+ * magnitude is the backend's pre-formatted label, so no surface rounds on
+ * its own. The raw backend meta line ("240 min ago") is never rendered.
+ */
 const displayMeta = (item: DisasterItem) => {
-  const rel = item.details?.occurredAt ? relativeTime(item.details.occurredAt) : null;
-  if (!rel) return item.meta;
-  const extra =
-    item.type === "earthquake" && item.details?.magnitude != null
-      ? `M ${item.details.magnitude.toFixed(1)} · `
-      : item.details?.category
-      ? `${item.details.category} · `
-      : "";
-  return `${extra}${rel}`;
+  const rel = eventRelativeTime(item);
+  const lead =
+    item.type === "earthquake"
+      ? item.details?.magnitudeLabel
+        ? `M ${item.details.magnitudeLabel}`
+        : null
+      : item.details?.category ?? getTypeLabel(item.type);
+  return [lead, rel].filter(Boolean).join(" · ");
 };
 
 type TimelineEvent = {
@@ -56,7 +60,7 @@ const FALLBACK_DISASTERS: DisasterItem[] = [
     id: 1,
     type: "earthquake",
     location: "İzmir, Turkey",
-    meta: "Mag 6.2 • 12 min ago • Depth 10 km",
+    meta: "Mag 6.2 • Depth 10 km",
     severity: "high",
     timeMinutesAgo: 12,
     description:
@@ -68,7 +72,7 @@ const FALLBACK_DISASTERS: DisasterItem[] = [
     id: 2,
     type: "flood",
     location: "Rotterdam, Netherlands",
-    meta: "River overflow • 1 h ago • Evacuations in progress",
+    meta: "River overflow • Evacuations in progress",
     severity: "medium",
     timeMinutesAgo: 60,
     description:
@@ -80,7 +84,7 @@ const FALLBACK_DISASTERS: DisasterItem[] = [
     id: 3,
     type: "wildfire",
     location: "California, USA",
-    meta: "800 ha affected • 3 h ago • Strong winds",
+    meta: "800 ha affected • Strong winds",
     severity: "high",
     timeMinutesAgo: 180,
     description:
@@ -92,7 +96,7 @@ const FALLBACK_DISASTERS: DisasterItem[] = [
     id: 4,
     type: "storm",
     location: "Osaka, Japan",
-    meta: "Category 2 • 6 h ago • Heavy rainfall expected",
+    meta: "Category 2 • Heavy rainfall expected",
     severity: "low",
     timeMinutesAgo: 360,
     description:
@@ -553,21 +557,15 @@ const DashboardPage = () => {
       .sort((a, b) => a.timeMinutesAgo - b.timeMinutesAgo)
       .slice(0, 4);
 
-    const fmtTime = (mins: number) => {
-      if (mins <= 0) return "Now";
-      if (mins < 60) return `${mins}m ago`;
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
-    };
-
+    // Same relative-time and clean-title helpers as the feed rows, so no
+    // "240m ago" or "Flood in Nepal 1104225" shows up here either.
     return top.map((d) => ({
-      time: fmtTime(d.timeMinutesAgo),
+      time: eventRelativeTime(d) ?? "Now",
       title: `${getTypeLabel(d.type)} reported`,
-      summary: d.description || d.meta || d.location,
+      summary: d.description ? cleanTitle(d.description) : eventTitle(d),
       type: d.type,
       severity: d.severity,
-      locationHint: d.location,
+      locationHint: d.details?.place ?? eventTitle(d),
     }));
   }, [filteredDisasters]);
 
@@ -587,10 +585,10 @@ const DashboardPage = () => {
     [kpiDisasters]
   );
 
-  const updatedLabel =
-    minutesSinceRefresh === 0
-      ? "Last updated: just now (NASA + USGS live data)"
-      : `Last updated: ${minutesSinceRefresh} min ago (NASA + USGS live data)`;
+  // same wording as every other relative time in the UI ("5 minutes ago")
+  const updatedLabel = `Last updated: ${
+    relativeTime(new Date(Date.now() - minutesSinceRefresh * 60_000)) ?? "just now"
+  } (NASA + USGS live data)`;
 
   /* =========================
      MAP DATA

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDisasterNews, NewsError, type NewsItem, type NewsType } from "../services/newsService";
 import { relativeTime } from "../utils/formatDate";
+import { cleanTitle } from "../utils/eventText";
 
 type Props = {
   isOpen: boolean;
@@ -30,7 +31,8 @@ const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export function eventTagText(item: NewsItem) {
   const e = item.relatedEvent;
   if (!e) return null;
-  return `${TYPE_LABELS[e.type] ?? capitalise(e.type)} · ${e.location} · ${capitalise(e.severity)}`;
+  // the location is the event's clean title; older cached payloads may still carry the raw source id
+  return `${TYPE_LABELS[e.type] ?? capitalise(e.type)} · ${cleanTitle(e.location)} · ${capitalise(e.severity)}`;
 }
 
 function Skeleton() {

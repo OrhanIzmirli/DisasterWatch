@@ -12,6 +12,8 @@
  *   anything else: low
  */
 
+import { formatMagnitude } from "./magnitude.js";
+
 export const EARTHQUAKE_HIGH_MAG = 6.0;
 export const EARTHQUAKE_MEDIUM_MAG = 5.0;
 
@@ -21,9 +23,10 @@ const FIXED_BY_TYPE = {
   flood: ["medium", "Medium: floods are always rated medium"],
 };
 
-function fmt(n) {
-  return Number(n).toFixed(1);
-}
+// Displayed numbers use the shared magnitude formatter so the explanation
+// shows exactly what the title, feed row and tooltip show. The comparisons
+// below stay on the raw value.
+const fmt = formatMagnitude;
 
 /**
  * @param {{ type: string, magnitude?: number|null }} input

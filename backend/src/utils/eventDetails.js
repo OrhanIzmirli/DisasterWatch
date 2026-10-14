@@ -4,6 +4,7 @@
  * requests, no guessed values. A field the source does not provide is null.
  */
 import { assessSeverity } from "./severity.js";
+import { formatMagnitude } from "./magnitude.js";
 
 /** "Wildfire in Tanzania 1032766" -> "Wildfire in Tanzania"; "Flood in Nepal 1104225" -> "Flood in Nepal" */
 export function cleanTitle(title) {
@@ -42,20 +43,29 @@ export function buildUsgsDetails(feature) {
   const p = feature?.properties ?? {};
   const coords = Array.isArray(feature?.geometry?.coordinates) ? feature.geometry.coordinates : [];
   const magnitude = numOrNull(p.mag);
+  const magnitudeLabel = formatMagnitude(magnitude);
   const { severity, reason } = assessSeverity({ type: "earthquake", magnitude });
   const alert = typeof p.alert === "string" && PAGER_LEVELS.has(p.alert.toLowerCase()) ? p.alert.toLowerCase() : null;
+
+  // The title is rebuilt from our own formatter rather than copied from
+  // USGS: the USGS title string rounds the magnitude its own way, which made
+  // the title say "M 6.1" while every other field said "M 6.0".
+  const place = p.place ? String(p.place) : null;
+  const title =
+    magnitudeLabel !== null ? `M ${magnitudeLabel} - ${place ?? "Unknown location"}` : cleanTitle(p.title) || place || "";
 
   return {
     eventId: feature?.id ? `usgs:${feature.id}` : null,
     source: "usgs",
     category: "Earthquake",
-    cleanTitle: cleanTitle(p.title) || (magnitude !== null ? `M ${magnitude.toFixed(1)} - ${p.place ?? "Unknown location"}` : String(p.place ?? "")),
-    place: p.place ? String(p.place) : null,
+    cleanTitle: title,
+    place,
     occurredAt: toIso(numOrNull(p.time)),
     updatedAt: toIso(numOrNull(p.updated)),
     status: p.status ? String(p.status) : null, // "reviewed" | "automatic"
     sources: p.url ? [{ name: "USGS event page", url: String(p.url) }] : [],
     magnitude,
+    magnitudeLabel, // display text for every surface ("6.1"); null when not reported
     magType: p.magType ? String(p.magType) : null,
     depthKm: coords.length >= 3 ? numOrNull(coords[2]) : null,
     pagerAlert: alert, // USGS PAGER: green | yellow | orange | red | null
@@ -101,6 +111,7 @@ export function buildEonetDetails(event, type, pickedGeometry = null) {
     status: event?.closed ? "closed" : "open",
     sources,
     magnitude: null,
+    magnitudeLabel: null,
     magType: null,
     depthKm: null,
     pagerAlert: null,

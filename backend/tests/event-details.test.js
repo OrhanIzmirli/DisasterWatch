@@ -198,7 +198,7 @@ describe("normalizers stay backwards compatible", () => {
       type: "wildfire",
       location: "Wildfire in Botswana 1032764", // raw title, as before
       severity: "high",
-      description: "Wildfire in Botswana 1032764",
+      description: "Wildfire in Botswana", // title fallback without the source id (shown in Today's events)
     });
     expect(item.meta).toMatch(/^Wildfires • \d+ min ago$/);
     expect(typeof item.id).toBe("number");

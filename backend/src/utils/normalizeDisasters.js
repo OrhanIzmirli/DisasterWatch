@@ -1,6 +1,6 @@
 // backend/src/utils/normalizeDisasters.js
 import { severityFromType } from "./severity.js";
-import { buildEonetDetails } from "./eventDetails.js";
+import { buildEonetDetails, cleanTitle } from "./eventDetails.js";
 
 function toId(str) {
   // Stable numeric id from string
@@ -144,7 +144,8 @@ export function normalizeNasaEvents(events) {
       meta,
       severity: sev,
       timeMinutesAgo: mins,
-      description: ev?.description || ev?.title || "",
+      // EONET has no description; the title fallback drops the trailing source id
+      description: ev?.description || cleanTitle(ev?.title),
       lat,
       lng,
       // Rich, source-faithful fields (new; everything above is unchanged)

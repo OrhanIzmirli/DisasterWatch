@@ -854,16 +854,21 @@
   z-index: 60;
 }
 
+/* Same dark surface as the news panel and the shared .card system (the
+   drawer used to be the one white panel in an otherwise dark UI). Text
+   colours come from the :root tokens: --dw-text ~16:1 and --dw-text-muted
+   ~11:1 on this background, both well above WCAG AA. */
 .detail-drawer {
   position: fixed;
   right: 0;
   top: 96px;
   bottom: 16px;
   width: min(380px, 100%);
-  background: #f9fafb;
-  border-left: 1px solid rgba(148, 163, 184, 0.8);
+  background: #001523;
+  color: var(--dw-text);
+  border-left: 1px solid var(--dw-border);
   border-radius: 1rem 0 0 1rem;
-  box-shadow: -18px 0 40px rgba(0, 0, 0, 0.4);
+  box-shadow: -18px 0 40px rgba(0, 0, 0, 0.5);
   z-index: 70;
   display: flex;
   flex-direction: column;
@@ -874,7 +879,7 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 0.9rem 1rem;
-  border-bottom: 1px solid rgba(209, 213, 219, 0.9);
+  border-bottom: 1px solid rgba(102, 155, 188, 0.35);
 }
 
 .detail-header-main {
@@ -886,24 +891,30 @@
 .detail-title {
   font-size: 1rem;
   font-weight: 600;
-  color: #111827;
+  color: var(--dw-cream);
 }
 
 .detail-meta {
   font-size: 0.8rem;
-  color: #4b5563;
+  color: var(--dw-text-muted);
 }
 
 .detail-close-btn {
   background: transparent;
   border: none;
   font-size: 1rem;
-  color: #6b7280;
+  color: var(--dw-text-muted);
   cursor: pointer;
 }
 
 .detail-close-btn:hover {
-  color: #111827;
+  color: var(--dw-cream);
+}
+
+.detail-close-btn:focus-visible {
+  outline: 2px solid var(--dw-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .detail-body {
@@ -915,7 +926,7 @@
 
 .detail-description {
   font-size: 0.85rem;
-  color: #1f2933;
+  color: var(--dw-text);
 }
 
 .detail-footer {
@@ -926,7 +937,7 @@
 
 .detail-footnote {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--dw-text-muted);
 }
 
 /* ALERTS PAGE */
@@ -3007,14 +3018,35 @@ body {
 .edd-status {
   font-size: 0.7rem;
   text-transform: capitalize;
-  color: #4b5563;
-  border: 1px solid rgba(148, 163, 184, 0.7);
+  color: var(--dw-text-muted);
+  border: 1px solid rgba(203, 213, 225, 0.5);
   border-radius: 999px;
   padding: 0.05rem 0.5rem;
 }
 
+/* severity chip on the dark surface: same hue family as the feed badges and
+   the news event tags, light text for contrast (the feed's dark-on-tint
+   variant is designed for its light rows) */
+.edd .disaster-severity.severity-high {
+  background: rgba(193, 18, 31, 0.28);
+  border-color: rgba(248, 113, 113, 0.8);
+  color: #fecaca;
+}
+
+.edd .disaster-severity.severity-medium {
+  background: rgba(234, 179, 8, 0.22);
+  border-color: rgba(251, 191, 36, 0.8);
+  color: #fde68a;
+}
+
+.edd .disaster-severity.severity-low {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(110, 231, 183, 0.8);
+  color: #a7f3d0;
+}
+
 .edd-section {
-  border-top: 1px solid rgba(209, 213, 219, 0.8);
+  border-top: 1px solid rgba(102, 155, 188, 0.3);
   padding-top: 0.6rem;
 }
 
@@ -3029,7 +3061,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #6b7280;
+  color: var(--dw-cream);
 }
 
 .edd-rows {
@@ -3043,11 +3075,11 @@ body {
   grid-template-columns: 96px 1fr;
   gap: 0.5rem;
   font-size: 0.85rem;
-  color: #111827;
+  color: var(--dw-text);
 }
 
 .edd-row dt {
-  color: #6b7280;
+  color: var(--dw-text-muted);
 }
 
 .edd-row dd {
@@ -3058,14 +3090,16 @@ body {
 .edd-text {
   margin: 0;
   font-size: 0.85rem;
-  color: #111827;
+  color: var(--dw-text);
 }
 
 .edd-sub {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--dw-text-muted);
 }
 
+/* USGS PAGER badge: the official alert colours are kept as-is; dark text on
+   each of them is >= 11:1 */
 .edd-pager {
   display: inline-block;
   padding: 0.05rem 0.55rem;
@@ -3090,19 +3124,8 @@ body {
   font-size: 0.85rem;
 }
 
-.edd .text-link {
-  color: #b45309;
-}
-
-.edd .btn-secondary {
-  background: rgba(0, 48, 73, 0.08);
-  border-color: rgba(0, 48, 73, 0.4);
-  color: #003049;
-}
-
-.edd .btn-secondary:hover {
-  background: rgba(0, 48, 73, 0.16);
-}
+/* links and the Zoom to button use the shared dark-theme styles
+   (.text-link = --dw-focus, .btn-secondary = cream on translucent blue) */
 
 /* ===== NEWS PANEL (overhaul) ===== */
 .news-updated {

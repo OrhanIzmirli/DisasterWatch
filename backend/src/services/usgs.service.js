@@ -1,6 +1,7 @@
 // backend/src/services/usgs.service.js
 import { severityFromMag } from "../utils/severity.js";
 import { buildUsgsDetails } from "../utils/eventDetails.js";
+import { formatMagnitude } from "../utils/magnitude.js";
 
 function toId(str) {
   let h = 0;
@@ -49,16 +50,17 @@ export function normalizeUsgsEarthquakes(features, { minMag = 4.5, limit = 300 }
       if (!Number.isFinite(time)) return null;
 
       const timeMinutesAgo = Math.max(0, Math.floor((Date.now() - time) / 60000));
-      const severity = severityFromMag(mag);
+      const severity = severityFromMag(mag); // threshold on the raw value
+      const magLabel = formatMagnitude(mag); // one rounding rule for every displayed magnitude
 
       return {
         id: toId(String(f?.id ?? place)),
         type: "earthquake",
         location: place,
-        meta: `Mag ${mag.toFixed(1)} • ${timeMinutesAgo} min ago`,
+        meta: `Mag ${magLabel} • ${timeMinutesAgo} min ago`,
         severity,
         timeMinutesAgo,
-        description: `Earthquake detected • Magnitude ${mag.toFixed(1)}`,
+        description: `Earthquake detected • Magnitude ${magLabel}`,
         lat,
         lng,
         // Rich, source-faithful fields (new; everything above is unchanged)

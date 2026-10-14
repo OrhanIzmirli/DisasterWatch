@@ -1,4 +1,5 @@
 import { formatDateTime, relativeTime } from "../utils/formatDate";
+import { cleanTitle, eventRelativeTime } from "../utils/eventText";
 
 export type EventSource = { name: string; url: string };
 
@@ -14,6 +15,8 @@ export type EventDetails = {
   status: string | null;
   sources: EventSource[];
   magnitude: number | null;
+  /** Display text for the magnitude ("6.1"), formatted once by the backend for every surface. */
+  magnitudeLabel?: string | null;
   magType: string | null;
   depthKm: number | null;
   pagerAlert: "green" | "yellow" | "orange" | "red" | null;
@@ -35,6 +38,8 @@ export type DrawerEvent = {
   description: string;
   lat: number;
   lng: number;
+  /** Feed minutes-ago counter; used for the relative time when `details.occurredAt` is missing. */
+  timeMinutesAgo?: number;
   details?: EventDetails;
 };
 
@@ -105,14 +110,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => {
   const d = event.details;
-  const title = d?.cleanTitle || event.location;
+  const title = d?.cleanTitle || cleanTitle(event.location);
   const occurredAt = d?.occurredAt ?? null;
+  const occurredRelative = eventRelativeTime(event); // falls back to the feed's minutes-ago counter
   const isQuake = event.type === "earthquake";
 
   const sizeLabel = isQuake ? "Magnitude" : "Size";
+  // The magnitude text comes pre-formatted from the backend so this row, the
+  // title, the feed row, the tooltip and the severity reason all agree.
   const sizeValue = isQuake
-    ? d?.magnitude !== null && d?.magnitude !== undefined
-      ? `M ${d.magnitude.toFixed(1)}${d.magType ? ` (${d.magType})` : ""}`
+    ? d?.magnitudeLabel
+      ? `M ${d.magnitudeLabel}${d.magType ? ` (${d.magType})` : ""}`
       : null
     : d?.magnitudeValue !== null && d?.magnitudeValue !== undefined
     ? `${d.magnitudeValue.toLocaleString("en-GB")} ${UNIT_LABELS[d.magnitudeUnit ?? ""] ?? d.magnitudeUnit ?? ""}`.trim()
@@ -146,12 +154,14 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
           <Section title="When">
             <dl className="edd-rows">
               <Row label="Occurred">
-                {occurredAt ? (
+                {occurredRelative ? (
                   <>
-                    <strong>{relativeTime(occurredAt)}</strong>
-                    <div className="edd-sub">
-                      {formatDateTime(occurredAt)} local · {utcString(occurredAt)}
-                    </div>
+                    <strong>{occurredRelative}</strong>
+                    {occurredAt && (
+                      <div className="edd-sub">
+                        {formatDateTime(occurredAt)} local · {utcString(occurredAt)}
+                      </div>
+                    )}
                   </>
                 ) : (
                   NOT_REPORTED
@@ -168,7 +178,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
 
           <Section title="Where">
             <dl className="edd-rows">
-              <Row label="Place">{d?.place ?? event.location ?? NOT_REPORTED}</Row>
+              <Row label="Place">{d?.place ?? (cleanTitle(event.location) || NOT_REPORTED)}</Row>
               <Row label="Coordinates">
                 {fmtCoord(event.lat)}, {fmtCoord(event.lng)}
               </Row>

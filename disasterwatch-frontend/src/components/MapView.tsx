@@ -1,6 +1,6 @@
 import type { FC } from "react";
 import { useEffect } from "react";
-import { relativeTime } from "../utils/formatDate";
+import { eventRelativeTime, eventTitle } from "../utils/eventText";
 import L from "leaflet";
 import {
   MapContainer,
@@ -36,11 +36,14 @@ export type MapDisaster = {
   lat: number;
   lng: number;
   meta: string;
+  timeMinutesAgo?: number;
   /** Rich fields from the backend; only what the tooltip needs is read here. */
   details?: {
     cleanTitle?: string;
     occurredAt?: string | null;
     magnitude?: number | null;
+    /** Pre-formatted magnitude text ("6.1"), the same string every other surface shows. */
+    magnitudeLabel?: string | null;
   };
 };
 
@@ -66,7 +69,7 @@ const TYPE_LABELS: Record<DisasterType, string> = {
 
 /** Tooltip title: the backend's clean title, else the raw location without a trailing id. */
 function tooltipTitle(d: MapDisaster) {
-  return d.details?.cleanTitle || d.location.replace(/\s+\d{4,}\s*$/, "");
+  return eventTitle(d);
 }
 
 const getColorByType = (type: DisasterType) => {
@@ -189,9 +192,9 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
                 </div>
                 <div className="dw-tooltip-title">{tooltipTitle(d)}</div>
                 <div className="dw-tooltip-meta">
-                  {d.details?.occurredAt ? relativeTime(d.details.occurredAt) : d.meta}
-                  {d.type === "earthquake" && d.details?.magnitude != null && (
-                    <> · M {d.details.magnitude.toFixed(1)}</>
+                  {eventRelativeTime(d) ?? d.meta}
+                  {d.type === "earthquake" && d.details?.magnitudeLabel && (
+                    <> · M {d.details.magnitudeLabel}</>
                   )}
                 </div>
                 <div className="dw-tooltip-hint">Click for details</div>
