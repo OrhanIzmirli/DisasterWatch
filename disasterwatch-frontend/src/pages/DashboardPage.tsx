@@ -632,7 +632,7 @@ const DashboardPage = () => {
           {feedStale && feedStatus === "ready" && (
             <div className="feed-stale-banner" role="status">
               Live sources could not be reached; showing the last successful update ({updatedLabel.replace(/^Last updated: /, "").replace(/ \(.*$/, "")}).
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadFeed()}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => loadFeed()}>
                 Try again
               </button>
             </div>
@@ -656,7 +656,7 @@ const DashboardPage = () => {
             <div className="feed-state" role="alert">
               <div className="form-error">{feedError ?? "The disaster feed is unavailable."}</div>
               <p className="muted">No events are shown until the live sources answer; nothing on this page is simulated.</p>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadFeed()}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => loadFeed()}>
                 Try again
               </button>
             </div>

@@ -3284,6 +3284,18 @@ body {
   font-size: 0.85rem;
 }
 
+/* the feed sits on the cream panel: the shared dark-theme error/button colours would be unreadable there */
+.feed-state .form-error {
+  background: rgba(185, 28, 28, 0.1);
+  border: 1px solid rgba(185, 28, 28, 0.45);
+  color: #7f1d1d;
+}
+
+.feed-state .muted {
+  color: #4b5563;
+  margin: 0;
+}
+
 .disaster-row-skeleton {
   cursor: default;
   pointer-events: none;
