@@ -241,6 +241,44 @@
   opacity: 0.9;
 }
 
+/* Clusters: numbered circles coloured by the highest severity inside */
+.map-cluster-icon {
+  background: none;
+  border: none;
+}
+
+.map-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid #f6e8d9;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 0 0 4px rgba(246, 232, 217, 0.18), 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: transform 120ms ease;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-cluster:hover {
+  transform: scale(1.08);
+}
+
+.map-cluster-high {
+  background: #c1121f;
+}
+
+.map-cluster-medium {
+  background: #b45309;
+}
+
+.map-cluster-low {
+  background: #1f7a4d;
+}
+
 /* Marker highlight (when a list item is clicked) */
 .map-marker-highlight {
   filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.9))
@@ -554,6 +592,13 @@
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: #780000;
+}
+
+.legend-hint {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: #4b5563;
+  white-space: nowrap;
 }
 
 .legend-pills {

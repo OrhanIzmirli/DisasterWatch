@@ -564,6 +564,7 @@ const DashboardPage = () => {
                 <span>Storm</span>
               </div>
             </div>
+            <span className="legend-hint">Numbered circles group nearby events</span>
           </div>
         </section>
 

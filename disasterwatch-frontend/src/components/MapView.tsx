@@ -1,14 +1,32 @@
 import type { FC } from "react";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { eventRelativeTime, eventTitle } from "../utils/eventText";
 import L from "leaflet";
 import {
   MapContainer,
   TileLayer,
   CircleMarker,
+  Marker,
+  Polyline,
   Tooltip,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
+import {
+  buildClusterIndex,
+  clusterLeaves,
+  clusterRadius,
+  clusterTooltip,
+  expansionZoom,
+  getClustersInView,
+  highestSeverity,
+  spiderPositions,
+  zoomToReveal,
+  type ClusterFeature,
+  type ClusterPoint,
+  type ClusterSeverity,
+  type PointFeature,
+} from "../utils/clustering";
 
 // Web Mercator world tiles are 256px square per zoom step (256 * 2^z).
 // Below this helper figures out the smallest integer zoom at which the
@@ -101,28 +119,107 @@ const getRadiusBySeverity = (severity: Severity) => {
 };
 
 /**
- * Marker rendering and flyTo logic inside the map
+ * Marker rendering, clustering and flyTo logic inside the map.
+ *
+ * Nearby events are grouped by a supercluster index (src/utils/clustering.ts)
+ * that is re-queried on every zoom/pan with the visible bounds, so only what
+ * is on screen is rendered. A cluster is a numbered circle coloured by its
+ * highest severity; clicking it zooms to its bounds, or fans its events out
+ * (spiderfy) when they cannot be separated at the map's maximum zoom. The
+ * highlighted event is never part of the index: it is always drawn on its
+ * own, on top, so a selection can never vanish inside a cluster.
  */
 const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
   const map = useMap();
+  const maxZoom = Number.isFinite(map.getMaxZoom()) ? map.getMaxZoom() : 10;
+
+  // ---- viewport state (drives re-clustering) ----
+  const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
+  const [spider, setSpider] = useState<{ clusterId: number; center: L.LatLng; leaves: PointFeature[] } | null>(null);
+  useMapEvents({
+    moveend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }),
+    zoomend: () => setSpider(null),
+    movestart: () => setSpider(null),
+  });
+
+  const byId = useMemo(() => new Map(disasters.map((d) => [d.id, d])), [disasters]);
+  const clusterPoints = useMemo<ClusterPoint[]>(
+    () => disasters.map((d) => ({ id: d.id, type: d.type, severity: d.severity, lat: d.lat, lng: d.lng })),
+    [disasters]
+  );
+  // index for rendering: everything except the highlighted event
+  const viewIndex = useMemo(() => buildClusterIndex(clusterPoints.filter((p) => p.id !== highlightId), { maxZoom }), [clusterPoints, highlightId, maxZoom]);
+  // index with every event: used to decide how far to zoom to reveal a selection
+  const fullIndex = useMemo(() => buildClusterIndex(clusterPoints, { maxZoom }), [clusterPoints, maxZoom]);
+  useEffect(() => setSpider(null), [disasters]);
+
+  const features = useMemo(() => {
+    const b = view.bounds.pad(0.2);
+    const bbox: [number, number, number, number] = [
+      Math.max(-180, b.getWest()),
+      Math.max(-85, b.getSouth()),
+      Math.min(180, b.getEast()),
+      Math.min(85, b.getNorth()),
+    ];
+    return getClustersInView(viewIndex, bbox, view.zoom);
+  }, [viewIndex, view]);
+
+  // ---- cluster interaction ----
+  const openCluster = (f: ClusterFeature) => {
+    const leaves = clusterLeaves(viewIndex, f.clusterId);
+    const z = expansionZoom(viewIndex, f.clusterId, maxZoom);
+    if (z === null) {
+      // cannot be separated by zooming: fan the events out around the cluster
+      setSpider({ clusterId: f.clusterId, center: L.latLng(f.lat, f.lng), leaves });
+      return;
+    }
+    const bounds = L.latLngBounds(leaves.map((l) => [l.lat, l.lng] as [number, number]));
+    const fit = map.getBoundsZoom(bounds, false, L.point(60, 60));
+    const target = Math.min(maxZoom, Math.max(z, fit));
+    map.flyTo(bounds.getCenter(), target, { duration: 0.6 });
+  };
+
+  const iconCache = useRef(new Map<string, L.DivIcon>());
+  const clusterIcon = (count: number, severity: ClusterSeverity) => {
+    const r = clusterRadius(count);
+    const key = `${severity}-${r}-${count}`;
+    let icon = iconCache.current.get(key);
+    if (!icon) {
+      const d = r * 2;
+      icon = L.divIcon({
+        html: `<div class="map-cluster map-cluster-${severity}" style="width:${d}px;height:${d}px">${count}</div>`,
+        className: "map-cluster-icon",
+        iconSize: [d, d],
+        iconAnchor: [r, r],
+      });
+      iconCache.current.set(key, icon);
+    }
+    return icon;
+  };
 
   // Fly to a disaster when it is selected in the list (or deep-linked from
-  // the news panel). A container resize during the flight cancels it: the
-  // size sync below may call setZoom while the flight dips below the minimum
-  // zoom, which happens right after mount (the feed column settles) when the
-  // selection comes from a cached feed. So a flight requested within the
-  // first second after mount waits a few frames, and any Leaflet "resize"
-  // during a pending/running flight restarts it once the size has settled.
+  // the news panel). The target zoom is the smallest zoom at which the event
+  // is not inside a cluster (at least 4.5, at most the map's max zoom); when
+  // it shares its coordinates with other events the flight ends at max zoom
+  // and the co-located cluster is spiderfied so the siblings stay visible.
+  //
+  // A container resize during the flight cancels it: the size sync below may
+  // call setZoom while the flight dips below the minimum zoom, which happens
+  // right after mount (the feed column settles) when the selection comes
+  // from a cached feed. So a flight requested within the first second after
+  // mount waits a few frames. The resize listener lives only while a flight
+  // is pending or running: it is removed at the flight's moveend (or 2 s
+  // after take-off at the latest), otherwise a later manual pan followed by
+  // a window resize would snap the map back to the event.
   const mountedAt = useRef(Date.now());
   useEffect(() => {
     if (!highlightId) return;
     const target = disasters.find((d) => d.id === highlightId);
     if (!target) return;
 
-    // The resize listener lives only while a flight is pending or running:
-    // it is removed at the flight's moveend (or 2 s after take-off at the
-    // latest), otherwise a later manual pan followed by a window resize would
-    // snap the map back to the event.
+    const reveal = zoomToReveal(fullIndex, { id: target.id, lat: target.lat, lng: target.lng }, 4.5, maxZoom);
+    const targetZoom = reveal === null ? maxZoom : Math.max(4.5, reveal);
+
     let timer: number | null = null;
     let armed = false; // resize listener attached
     let guard: number | null = null; // hard stop for the listener
@@ -136,8 +233,17 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
     };
     const fly = () => {
       timer = null;
-      map.flyTo([target.lat, target.lng], 4.5, { duration: 0.7 });
+      map.flyTo([target.lat, target.lng], targetZoom, { duration: 0.7 });
       map.once("moveend", disarm);
+      if (reveal === null) {
+        // co-located events: open the cluster that holds the siblings once the flight has landed
+        map.once("moveend", () => {
+          const eps = 1e-6;
+          const around = getClustersInView(viewIndex, [target.lng - eps, target.lat - eps, target.lng + eps, target.lat + eps], maxZoom);
+          const cluster = around.find((f): f is ClusterFeature => f.kind === "cluster");
+          if (cluster) setSpider({ clusterId: cluster.clusterId, center: L.latLng(cluster.lat, cluster.lng), leaves: clusterLeaves(viewIndex, cluster.clusterId) });
+        });
+      }
       if (guard !== null) window.clearTimeout(guard);
       guard = window.setTimeout(disarm, 2000);
     };
@@ -156,7 +262,9 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
       if (timer !== null) window.clearTimeout(timer);
       disarm();
     };
-  }, [highlightId, disasters, map]);
+    // viewIndex is only read inside the post-flight callback; re-running the flight on its changes is not wanted
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightId, disasters, map, fullIndex, maxZoom]);
 
   // The map stretches with the feed column, so tell Leaflet when its box
   // changes size, and recompute the minimum zoom that still fully covers
@@ -186,64 +294,103 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
     return () => observer.disconnect();
   }, [map]);
 
+  // ---- rendering ----
+  const renderPoint = (d: MapDisaster, position: [number, number], isHighlight: boolean, extraKey = "") => {
+    const radius = getRadiusBySeverity(d.severity) + (isHighlight ? 3 : 0);
+    const markerClass =
+      "map-marker map-marker-" + d.type + " map-marker-" + d.severity + (isHighlight ? " map-marker-highlight" : "");
+    return (
+      <CircleMarker
+        key={`${d.id}${extraKey}`}
+        center={position}
+        radius={radius}
+        className={markerClass}
+        pathOptions={{
+          color: "#F6E8D9",
+          weight: isHighlight ? 2.2 : 1.5,
+          fillColor: getColorByType(d.type),
+          fillOpacity: isHighlight ? 1 : 0.95,
+        }}
+        eventHandlers={{
+          click: () => onSelect?.(d.id),
+        }}
+      >
+        {/*
+          direction="auto" lets Leaflet flip the tooltip to whichever
+          side has room (right half of the map opens left, left half
+          opens right), so markers near the map's edges don't get their
+          tooltip clipped by the container. Paired with the
+          .leaflet-tooltip wrap override in App.css — the Leaflet
+          default is `white-space: nowrap`, which is what was pushing
+          long location names past the edge in the first place.
+        */}
+        <Tooltip direction="auto" offset={[0, -4]} opacity={1} className="dw-tooltip">
+          <div className="dw-tooltip-inner">
+            <div className="dw-tooltip-kicker">
+              <span className={`dw-tooltip-type dw-tooltip-type-${d.type}`}>{TYPE_LABELS[d.type]}</span>
+              <span className={`dw-tooltip-sev dw-tooltip-sev-${d.severity}`}>{d.severity}</span>
+            </div>
+            <div className="dw-tooltip-title">{tooltipTitle(d)}</div>
+            <div className="dw-tooltip-meta">
+              {eventRelativeTime(d) ?? d.meta}
+              {d.type === "earthquake" && d.details?.magnitudeLabel && <> · M {d.details.magnitudeLabel}</>}
+            </div>
+            <div className="dw-tooltip-hint">Click for details</div>
+          </div>
+        </Tooltip>
+      </CircleMarker>
+    );
+  };
+
+  const highlighted = highlightId ? byId.get(highlightId) : undefined;
+  const spiderLayout = spider
+    ? (() => {
+        const centerPx = map.latLngToContainerPoint(spider.center);
+        const positions = spiderPositions(spider.leaves.length, { x: centerPx.x, y: centerPx.y });
+        return spider.leaves.map((leaf, i) => ({ leaf, at: map.containerPointToLatLng(L.point(positions[i].x, positions[i].y)) }));
+      })()
+    : [];
+
   return (
     <>
-      {disasters.map((d) => {
-        const isHighlight = d.id === highlightId;
-        const radius =
-          getRadiusBySeverity(d.severity) + (isHighlight ? 3 : 0);
-
-        const markerClass =
-          "map-marker map-marker-" +
-          d.type +
-          " map-marker-" +
-          d.severity +
-          (isHighlight ? " map-marker-highlight" : "");
-
+      {features.map((f) => {
+        if (f.kind === "point") {
+          const d = byId.get(f.pointId);
+          return d ? renderPoint(d, [d.lat, d.lng], false) : null;
+        }
+        if (spider && spider.clusterId === f.clusterId) return null; // replaced by the spider below
+        const severity = highestSeverity(f.props);
         return (
-          <CircleMarker
-            key={d.id}
-            center={[d.lat, d.lng]}
-            radius={radius}
-            className={markerClass}
-            pathOptions={{
-              color: isHighlight ? "#F6E8D9" : "#F6E8D9",
-              weight: isHighlight ? 2.2 : 1.5,
-              fillColor: getColorByType(d.type),
-              fillOpacity: isHighlight ? 1 : 0.95,
-            }}
-            eventHandlers={{
-              click: () => onSelect?.(d.id),
-            }}
+          <Marker
+            key={`c${f.clusterId}`}
+            position={[f.lat, f.lng]}
+            icon={clusterIcon(f.count, severity)}
+            keyboard={false}
+            eventHandlers={{ click: () => openCluster(f) }}
           >
-            {/*
-              direction="auto" lets Leaflet flip the tooltip to whichever
-              side has room (right half of the map opens left, left half
-              opens right), so markers near the map's edges don't get their
-              tooltip clipped by the container. Paired with the
-              .leaflet-tooltip wrap override in App.css — the Leaflet
-              default is `white-space: nowrap`, which is what was pushing
-              long location names past the edge in the first place.
-            */}
-            <Tooltip direction="auto" offset={[0, -4]} opacity={1} className="dw-tooltip">
+            <Tooltip direction="top" offset={[0, -clusterRadius(f.count)]} opacity={1} className="dw-tooltip">
               <div className="dw-tooltip-inner">
-                <div className="dw-tooltip-kicker">
-                  <span className={`dw-tooltip-type dw-tooltip-type-${d.type}`}>{TYPE_LABELS[d.type]}</span>
-                  <span className={`dw-tooltip-sev dw-tooltip-sev-${d.severity}`}>{d.severity}</span>
-                </div>
-                <div className="dw-tooltip-title">{tooltipTitle(d)}</div>
-                <div className="dw-tooltip-meta">
-                  {eventRelativeTime(d) ?? d.meta}
-                  {d.type === "earthquake" && d.details?.magnitudeLabel && (
-                    <> · M {d.details.magnitudeLabel}</>
-                  )}
-                </div>
-                <div className="dw-tooltip-hint">Click for details</div>
+                <div className="dw-tooltip-title">{clusterTooltip(f.count, f.props)}</div>
+                <div className="dw-tooltip-hint">{expansionZoom(viewIndex, f.clusterId, maxZoom) === null ? "Click to fan out" : "Click to zoom in"}</div>
               </div>
             </Tooltip>
-          </CircleMarker>
+          </Marker>
         );
       })}
+
+      {spiderLayout.map(({ leaf, at }) => {
+        const d = byId.get(leaf.pointId);
+        if (!d) return null;
+        return (
+          <Fragment key={`s${leaf.pointId}`}>
+            <Polyline positions={[spider!.center, at]} pathOptions={{ color: "#F6E8D9", weight: 1, opacity: 0.6, dashArray: "3 3" }} interactive={false} />
+            {renderPoint(d, [at.lat, at.lng], false, "-spider")}
+          </Fragment>
+        );
+      })}
+
+      {/* the selected event is always rendered on its own, last, so it sits on top of everything */}
+      {highlighted && renderPoint(highlighted, [highlighted.lat, highlighted.lng], true)}
     </>
   );
 };
