@@ -3477,3 +3477,202 @@ body {
   background: #001523;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
 }
+
+/* ===== ADMIN CONSOLE: tabs, users, audit log ===== */
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.admin-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.admin-search input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--dw-border);
+  background: rgba(15, 23, 42, 0.45);
+  color: var(--dw-text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.admin-search input:focus-visible {
+  outline: 2px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.status-badge-active {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(110, 231, 183, 0.8);
+  color: #a7f3d0;
+}
+
+.status-badge-disabled {
+  background: rgba(193, 18, 31, 0.28);
+  border-color: rgba(248, 113, 113, 0.8);
+  color: #fecaca;
+}
+
+.status-badge-admin {
+  background: rgba(251, 191, 36, 0.2);
+  border-color: rgba(251, 191, 36, 0.8);
+  color: #fde68a;
+}
+
+.admin-user-row {
+  cursor: pointer;
+}
+
+.admin-user-row:hover,
+.admin-user-row:focus-visible {
+  background: rgba(102, 155, 188, 0.14);
+  outline: none;
+}
+
+.admin-user-row-selected,
+.data-table tbody tr.admin-user-row-selected:nth-child(even) {
+  background: rgba(102, 155, 188, 0.22);
+}
+
+.admin-user-email {
+  word-break: break-all;
+}
+
+.admin-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.admin-detail-rows {
+  margin-bottom: 0.9rem;
+}
+
+.admin-detail-rows .edd-row {
+  grid-template-columns: 120px 1fr;
+}
+
+.admin-subheading {
+  margin: 0 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dw-cream);
+}
+
+.admin-sub-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.admin-audit-when {
+  white-space: nowrap;
+}
+
+.audit-action {
+  font-weight: 600;
+}
+
+.audit-action-user-delete { color: #fecaca; }
+.audit-action-user-disable { color: #fde68a; }
+.audit-action-user-enable { color: #a7f3d0; }
+.audit-action-disaster-create { color: #93c5fd; }
+
+/* confirmation dialog on the dark surface (same family as .card) */
+.dw-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 21, 35, 0.65);
+  z-index: 1400;
+}
+
+.dw-modal {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, calc(100% - 2rem));
+  z-index: 1410;
+  background: #001523;
+}
+
+.dw-modal-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #fecaca;
+}
+
+.dw-modal-text {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  color: var(--dw-text);
+}
+
+.dw-modal-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .admin-detail-rows .edd-row {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+
+  /* created / last sign-in live in the detail panel on phones */
+  .admin-users-table th:nth-child(3),
+  .admin-users-table td:nth-child(3),
+  .admin-users-table th:nth-child(4),
+  .admin-users-table td:nth-child(4) {
+    display: none;
+  }
+
+  /* fixed layout so the e-mail wraps instead of pushing Status/Subs off-screen
+     (overrides the generic 560px scroll-instead-of-squeeze rule) */
+  .table-wrap .admin-users-table {
+    table-layout: fixed;
+    min-width: 0;
+  }
+
+  .admin-users-table th:nth-child(2),
+  .admin-users-table td:nth-child(2) {
+    width: 6.4rem;
+  }
+
+  .admin-users-table th:nth-child(5),
+  .admin-users-table td:nth-child(5) {
+    width: 3.4rem;
+  }
+
+  .admin-audit-when {
+    white-space: normal;
+  }
+}

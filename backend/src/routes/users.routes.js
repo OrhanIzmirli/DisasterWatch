@@ -3,22 +3,12 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import prisma from "../prisma.js";
-import { signAccessToken } from "../utils/jwt.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { roleForEmail } from "../utils/adminEmails.js";
-
-const COOKIE_NAME = process.env.COOKIE_NAME || "dw_session";
+import { setSessionCookie, clearSessionCookie } from "../utils/session.js";
 
 // Brute-force protection for credential endpoints: 10 attempts per IP per 15 minutes
 const DEFAULT_AUTH_RATE_LIMIT = { windowMs: 15 * 60 * 1000, limit: 10 };
-
-const cookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
-  maxAge: 24 * 60 * 60 * 1000,
-  path: "/",
-};
 
 const credentialsSchema = z.object({
   email: z
@@ -38,11 +28,6 @@ function publicUser(user) {
     createdAt: user.createdAt,
     subscriptionCount: user._count?.subscriptions ?? 0,
   };
-}
-
-function setSessionCookie(res, user) {
-  const token = signAccessToken({ id: user.id, email: user.email, role: user.role });
-  res.cookie(COOKIE_NAME, token, cookieOptions);
 }
 
 /**
@@ -139,15 +124,18 @@ export function createUsersRouter(options = {}) {
         return res.status(401).json({ message: "Invalid email or password." });
       }
 
-      // Keep the stored role in sync with ADMIN_EMAILS: promote if listed, demote if not.
-      const expectedRole = roleForEmail(user.email);
-      if (user.role !== expectedRole) {
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { role: expectedRole },
-          include: withSubscriptionCount,
-        });
+      // A suspended account cannot sign in, even with the right password.
+      if (user.disabledAt) {
+        return res.status(403).json({ message: "Account disabled" });
       }
+
+      // Keep the stored role in sync with ADMIN_EMAILS (promote if listed,
+      // demote if not) and record the sign-in.
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { role: roleForEmail(user.email), lastLoginAt: new Date() },
+        include: withSubscriptionCount,
+      });
 
       setSessionCookie(res, user);
       res.json({ user: publicUser(user) });
@@ -161,7 +149,7 @@ export function createUsersRouter(options = {}) {
      POST /users/logout
   =========================== */
   router.post("/logout", (req, res) => {
-    res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: undefined });
+    clearSessionCookie(res);
     res.json({ ok: true });
   });
 
@@ -182,7 +170,7 @@ export function createUsersRouter(options = {}) {
       });
 
       if (!user) {
-        res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: undefined });
+        clearSessionCookie(res);
         return res.status(401).json({ message: "Not authenticated" });
       }
 

@@ -1,16 +1,9 @@
 import { Router } from "express";
 import { publishDisasterEvent } from "../services/kafkaProducer.js";
-import { requireAuth } from "../middleware/auth.middleware.js";
+import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
 import { disasterEventSchema } from "../events/contract.js";
 
 const router = Router();
-
-function requireAdmin(req, res, next) {
-  if (req.user?.role !== "admin") {
-    return res.status(403).json({ ok: false, error: "Admin access required" });
-  }
-  next();
-}
 
 // POST /events -> validates the body against the event contract and publishes it (admin only)
 router.post("/", requireAuth, requireAdmin, async (req, res) => {
