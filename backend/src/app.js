@@ -8,6 +8,7 @@ import newsRoutes from "./routes/news.routes.js";
 import { createUsersRouter } from "./routes/users.routes.js";
 import alertsRoutes from "./routes/alerts.routes.js";
 import notificationsRoutes from "./routes/notifications.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 import { producerStatus } from "./services/kafkaProducer.js";
 import { countPendingOutbox } from "./jobs/ingest.js";
 
@@ -69,6 +70,9 @@ export function createApp(options = {}) {
 
   // In-app notifications (frontend /api/notifications -> backend /notifications)
   app.use("/notifications", notificationsRoutes);
+
+  // Admin console: user management and audit log (frontend /api/admin -> backend /admin)
+  app.use("/admin", adminRoutes);
 
   return app;
 }

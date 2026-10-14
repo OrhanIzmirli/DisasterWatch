@@ -115,7 +115,7 @@ describe("POST /events (Kafka publish)", () => {
   it("returns 403 for a regular user and does not publish", async () => {
     const res = await user.post("/events").send(EVENT);
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe("Admin access required");
+    expect(res.body.message).toBe("Admin access required");
     expect(publishDisasterEvent).not.toHaveBeenCalled();
   });
 

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuthUser } from "../App";
 import { formatDateTime } from "../utils/formatDate";
+import UsersTab from "../components/admin/UsersTab";
+import AuditTab from "../components/admin/AuditTab";
 
 type Severity = "high" | "medium" | "low";
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
@@ -50,7 +52,8 @@ function localDateTimeValue(d = new Date()) {
   )}:${pad(d.getMinutes())}`;
 }
 
-const AdminPage = ({ user }: Props) => {
+/** "Disaster entries" tab: the original manual-entry form and list, unchanged. */
+const DisasterEntriesTab = ({ user }: Props) => {
   const isAdmin = user?.role === "admin";
 
   const [type, setType] = useState<DisasterType>("earthquake");
@@ -160,20 +163,7 @@ const AdminPage = ({ user }: Props) => {
   };
 
   return (
-    <div className="page admin-page">
-      <header className="page-header">
-        <h1 className="page-title">Admin console</h1>
-        <p className="page-subtitle">
-          Operator-only panel for creating manual disaster entries.
-          {user && (
-            <>
-              {" "}
-              Signed in as <strong>{user.email}</strong> ({user.role}).
-            </>
-          )}
-        </p>
-      </header>
-
+    <>
       {isAdmin && (
         <section className="card">
           <div className="card-title">Create disaster entry</div>
@@ -349,6 +339,54 @@ const AdminPage = ({ user }: Props) => {
           </div>
         )}
       </section>
+    </>
+  );
+};
+
+type Tab = "entries" | "users" | "audit";
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "entries", label: "Disaster entries" },
+  { key: "users", label: "Users" },
+  { key: "audit", label: "Audit log" },
+];
+
+const AdminPage = ({ user }: Props) => {
+  const [tab, setTab] = useState<Tab>("entries");
+
+  return (
+    <div className="page admin-page">
+      <header className="page-header">
+        <h1 className="page-title">Admin console</h1>
+        <p className="page-subtitle">
+          Operator-only panel: manual disaster entries, user management and the audit log.
+          {user && (
+            <>
+              {" "}
+              Signed in as <strong>{user.email}</strong> ({user.role}).
+            </>
+          )}
+        </p>
+      </header>
+
+      <div className="admin-tabs" role="tablist" aria-label="Admin sections">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            className={tab === t.key ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "entries" && <DisasterEntriesTab user={user} />}
+      {tab === "users" && <UsersTab currentUser={user} />}
+      {tab === "audit" && <AuditTab />}
     </div>
   );
 };

@@ -14,8 +14,31 @@ model User {
   password      String
   role          String              @default("user")
   createdAt     DateTime            @default(now())
+  lastLoginAt   DateTime?
+  /// Set when an admin suspends the account; sign-in is refused and every
+  /// existing session is rejected by requireAuth.
+  disabledAt    DateTime?
+  /// Bumped to invalidate all sessions at once (tokens carry the version).
+  tokenVersion  Int                 @default(0)
   subscriptions AlertSubscription[]
   notifications Notification[]
+}
+
+/// One row per administrative action, written in the same transaction as
+/// the action. targetLabel keeps a human-readable reference (masked e-mail
+/// for deleted users) after the target row is gone; no relation on purpose.
+model AdminAuditLog {
+  id           Int      @id @default(autoincrement())
+  actorId      Int
+  actorEmail   String
+  /// user.disable | user.enable | user.delete | disaster.create
+  action       String
+  targetUserId Int?
+  targetLabel  String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 /// A user's request to be alerted about disasters of a given type and

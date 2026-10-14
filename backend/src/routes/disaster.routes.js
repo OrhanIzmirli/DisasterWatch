@@ -1,7 +1,8 @@
 import express from "express";
 import { z } from "zod";
 import prisma from "../prisma.js";
-import { requireAuth } from "../middleware/auth.middleware.js";
+import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
+import { writeAudit } from "../utils/audit.js";
 
 import { fetchNasaEvents } from "../services/nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
@@ -176,11 +177,7 @@ router.get("/manual", async (req, res) => {
 /* ===========================
    CREATE DISASTER (admin only)
 =========================== */
-router.post("/", async (req, res) => {
-  if (req.user?.role !== "admin") {
-    return res.status(403).json({ message: "Admin access required" });
-  }
-
+router.post("/", requireAdmin, async (req, res) => {
   const schema = z.object({
     type: z.string().trim().min(1),
     title: z.string().trim().min(1),
@@ -202,12 +199,22 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    const disaster = await prisma.disaster.create({
-      data: {
-        ...parsed.data,
-        date,
-        createdBy: req.user.email ?? null,
-      },
+    // The entry and its audit row are written in one transaction.
+    const disaster = await prisma.$transaction(async (tx) => {
+      const created = await tx.disaster.create({
+        data: {
+          ...parsed.data,
+          date,
+          createdBy: req.user.email ?? null,
+        },
+      });
+      await writeAudit(tx, {
+        actor: req.user,
+        action: "disaster.create",
+        targetLabel: `${created.type}: ${created.title}`,
+        metadata: { disasterId: created.id, type: created.type, severity: created.severity ?? null },
+      });
+      return created;
     });
 
     res.status(201).json({ message: "Disaster created", disaster });
