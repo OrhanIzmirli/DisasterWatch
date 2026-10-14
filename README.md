@@ -23,7 +23,8 @@ Note: The project is designed to be **fully runnable on localhost** via Docker C
 - KPI overview:
   - Total disasters
   - Active alerts (high severity)
-  - Countries affected
+  - Countries affected (derived by the backend from the source place names; events whose country cannot be derived, e.g. "North Atlantic Ocean", are not counted)
+- Honest feed states: a skeleton while loading, an explicit error state with "Try again" when the sources are down, and the last successful feed flagged STALE when a refresh fails. Nothing on the dashboard is simulated: there are no demo or fallback events anywhere.
 
 ### 3) Filtering, Search, Sorting
 - Filter by disaster type:
@@ -216,6 +217,8 @@ Admin POST /events ──validate contract──┘                             
 2. **Kafka topic `disaster-events`** carries one JSON message per event (contract below).
 3. **notification-service** validates each message, loads active `AlertSubscription` rows and creates a `Notification` when the rule matches (type is `any` or equal, event severity ≥ `minSeverity`, haversine distance ≤ `radiusKm`), the event is at most 48 h old and the subscription was created before the event. Inserts are `ON CONFLICT (userId, eventId) DO NOTHING`; invalid messages are logged and skipped, database errors make Kafka redeliver the message.
 4. **Backend API** `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` (all scoped to the signed-in user) feed the **bell in the header**, which polls every 60 s.
+
+`GET /disasters` (the public feed) answers `{ items, count, source, stale, updatedAt, params }` from a 5-minute in-memory cache (`src/services/feed.service.js`). When NASA/USGS fail it serves the previous feed with `stale: true`; with nothing cached it answers 503 `{ message, retryAfterSeconds }`. Each item carries `country` (from the USGS place or the EONET title, `null` when not derivable) and polygon events (GDACS floods) are placed at the polygon centroid.
 
 Admin entries from `POST /disasters` are stored but **not** published yet; a verification step for manual entries comes in a later release. Admins can publish a test event with `POST /events`.
 

@@ -1,6 +1,7 @@
 // backend/src/utils/normalizeDisasters.js
 import { severityFromType } from "./severity.js";
 import { buildEonetDetails, cleanTitle } from "./eventDetails.js";
+import { countryFromPlace } from "./country.js";
 
 function toId(str) {
   // Stable numeric id from string
@@ -95,17 +96,19 @@ export function pickBestLatLngFromGeometryArray(geometryArr) {
     const g = geom[i];
     const coords = g?.coordinates;
 
-    // 1) Try direct extraction (Point or deep nested)
-    const p = pickPointFromCoordinates(coords);
-    if (p) return { coords: p, date: g?.date, geometry: g };
-
-    // 2) If it looks like Polygon ring, try centroid
-    // Polygon structure often: [ [ [lng,lat], ... ] ]
+    // 1) Polygon ([[ [lng,lat], ... ]]) or MultiPolygon ([[[ [lng,lat], ... ]]]):
+    //    place the marker at the centroid of the outer ring, never at its
+    //    first vertex (GDACS flood polygons are large; the first vertex can
+    //    sit kilometres from the affected area's centre).
     if (Array.isArray(coords) && Array.isArray(coords[0]) && Array.isArray(coords[0][0])) {
-      const ring = coords?.[0]; // first ring
+      const ring = Array.isArray(coords[0][0][0]) ? coords[0][0] : coords[0]; // MultiPolygon -> first polygon's outer ring
       const cent = centroidOfRing(ring);
       if (cent) return { coords: cent, date: g?.date, geometry: g };
     }
+
+    // 2) Point (or anything else with a usable [lng,lat] inside)
+    const p = pickPointFromCoordinates(coords);
+    if (p) return { coords: p, date: g?.date, geometry: g };
   }
 
   return null;
@@ -151,6 +154,9 @@ export function normalizeNasaEvents(events) {
       // Rich, source-faithful fields (new; everything above is unchanged)
       details: buildEonetDetails(ev, type, best?.geometry ?? null),
     });
+    // Country from the source place name only (null when it cannot be derived)
+    const last = out[out.length - 1];
+    last.country = countryFromPlace(last.details?.place ?? cleanTitle(location));
   }
 
   return out;

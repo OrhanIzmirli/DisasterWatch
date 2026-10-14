@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import MapView from "../components/MapView";
 import RelatedNews from "../components/RelatedNews";
@@ -20,9 +20,13 @@ type DisasterItem = {
   description: string;
   lat: number;
   lng: number;
+  /** Country derived by the backend from the source place name; null when not derivable. */
+  country?: string | null;
   /** Rich, source-faithful fields (present for live NASA/USGS items). */
   details?: EventDetails;
 };
+
+type FeedStatus = "loading" | "ready" | "error";
 
 /** Feed row title: clean title from the backend, else the raw location minus a trailing id. */
 const displayTitle = (item: DisasterItem) => eventTitle(item);
@@ -52,60 +56,6 @@ type TimelineEvent = {
   severity: Severity;
   locationHint?: string;
 };
-
-/* =========================
-   FALLBACK (IF THE API IS DOWN)
-========================= */
-const FALLBACK_DISASTERS: DisasterItem[] = [
-  {
-    id: 1,
-    type: "earthquake",
-    location: "İzmir, Turkey",
-    meta: "Mag 6.2 • Depth 10 km",
-    severity: "high",
-    timeMinutesAgo: 12,
-    description:
-      "A shallow earthquake near the Aegean coast. Local authorities are assessing structural damage in urban areas.",
-    lat: 38.42,
-    lng: 27.14,
-  },
-  {
-    id: 2,
-    type: "flood",
-    location: "Rotterdam, Netherlands",
-    meta: "River overflow • Evacuations in progress",
-    severity: "medium",
-    timeMinutesAgo: 60,
-    description:
-      "Heavy rainfall combined with high river levels has caused localized flooding in low-lying districts.",
-    lat: 51.92,
-    lng: 4.48,
-  },
-  {
-    id: 3,
-    type: "wildfire",
-    location: "California, USA",
-    meta: "800 ha affected • Strong winds",
-    severity: "high",
-    timeMinutesAgo: 180,
-    description:
-      "A fast-moving wildfire in dry forest areas. Firefighters are struggling with shifting wind patterns.",
-    lat: 37.77,
-    lng: -122.42,
-  },
-  {
-    id: 4,
-    type: "storm",
-    location: "Osaka, Japan",
-    meta: "Category 2 • Heavy rainfall expected",
-    severity: "low",
-    timeMinutesAgo: 360,
-    description:
-      "A category 2 storm system approaching the Kansai region with sustained winds and intense rainfall.",
-    lat: 34.69,
-    lng: 135.5,
-  },
-];
 
 /* =========================
    HELPERS
@@ -181,215 +131,6 @@ const getCityHint = (location: string) => {
 };
 
 /* =========================
-   COUNTRIES AFFECTED (ACCURATE)
-   - US state => USA
-   - ISO-2 codes => English country name (Intl.DisplayNames)
-========================= */
-const US_STATES = new Set([
-  "Alabama",
-  "Alaska",
-  "Arizona",
-  "Arkansas",
-  "California",
-  "Colorado",
-  "Connecticut",
-  "Delaware",
-  "Florida",
-  "Georgia",
-  "Hawaii",
-  "Idaho",
-  "Illinois",
-  "Indiana",
-  "Iowa",
-  "Kansas",
-  "Kentucky",
-  "Louisiana",
-  "Maine",
-  "Maryland",
-  "Massachusetts",
-  "Michigan",
-  "Minnesota",
-  "Mississippi",
-  "Missouri",
-  "Montana",
-  "Nebraska",
-  "Nevada",
-  "New Hampshire",
-  "New Jersey",
-  "New Mexico",
-  "New York",
-  "North Carolina",
-  "North Dakota",
-  "Ohio",
-  "Oklahoma",
-  "Oregon",
-  "Pennsylvania",
-  "Rhode Island",
-  "South Carolina",
-  "South Dakota",
-  "Tennessee",
-  "Texas",
-  "Utah",
-  "Vermont",
-  "Virginia",
-  "Washington",
-  "West Virginia",
-  "Wisconsin",
-  "Wyoming",
-  "District of Columbia",
-]);
-
-const US_STATE_ABBR = new Set([
-  "AL",
-  "AK",
-  "AZ",
-  "AR",
-  "CA",
-  "CO",
-  "CT",
-  "DE",
-  "FL",
-  "GA",
-  "HI",
-  "ID",
-  "IL",
-  "IN",
-  "IA",
-  "KS",
-  "KY",
-  "LA",
-  "ME",
-  "MD",
-  "MA",
-  "MI",
-  "MN",
-  "MS",
-  "MO",
-  "MT",
-  "NE",
-  "NV",
-  "NH",
-  "NJ",
-  "NM",
-  "NY",
-  "NC",
-  "ND",
-  "OH",
-  "OK",
-  "OR",
-  "PA",
-  "RI",
-  "SC",
-  "SD",
-  "TN",
-  "TX",
-  "UT",
-  "VT",
-  "VA",
-  "WA",
-  "WV",
-  "WI",
-  "WY",
-  "DC",
-  "PR",
-  "GU",
-  "VI",
-  "MP",
-  "AS",
-]);
-
-const regionNames =
-  typeof Intl !== "undefined" && "DisplayNames" in Intl
-    ? new Intl.DisplayNames(["en"], { type: "region" })
-    : null;
-
-const iso2ToEnglishCountry = (code2: string) => {
-  const c = (code2 || "").trim().toUpperCase();
-  if (!regionNames) return null;
-  if (!/^[A-Z]{2}$/.test(c)) return null;
-  const name = regionNames.of(c);
-  return name || null;
-};
-
-const normalizeCountryToken = (raw: string) => {
-  const s = (raw || "").trim();
-  if (!s) return "Unknown";
-
-  if (/^(us|u\.s\.|u\.s\.a\.|usa|united states)$/i.test(s)) return "USA";
-  if (/^(uk|u\.k\.|united kingdom|great britain)$/i.test(s))
-    return "United Kingdom";
-  if (/^(uae|u\.a\.e\.|united arab emirates)$/i.test(s))
-    return "United Arab Emirates";
-  if (/^(turkiye|türkiye)$/i.test(s)) return "Turkey";
-
-  const isoName = iso2ToEnglishCountry(s);
-  if (isoName) return isoName;
-
-  return s;
-};
-
-const isObviouslyNotACountry = (token: string) => {
-  const t = normalizeText(token);
-  if (!t) return true;
-
-  if (/\d/.test(t)) return true;
-  if (t.includes(" km") || t.includes("miles") || t.includes(" mi")) return true;
-
-  if (t.includes("region")) return true;
-  if (t.includes(" of ")) return true;
-  if (t.includes("island") || t.includes("islands")) return true;
-  if (t.includes("sea") || t.includes("ocean")) return true;
-  if (t.includes("coast")) return true;
-
-  if (t.length > 30) return true;
-
-  return false;
-};
-
-const looksLikeUsgsPlace = (loc: string) => {
-  const t = normalizeText(loc);
-  return t.includes(" km ") || t.includes(" mi ") || t.includes(" of ");
-};
-
-/**
- * Extract country in a robust way:
- * - "..., Texas" / "... , CA" (USGS) => USA
- * - "... , MX" => Mexico (Intl)
- * - "... , Turkey" => Turkey
- */
-const extractCountry = (location: string): string => {
-  const loc = (location || "").trim();
-  if (!loc) return "Unknown";
-
-  const hasComma = loc.includes(",");
-  const last = hasComma ? (loc.split(",").pop() || "").trim() : "";
-
-  if (last && US_STATES.has(last)) return "USA";
-  if (last && US_STATE_ABBR.has(last.toUpperCase())) {
-    if (looksLikeUsgsPlace(loc)) return "USA";
-  }
-
-  if (last) {
-    const norm = normalizeCountryToken(last);
-    if (!isObviouslyNotACountry(norm) && norm.length >= 2) return norm;
-  }
-
-  const lower = loc.toLowerCase();
-  for (const st of US_STATES) {
-    if (lower.includes(st.toLowerCase())) return "USA";
-  }
-
-  if (looksLikeUsgsPlace(loc)) {
-    for (const abbr of US_STATE_ABBR) {
-      const re = new RegExp(`\\b${abbr}\\b`, "i");
-      if (re.test(loc)) return "USA";
-    }
-  }
-
-  return "Unknown";
-};
-
-/* =========================
    PERFORMANCE LIMITS
 ========================= */
 const LIST_PAGE_SIZE = 50;
@@ -398,7 +139,12 @@ const MAP_EARTHQUAKE_CAP = 15;
 
 const DashboardPage = () => {
   // Start from the feed cached by the previous visit (survives route changes), else the fallback rows.
-  const [disasters, setDisasters] = useState<DisasterItem[]>(() => getCachedFeed<DisasterItem>()?.items ?? FALLBACK_DISASTERS);
+  // Start from the feed cached by the previous visit (survives route changes); otherwise the
+  // list is empty and the skeleton is shown until the backend answers. Never demo rows.
+  const [disasters, setDisasters] = useState<DisasterItem[]>(() => getCachedFeed<DisasterItem>()?.items ?? []);
+  const [feedStatus, setFeedStatus] = useState<FeedStatus>(() => (getCachedFeed() ? "ready" : "loading"));
+  const [feedStale, setFeedStale] = useState(false);
+  const [feedError, setFeedError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<"all" | DisasterType>("all");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"time" | "severity">("time");
@@ -441,47 +187,51 @@ const DashboardPage = () => {
 
   /* =========================
      FETCH – Backend (NASA EONET + USGS merged)
+     - success: real items only (an empty feed stays empty)
+     - failure: the previous real feed (if any) with a stale warning, else an
+       explicit error state with "Try again"; demo rows are never shown
   ========================= */
-  useEffect(() => {
-    let cancelled = false;
+  const loadFeed = useCallback(async (signal?: AbortSignal) => {
+    const hasCache = Boolean(getCachedFeed());
+    if (!hasCache) setFeedStatus("loading");
+    setFeedError(null);
+    try {
+      const res = await fetch("/api/disasters", { signal });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || `Feed request failed (${res.status})`);
+      const items: DisasterItem[] = Array.isArray(data?.items) ? data.items : [];
+      if (signal?.aborted) return;
+      setCachedFeed(items);
+      setDisasters(items);
+      setFeedStale(Boolean(data?.stale));
+      setMinutesSinceRefresh(0);
+      setFeedStatus("ready");
+    } catch (e) {
+      if (signal?.aborted) return;
+      const message = e instanceof Error ? e.message : "Could not reach the disaster feed.";
+      const cached = getCachedFeed<DisasterItem>();
+      if (cached) {
+        // keep the last real data on screen, flagged as stale
+        setDisasters(cached.items);
+        setFeedStale(true);
+        setFeedStatus("ready");
+      } else {
+        setDisasters([]);
+        setFeedStatus("error");
+      }
+      setFeedError(message);
+    }
+  }, []);
 
+  useEffect(() => {
     // A feed fetched less than FEED_FRESH_MS ago (previous visit to the
     // dashboard in this tab) is used as is; the backend's own ingestion runs
     // every 5 minutes, so nothing newer would come back anyway.
     if (isFeedFresh()) return;
-
-    async function fetchDisasters() {
-      try {
-        const res = await fetch("/api/disasters");
-        const data = res.ok ? await res.json() : { items: [] };
-        const items: DisasterItem[] = Array.isArray(data?.items) ? data.items : [];
-
-        const hasFlood = items.some((d) => d.type === "flood");
-        const fallbackFloodsSafe: DisasterItem[] = hasFlood
-          ? []
-          : FALLBACK_DISASTERS.filter((d) => d.type === "flood").map((d, i) => ({
-              ...d,
-              id: 900000000 + i,
-            }));
-
-        const combined = [...items, ...fallbackFloodsSafe];
-
-        if (combined.length) setCachedFeed(combined);
-        if (!cancelled) {
-          setDisasters(combined.length ? combined : FALLBACK_DISASTERS);
-          setMinutesSinceRefresh(0);
-        }
-      } catch {
-        // keep whatever is shown (cached feed or fallback rows)
-        if (!cancelled && !getCachedFeed()) setDisasters(FALLBACK_DISASTERS);
-      }
-    }
-
-    fetchDisasters();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    const controller = new AbortController();
+    loadFeed(controller.signal);
+    return () => controller.abort();
+  }, [loadFeed]);
 
   /* =========================
      TIMER
@@ -506,8 +256,7 @@ const DashboardPage = () => {
     const descN = normalizeText(d.description);
     const metaN = normalizeText(d.meta);
 
-    const country = extractCountry(d.location);
-    const countryN = normalizeText(country);
+    const countryN = normalizeText(d.country ?? "");
 
     const city = getCityHint(d.location);
     const cityN = normalizeText(city);
@@ -599,9 +348,15 @@ const DashboardPage = () => {
   );
 
   // same wording as every other relative time in the UI ("5 minutes ago")
-  const updatedLabel = `Last updated: ${
-    relativeTime(new Date(Date.now() - minutesSinceRefresh * 60_000)) ?? "just now"
-  } (NASA + USGS live data)`;
+  const hasData = feedStatus === "ready" && disasters.length > 0;
+  const updatedLabel =
+    feedStatus === "loading"
+      ? "Loading live data (NASA + USGS)…"
+      : feedStatus === "error"
+        ? "Live data unavailable"
+        : `Last updated: ${relativeTime(new Date(Date.now() - minutesSinceRefresh * 60_000)) ?? "just now"} (NASA + USGS${feedStale ? ", last successful fetch" : " live data"})`;
+  // KPI numbers only exist for real data
+  const kpi = (n: number) => (hasData ? n : "—");
 
   /* =========================
      MAP DATA
@@ -630,7 +385,7 @@ const DashboardPage = () => {
       .filter((d) => {
         if (d.type !== "wildfire") return true;
 
-        const country = extractCountry(d.location) || "Unknown";
+        const country = d.country ?? "Unknown";
         const current = countryCounter.get(country) ?? 0;
 
         if (current >= MAX_WILDFIRE_PER_COUNTRY) return false;
@@ -644,126 +399,17 @@ const DashboardPage = () => {
   }, [filteredDisasters, activeFilter]);
 
   /* =========================
-     COUNTRIES AFFECTED (MAP-BASED + reverse geocode fallback)
-     - count every country shown on the map
-     - changing the filter updates the map, so the count updates too
+     COUNTRIES AFFECTED
+     - distinct countries among the events shown on the map; the country is
+       derived by the backend from the source place name (USGS place, EONET
+       title) and is null when it cannot be derived, so nothing is guessed
+       and no reverse geocoding happens in the browser
   ========================= */
-
-  // Reverse geocode cache (coordKey -> countryName)
-  const [reverseCountryByKey, setReverseCountryByKey] = useState<Record<string, string>>({});
-  const inFlightKeysRef = useRef<Set<string>>(new Set());
-
-  // Coordinate key (rounded for stable caching)
-  const coordKey = (lat: number, lng: number) => {
-    const la = Math.round(lat * 100) / 100;
-    const lo = Math.round(lng * 100) / 100;
-    return `${la},${lo}`;
-  };
-
-  const getCountryForMapItem = (d: DisasterItem) => {
-    const direct = extractCountry(d.location);
-    if (direct && direct !== "Unknown") return direct;
-
-    if (!Number.isFinite(d.lat) || !Number.isFinite(d.lng)) return "Unknown";
-
-    const key = coordKey(d.lat, d.lng);
-    const cached = reverseCountryByKey[key];
-    if (cached) return cached;
-
-    return "Unknown";
-  };
-
-  // Reverse geocode only for items that still have Unknown country
-  useEffect(() => {
-    let cancelled = false;
-
-    const needs = new Map<string, { lat: number; lng: number }>();
-
-    for (const d of mapDisasters) {
-      const direct = extractCountry(d.location);
-      if (direct !== "Unknown") continue;
-
-      if (!Number.isFinite(d.lat) || !Number.isFinite(d.lng)) continue;
-
-      const key = coordKey(d.lat, d.lng);
-
-      if (reverseCountryByKey[key]) continue;
-      if (inFlightKeysRef.current.has(key)) continue;
-
-      needs.set(key, { lat: d.lat, lng: d.lng });
-    }
-
-    if (!needs.size) return;
-
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-    (async () => {
-      for (const [key, coords] of needs) {
-        if (cancelled) break;
-
-        inFlightKeysRef.current.add(key);
-
-        try {
-          // Nominatim reverse geocode (browser fetch)
-          const url =
-            `https://nominatim.openstreetmap.org/reverse?` +
-            `format=jsonv2&lat=${encodeURIComponent(coords.lat)}` +
-            `&lon=${encodeURIComponent(coords.lng)}` +
-            `&zoom=5&addressdetails=1&accept-language=en`;
-
-          const res = await fetch(url, {
-            method: "GET",
-            headers: { Accept: "application/json" },
-          });
-
-          if (!res.ok) throw new Error("reverse geocode failed");
-
-          const json = await res.json();
-
-          const address = json?.address || {};
-          const countryNameRaw: string | undefined = address?.country;
-          const countryCodeRaw: string | undefined = address?.country_code;
-
-          let resolved = "Unknown";
-
-          // Prefer official country name
-          if (countryNameRaw && String(countryNameRaw).trim()) {
-            resolved = normalizeCountryToken(String(countryNameRaw).trim());
-          } else if (countryCodeRaw && String(countryCodeRaw).trim()) {
-            const cc = String(countryCodeRaw).trim().toUpperCase();
-            const isoName = iso2ToEnglishCountry(cc);
-            if (isoName) resolved = isoName;
-          }
-
-          if (!cancelled && resolved && resolved !== "Unknown") {
-            setReverseCountryByKey((prev) => {
-              if (prev[key] === resolved) return prev;
-              return { ...prev, [key]: resolved };
-            });
-          }
-        } catch {
-          // ignore
-        } finally {
-          // polite delay to avoid hitting rate limits too hard
-          await sleep(350);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mapDisasters, reverseCountryByKey]);
-
-  // Countries affected counts only countries visible on the map
   const countriesAffected = useMemo(() => {
     const set = new Set<string>();
-    for (const d of mapDisasters) {
-      const c = getCountryForMapItem(d);
-      if (c && c !== "Unknown") set.add(c);
-    }
+    for (const d of mapDisasters) if (d.country) set.add(d.country);
     return set.size;
-  }, [mapDisasters, reverseCountryByKey]);
+  }, [mapDisasters]);
 
   /* =========================
      PAGINATION (filteredDisasters)
@@ -789,7 +435,10 @@ const DashboardPage = () => {
         </div>
 
         <div className="dashboard-header-meta">
-          <span className="badge-live">LIVE</span>
+          {/* LIVE only while real, fresh data is on screen */}
+          {hasData && !feedStale && <span className="badge-live">LIVE</span>}
+          {hasData && feedStale && <span className="badge-stale">STALE</span>}
+          {feedStatus === "error" && <span className="badge-stale">OFFLINE</span>}
           <span className="dashboard-updated">{updatedLabel}</span>
         </div>
       </section>
@@ -798,20 +447,20 @@ const DashboardPage = () => {
       <section className="dashboard-kpis">
         <div className="kpi-card">
           <span className="kpi-label">Disasters</span>
-          <span className="kpi-value">{totalDisasters}</span>
+          <span className="kpi-value">{kpi(totalDisasters)}</span>
           <span className="kpi-footnote">NASA + USGS</span>
         </div>
 
         <div className="kpi-card">
           <span className="kpi-label">Active alerts</span>
-          <span className="kpi-value kpi-value-warning">{activeAlerts}</span>
+          <span className="kpi-value kpi-value-warning">{kpi(activeAlerts)}</span>
           <span className="kpi-footnote">High severity</span>
         </div>
 
         <div className="kpi-card">
           <span className="kpi-label">Countries affected</span>
-          <span className="kpi-value">{countriesAffected}</span>
-          <span className="kpi-footnote">Unique countries</span>
+          <span className="kpi-value">{kpi(countriesAffected)}</span>
+          <span className="kpi-footnote">From source place names</span>
         </div>
       </section>
 
@@ -980,6 +629,45 @@ const DashboardPage = () => {
             </button>
           </div>
 
+          {feedStale && feedStatus === "ready" && (
+            <div className="feed-stale-banner" role="status">
+              Live sources could not be reached; showing the last successful update ({updatedLabel.replace(/^Last updated: /, "").replace(/ \(.*$/, "")}).
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadFeed()}>
+                Try again
+              </button>
+            </div>
+          )}
+
+          {feedStatus === "loading" && (
+            <ul className="disaster-list feed-skeleton" aria-busy="true" aria-label="Loading disasters">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <li key={i} className="disaster-row disaster-row-skeleton">
+                  <div className="disaster-row-main">
+                    <div className="news-skel news-skel-meta" />
+                    <div className="news-skel news-skel-title" />
+                    <div className="news-skel news-skel-title short" />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {feedStatus === "error" && (
+            <div className="feed-state" role="alert">
+              <div className="form-error">{feedError ?? "The disaster feed is unavailable."}</div>
+              <p className="muted">No events are shown until the live sources answer; nothing on this page is simulated.</p>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadFeed()}>
+                Try again
+              </button>
+            </div>
+          )}
+
+          {feedStatus === "ready" && filteredDisasters.length === 0 && (
+            <div className="feed-state muted">
+              {disasters.length === 0 ? "No events reported by NASA EONET or USGS in the last 7 days." : "No events match the current filter or search."}
+            </div>
+          )}
+
           {/* Scrollable list container */}
           <div ref={listRef} style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}>
             <ul className="disaster-list">
@@ -1030,6 +718,8 @@ const DashboardPage = () => {
               <span className="timeline-hint">Hover on an item for details</span>
             </div>
 
+            {feedStatus !== "ready" && <p className="muted timeline-empty">{feedStatus === "loading" ? "Loading…" : "Unavailable while the feed is offline."}</p>}
+            {feedStatus === "ready" && todayEvents.length === 0 && <p className="muted timeline-empty">No events to show.</p>}
             <ul className="timeline-list">
               {todayEvents.map((ev, idx) => (
                 <li key={idx} className="timeline-item">

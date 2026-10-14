@@ -4,41 +4,12 @@ import prisma from "../prisma.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
 import { writeAudit } from "../utils/audit.js";
 
-import { fetchNasaEvents } from "../services/nasa.service.js";
-import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
-
-import {
-  fetchUsgsEarthquakes,
-  normalizeUsgsEarthquakes,
-} from "../services/usgs.service.js";
+import { feedService, FeedUnavailableError } from "../services/feed.service.js";
 
 // import { publishDisasterEvent } from "../services/kafkaProducer.js";
 // Kafka publishing is disabled here for now to avoid request timeouts
 
 const router = express.Router();
-
-/* =====================================================
-   CACHE
-   - 5 minute cache by default
-   - force=1 bypasses the cache
-===================================================== */
-let CACHE = {
-  items: [
-    {
-      id: "cache-1",
-      type: "wildfire",
-      title: "Cached Wildfire – Turkey",
-      lat: 39.9,
-      lng: 32.8,
-      source: "cache",
-      timeMinutesAgo: 30,
-      meta: "Cache - 30 min ago",
-      description: "Fallback cache item",
-      severity: "low",
-    },
-  ],
-  updatedAt: 0,
-};
 
 function toInt(val, fallback) {
   const n = parseInt(String(val ?? ""), 10);
@@ -50,93 +21,28 @@ function toFloat(val, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function sanitizeText(s) {
-  if (!s) return s;
-  // Clean up characters that render incorrectly in PowerShell
-  return String(s)
-    .replace(/•/g, " - ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
+/* =====================================================
+   PUBLIC FEED (NASA EONET + USGS, 5-minute cache)
+   GET /disasters?force=1&minutes=10080&limit=50&minMag=4.5&cacheMs=300000
+   -> { items, count, source, stale, updatedAt, params }
+   503 { message, retryAfterSeconds } when the sources fail and nothing is cached.
+===================================================== */
 router.get("/", async (req, res) => {
-  console.log("GET /disasters");
-
-  // Query parameters
-  const forceLive = String(req.query.force || "") === "1";
-
-  // How far back to look, in minutes (default: 7 days)
-  const minutesWindow = toInt(req.query.minutes, 7 * 24 * 60); // 10080
-
-  // Number of items to return (default: 50, max: 200)
-  const limit = Math.min(toInt(req.query.limit, 50), 200);
-
-  // USGS minimum magnitude (default: 4.5)
-  const minMag = toFloat(req.query.minMag, 4.5);
-
-  // Cache duration in ms (default: 5 minutes)
-  const cacheMs = toInt(req.query.cacheMs, 5 * 60 * 1000);
-
-  // Serve from cache while it is fresh, unless force=1
-  if (!forceLive && Date.now() - CACHE.updatedAt < cacheMs) {
-    return res.json({
-      items: CACHE.items,
-      count: CACHE.items.length,
-      source: "CACHE",
-      params: { minutesWindow, limit, minMag, cacheMs },
-    });
-  }
-
+  const options = {
+    forceLive: String(req.query.force || "") === "1",
+    minutesWindow: toInt(req.query.minutes, 7 * 24 * 60), // default: 7 days
+    limit: Math.min(toInt(req.query.limit, 50), 200), // default 50, max 200
+    minMag: toFloat(req.query.minMag, 4.5),
+    cacheMs: toInt(req.query.cacheMs, 5 * 60 * 1000),
+  };
   try {
-    // ---- NASA ----
-    const nasaEvents = await fetchNasaEvents();
-    const nasaNormalized = normalizeNasaEvents(nasaEvents)
-      .filter((e) => (e.timeMinutesAgo ?? 999999) <= minutesWindow)
-      .slice(0, Math.ceil(limit * 0.6)); // up to 60% of the limit from NASA
-
-    // ---- USGS ----
-    const usgsFeatures = await fetchUsgsEarthquakes();
-    const quakesNormalized = normalizeUsgsEarthquakes(usgsFeatures, {
-      minMag,
-      limit: Math.ceil(limit * 0.6),
-    }).filter((e) => (e.timeMinutesAgo ?? 999999) <= minutesWindow);
-
-    // Merge sources and apply the limit
-    let merged = [...nasaNormalized, ...quakesNormalized]
-      .slice(0, limit)
-      .map((e) => ({
-        ...e,
-        meta: sanitizeText(e.meta),
-        description: sanitizeText(e.description),
-        location: sanitizeText(e.location),
-        title: sanitizeText(e.title),
-      }));
-
-    // If the live result is empty, fall back to the cached items
-    if (!merged.length) {
-      merged = CACHE.items;
-    }
-
-    // cache update
-    CACHE = {
-      items: merged,
-      updatedAt: Date.now(),
-    };
-
-    return res.json({
-      items: merged,
-      count: merged.length,
-      source: "NASA + USGS (CACHED)",
-      params: { minutesWindow, limit, minMag, cacheMs },
-    });
+    res.json(await feedService.getFeed(options));
   } catch (err) {
-    console.error("Live API failed, returning cache:", err?.message || err);
-
-    return res.json({
-      items: CACHE.items,
-      count: CACHE.items.length,
-      source: "CACHE-FALLBACK",
-    });
+    if (err instanceof FeedUnavailableError) {
+      return res.status(503).json({ message: err.message, retryAfterSeconds: 60 });
+    }
+    console.error("DISASTER FEED ERROR:", err);
+    res.status(500).json({ message: "Disaster feed unavailable" });
   }
 });
 
