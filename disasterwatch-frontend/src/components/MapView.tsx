@@ -1,5 +1,5 @@
 import type { FC } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { eventRelativeTime, eventTitle } from "../utils/eventText";
 import L from "leaflet";
 import {
@@ -106,15 +106,56 @@ const getRadiusBySeverity = (severity: Severity) => {
 const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
   const map = useMap();
 
-  // Fly to a disaster when it is selected in the list
+  // Fly to a disaster when it is selected in the list (or deep-linked from
+  // the news panel). A container resize during the flight cancels it: the
+  // size sync below may call setZoom while the flight dips below the minimum
+  // zoom, which happens right after mount (the feed column settles) when the
+  // selection comes from a cached feed. So a flight requested within the
+  // first second after mount waits a few frames, and any Leaflet "resize"
+  // during a pending/running flight restarts it once the size has settled.
+  const mountedAt = useRef(Date.now());
   useEffect(() => {
     if (!highlightId) return;
     const target = disasters.find((d) => d.id === highlightId);
     if (!target) return;
 
-    map.flyTo([target.lat, target.lng], 4.5, {
-      duration: 0.7,
-    });
+    // The resize listener lives only while a flight is pending or running:
+    // it is removed at the flight's moveend (or 2 s after take-off at the
+    // latest), otherwise a later manual pan followed by a window resize would
+    // snap the map back to the event.
+    let timer: number | null = null;
+    let armed = false; // resize listener attached
+    let guard: number | null = null; // hard stop for the listener
+    const disarm = () => {
+      if (!armed) return;
+      armed = false;
+      map.off("resize", onResize);
+      map.off("moveend", disarm);
+      if (guard !== null) window.clearTimeout(guard);
+      guard = null;
+    };
+    const fly = () => {
+      timer = null;
+      map.flyTo([target.lat, target.lng], 4.5, { duration: 0.7 });
+      map.once("moveend", disarm);
+      if (guard !== null) window.clearTimeout(guard);
+      guard = window.setTimeout(disarm, 2000);
+    };
+    const schedule = (delay: number) => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(fly, delay);
+    };
+    function onResize() {
+      schedule(80);
+    }
+
+    armed = true;
+    map.on("resize", onResize);
+    schedule(Date.now() - mountedAt.current < 1000 ? 120 : 0);
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      disarm();
+    };
   }, [highlightId, disasters, map]);
 
   // The map stretches with the feed column, so tell Leaflet when its box

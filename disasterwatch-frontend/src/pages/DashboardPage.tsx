@@ -5,6 +5,7 @@ import RelatedNews from "../components/RelatedNews";
 import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
+import { cachedFeedAgeMinutes, getCachedFeed, isFeedFresh, setCachedFeed } from "../services/feedCache";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low";
@@ -396,20 +397,22 @@ const MAP_MAX_MARKERS = 300;
 const MAP_EARTHQUAKE_CAP = 15;
 
 const DashboardPage = () => {
-  const [disasters, setDisasters] = useState<DisasterItem[]>(FALLBACK_DISASTERS);
+  // Start from the feed cached by the previous visit (survives route changes), else the fallback rows.
+  const [disasters, setDisasters] = useState<DisasterItem[]>(() => getCachedFeed<DisasterItem>()?.items ?? FALLBACK_DISASTERS);
   const [activeFilter, setActiveFilter] = useState<"all" | DisasterType>("all");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"time" | "severity">("time");
   const [selectedDisaster, setSelectedDisaster] = useState<DisasterItem | null>(
     null
   );
-  const [minutesSinceRefresh, setMinutesSinceRefresh] = useState(0);
+  const [minutesSinceRefresh, setMinutesSinceRefresh] = useState(() => cachedFeedAgeMinutes());
   const [page, setPage] = useState(1);
 
   // Deep link from the news panel: /?event=<feed id> selects that event
   // (the existing highlight -> flyTo mechanism does the rest), then the
   // parameter is removed so a refresh does not re-select it.
   const [searchParams, setSearchParams] = useSearchParams();
+  const mapPanelRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const raw = searchParams.get("event");
     if (!raw) return;
@@ -417,6 +420,8 @@ const DashboardPage = () => {
     const hit = disasters.find((d) => d.id === id);
     if (!hit) return; // feed not loaded yet (or unknown id): keep waiting
     setSelectedDisaster(hit);
+    // On narrow layouts the map sits below the KPI cards: bring it into view so the flyTo is seen.
+    mapPanelRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     const next = new URLSearchParams(searchParams);
     next.delete("event");
     setSearchParams(next, { replace: true });
@@ -440,6 +445,11 @@ const DashboardPage = () => {
   useEffect(() => {
     let cancelled = false;
 
+    // A feed fetched less than FEED_FRESH_MS ago (previous visit to the
+    // dashboard in this tab) is used as is; the backend's own ingestion runs
+    // every 5 minutes, so nothing newer would come back anyway.
+    if (isFeedFresh()) return;
+
     async function fetchDisasters() {
       try {
         const res = await fetch("/api/disasters");
@@ -456,12 +466,14 @@ const DashboardPage = () => {
 
         const combined = [...items, ...fallbackFloodsSafe];
 
+        if (combined.length) setCachedFeed(combined);
         if (!cancelled) {
           setDisasters(combined.length ? combined : FALLBACK_DISASTERS);
           setMinutesSinceRefresh(0);
         }
       } catch {
-        if (!cancelled) setDisasters(FALLBACK_DISASTERS);
+        // keep whatever is shown (cached feed or fallback rows)
+        if (!cancelled && !getCachedFeed()) setDisasters(FALLBACK_DISASTERS);
       }
     }
 
@@ -475,9 +487,10 @@ const DashboardPage = () => {
      TIMER
   ========================= */
   useEffect(() => {
-    const start = Date.now();
     const i = setInterval(() => {
-      setMinutesSinceRefresh(Math.floor((Date.now() - start) / 60000));
+      // measured from the cached feed's fetch time, so "Last updated" survives route changes
+      const fetchedAt = getCachedFeed()?.fetchedAt ?? Date.now();
+      setMinutesSinceRefresh(Math.floor((Date.now() - fetchedAt) / 60000));
     }, 60000);
     return () => clearInterval(i);
   }, []);
@@ -805,7 +818,7 @@ const DashboardPage = () => {
       {/* Main grid (map + list) */}
       <main className="app-main">
         {/* MAP PANEL */}
-        <section className="map-panel">
+        <section className="map-panel" ref={mapPanelRef}>
           <div className="panel-header">
             <h2>Map view</h2>
             <span className="panel-caption">
