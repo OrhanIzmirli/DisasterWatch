@@ -4,7 +4,7 @@ import prisma from "../prisma.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
 import { writeAudit } from "../utils/audit.js";
 
-import { feedService, FeedUnavailableError, FEED_PARAM_LIMITS } from "../services/feed.service.js";
+import { feedService, FeedUnavailableError, FEED_PARAM_LIMITS, FEED_UNAVAILABLE_MESSAGE } from "../services/feed.service.js";
 
 // import { publishDisasterEvent } from "../services/kafkaProducer.js";
 // Kafka publishing is disabled here for now to avoid request timeouts
@@ -29,12 +29,13 @@ function bounded(val, { min, max, fallback }, parse = toInt) {
 /* =====================================================
    PUBLIC FEED (NASA EONET + USGS, 5-minute server-side cache)
    GET /disasters?minutes=10080&limit=50&minMag=4.5
-   -> { items, count, source, stale, partial, sources, updatedAt, params }
+   -> { items, count, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params }
    The cache lifetime is fixed on the server: there is no query parameter to
    force a live fetch or shorten the cache, so anonymous callers cannot make
    NASA/USGS calls go through this server. limit is clamped to 1..200,
    minutes to 60..43200, minMag to 0..10.
-   503 { message, retryAfterSeconds } when both sources fail and nothing is cached.
+   503 { message, retryAfterSeconds } when both sources fail and nothing is cached;
+   upstream error details never leave the server (log only).
 ===================================================== */
 router.get("/", async (req, res) => {
   const options = {
@@ -46,7 +47,7 @@ router.get("/", async (req, res) => {
     res.json(await feedService.getFeed(options));
   } catch (err) {
     if (err instanceof FeedUnavailableError) {
-      return res.status(503).json({ message: err.message, retryAfterSeconds: 60 });
+      return res.status(503).json({ message: FEED_UNAVAILABLE_MESSAGE, retryAfterSeconds: 60 });
     }
     console.error("DISASTER FEED ERROR:", err);
     res.status(500).json({ message: "Disaster feed unavailable" });

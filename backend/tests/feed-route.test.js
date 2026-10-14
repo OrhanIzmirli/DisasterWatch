@@ -90,11 +90,33 @@ describe("GET /disasters: partial, stale and unavailable states", () => {
     expect(res.body.items.map((i) => i.type)).toEqual(["wildfire"]);
   });
 
-  it("both down with nothing cached -> 503 with retryAfterSeconds", async () => {
-    mocks.nasa.mockRejectedValue(new Error("EONET 503"));
-    mocks.usgs.mockRejectedValue(new Error("USGS timeout"));
+  it("both down with nothing cached -> 503 with a plain message and no upstream details", async () => {
+    mocks.nasa.mockRejectedValue(new Error("EONET request timed out"));
+    mocks.usgs.mockRejectedValue(new Error("USGS request failed: 502"));
     const res = await request(app).get("/disasters");
     expect(res.status).toBe(503);
-    expect(res.body).toEqual({ message: "Disaster feed unavailable: NASA: EONET 503; USGS: USGS timeout", retryAfterSeconds: 60 });
+    expect(res.body).toEqual({ message: "Live disaster sources are not responding", retryAfterSeconds: 60 });
+    const wire = JSON.stringify(res.body);
+    expect(wire).not.toMatch(/EONET|502|timed out|USGS/);
+    // the reasons are logged on the server
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("EONET request timed out"));
+  });
+
+  it("a source that failed recently keeps serving its data as 'stale' with sourcesUpdatedAt", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const t0 = Date.now();
+      await request(app).get("/disasters");
+      mocks.usgs.mockRejectedValue(new Error("USGS 502"));
+      vi.setSystemTime(t0 + 12 * 60_000);
+      const res = await request(app).get("/disasters");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ partial: false, stale: false, sources: { nasa: "ok", usgs: "stale" } });
+      expect(res.body.sourcesUpdatedAt).toEqual({ nasa: new Date(t0 + 12 * 60_000).toISOString(), usgs: new Date(t0).toISOString() });
+      expect(res.body.items.map((i) => i.type)).toEqual(["wildfire", "earthquake"]);
+      expect(JSON.stringify(res.body)).not.toMatch(/502/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

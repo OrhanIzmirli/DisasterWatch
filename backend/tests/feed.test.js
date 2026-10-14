@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createFeedService, FeedUnavailableError, FEED_CACHE_MS, SOURCE_RETRY_MS } from "../src/services/feed.service.js";
+import { createFeedService, FeedUnavailableError, FEED_CACHE_MS, SOURCE_RETRY_MS, SOURCE_STALE_MAX_MS, FEED_UNAVAILABLE_MESSAGE } from "../src/services/feed.service.js";
 import { countryFromPlace, countryFromToken } from "../src/utils/country.js";
 import { pickBestLatLngFromGeometryArray, normalizeNasaEvents } from "../src/utils/normalizeDisasters.js";
 import { normalizeUsgsEarthquakes } from "../src/services/usgs.service.js";
@@ -31,6 +31,7 @@ describe("public feed service: no invented items, honest stale/unavailable state
     expect(first.stale).toBe(false);
     expect(first.partial).toBe(false);
     expect(first.sources).toEqual({ nasa: "ok", usgs: "ok" });
+    expect(first.sourcesUpdatedAt).toEqual({ nasa: new Date(t).toISOString(), usgs: new Date(t).toISOString() });
     expect(first.items.map((i) => i.type)).toEqual(["wildfire", "earthquake"]);
     expect(first.items[0].country).toBe("Botswana");
     expect(first.items[1].country).toBe("Japan");
@@ -70,7 +71,10 @@ describe("public feed service: no invented items, honest stale/unavailable state
       log: quiet,
     });
     await expect(svc.getFeed()).rejects.toBeInstanceOf(FeedUnavailableError);
-    await expect(svc.getFeed()).rejects.toThrow(/Disaster feed unavailable: NASA: EONET down; USGS: USGS 500/);
+    await expect(svc.getFeed()).rejects.toThrow(FEED_UNAVAILABLE_MESSAGE);
+    // upstream details go to the log and status() only, never into the error that reaches the route
+    await expect(svc.getFeed()).rejects.not.toThrow(/EONET|500/);
+    expect(quiet.error).toHaveBeenCalledWith(expect.stringContaining("EONET down"));
     expect(svc.status().nasa).toMatchObject({ cached: false, updatedAt: null, lastError: "EONET down" });
     expect(svc.status().usgs).toMatchObject({ cached: false, updatedAt: null, lastError: "USGS 500" });
   });
@@ -91,9 +95,10 @@ describe("public feed service: no invented items, honest stale/unavailable state
     expect(res.stale).toBe(true);
     expect(res.partial).toBe(false);
     expect(res.source).toBe("CACHE-FALLBACK");
-    expect(res.sources).toEqual({ nasa: "error", usgs: "error" });
+    expect(res.sources).toEqual({ nasa: "stale", usgs: "stale" });
     expect(res.items).toHaveLength(2);
     expect(res.updatedAt).toBe(new Date(1_000_000).toISOString());
+    expect(res.sourcesUpdatedAt).toEqual({ nasa: new Date(1_000_000).toISOString(), usgs: new Date(1_000_000).toISOString() });
   });
 
   it("an empty live result is an empty feed (no padding with fallback items)", async () => {
@@ -119,7 +124,8 @@ describe("sources fail independently", () => {
     expect(res.sources).toEqual({ nasa: "error", usgs: "ok" });
     expect(res.source).toBe("USGS");
     expect(res.items.map((i) => i.type)).toEqual(["earthquake"]);
-    expect(quiet.warn).toHaveBeenCalledWith(expect.stringContaining("NASA unavailable (EONET 503)"));
+    expect(res.sourcesUpdatedAt).toEqual({ nasa: null, usgs: expect.any(String) });
+    expect(quiet.warn).toHaveBeenCalledWith(expect.stringContaining("nasa unavailable (EONET 503)"));
   });
 
   it("USGS down: NASA items are served with partial: true and sources.usgs = error", async () => {
@@ -157,10 +163,111 @@ describe("sources fail independently", () => {
     expect(res.source).toBe("NASA + USGS");
   });
 
+  it("a short failure keeps the source: data at most 60 min old is served as 'stale', partial stays false", async () => {
+    let t = 1_000_000;
+    let usgsDown = false;
+    const svc = createFeedService({
+      fetchNasa: async () => [NASA_EVENT],
+      fetchUsgs: async () => { if (usgsDown) throw new Error("USGS 502"); return [USGS_FEATURE]; },
+      now: () => t,
+      log: quiet,
+    });
+    await svc.getFeed();
+    usgsDown = true;
+    t += 12 * 60_000; // USGS data is 12 minutes old when the refresh fails
+    const res = await svc.getFeed();
+    expect(res.sources).toEqual({ nasa: "ok", usgs: "stale" });
+    expect(res.partial).toBe(false);
+    expect(res.stale).toBe(false);
+    expect(res.items.map((i) => i.type)).toEqual(["wildfire", "earthquake"]);
+    expect(res.sourcesUpdatedAt).toEqual({ nasa: new Date(t).toISOString(), usgs: new Date(1_000_000).toISOString() });
+    expect(res.updatedAt).toBe(new Date(t).toISOString());
+    expect(res.source).toBe("NASA + USGS");
+    expect(quiet.warn).toHaveBeenCalledWith(expect.stringContaining("usgs unreachable (USGS 502)"));
+  });
+
+  it("a long failure drops the source: data older than 60 min is not served ('error', partial: true)", async () => {
+    let t = 1_000_000;
+    let usgsDown = false;
+    const svc = createFeedService({
+      fetchNasa: async () => [NASA_EVENT],
+      fetchUsgs: async () => { if (usgsDown) throw new Error("USGS 502"); return [USGS_FEATURE]; },
+      now: () => t,
+      log: quiet,
+    });
+    await svc.getFeed();
+    usgsDown = true;
+    t += SOURCE_STALE_MAX_MS + 1; // just past the limit
+    const res = await svc.getFeed();
+    expect(res.sources).toEqual({ nasa: "ok", usgs: "error" });
+    expect(res.partial).toBe(true);
+    expect(res.items.map((i) => i.type)).toEqual(["wildfire"]);
+    expect(res.sourcesUpdatedAt).toEqual({ nasa: new Date(t).toISOString(), usgs: null });
+  });
+
+  it("stale data stays served through the retry back-off, and recovers on the next successful fetch", async () => {
+    let t = 1_000_000;
+    let usgsDown = false;
+    const fetchUsgs = vi.fn(async () => { if (usgsDown) throw new Error("USGS 502"); return [USGS_FEATURE]; });
+    const svc = createFeedService({ fetchNasa: async () => [NASA_EVENT], fetchUsgs, now: () => t, log: quiet });
+    await svc.getFeed();
+    usgsDown = true;
+    t += FEED_CACHE_MS;
+    expect((await svc.getFeed()).sources.usgs).toBe("stale");
+    t += 10_000;
+    expect((await svc.getFeed()).sources.usgs).toBe("stale"); // back-off: no new call, data still served
+    expect(fetchUsgs).toHaveBeenCalledTimes(2);
+    usgsDown = false;
+    t += SOURCE_RETRY_MS;
+    const res = await svc.getFeed();
+    expect(fetchUsgs).toHaveBeenCalledTimes(3);
+    expect(res.sources).toEqual({ nasa: "ok", usgs: "ok" });
+    expect(res.sourcesUpdatedAt.usgs).toBe(new Date(t).toISOString());
+  });
+
   it("a partial feed gives the whole limit to the source that answered", async () => {
     const quakes = Array.from({ length: 10 }, (_, i) => ({ ...USGS_FEATURE, id: `q${i}`, properties: { ...USGS_FEATURE.properties, time: USGS_FEATURE.properties.time - i * 1000 } }));
     const svc = createFeedService({ fetchNasa: async () => { throw new Error("down"); }, fetchUsgs: async () => quakes, log: quiet });
     expect((await svc.getFeed({ limit: 10 })).items).toHaveLength(10);
+  });
+});
+
+describe("in-flight dedup: one upstream fetch per source at a time", () => {
+  it("20 parallel getFeed calls on a cold cache make exactly 1 NASA and 1 USGS call", async () => {
+    let releaseNasa;
+    let releaseUsgs;
+    const fetchNasa = vi.fn(() => new Promise((resolve) => { releaseNasa = () => resolve([NASA_EVENT]); }));
+    const fetchUsgs = vi.fn(() => new Promise((resolve) => { releaseUsgs = () => resolve([USGS_FEATURE]); }));
+    const svc = createFeedService({ fetchNasa, fetchUsgs, log: quiet });
+
+    const calls = Array.from({ length: 20 }, () => svc.getFeed());
+    await new Promise((r) => setTimeout(r, 10)); // everyone is waiting on the same fetch
+    expect(fetchNasa).toHaveBeenCalledTimes(1);
+    expect(fetchUsgs).toHaveBeenCalledTimes(1);
+    releaseNasa();
+    releaseUsgs();
+    const results = await Promise.all(calls);
+    expect(results).toHaveLength(20);
+    for (const r of results) {
+      expect(r.items).toHaveLength(2);
+      expect(r.sources).toEqual({ nasa: "ok", usgs: "ok" });
+    }
+    expect(fetchNasa).toHaveBeenCalledTimes(1);
+    expect(fetchUsgs).toHaveBeenCalledTimes(1);
+  });
+
+  it("concurrent callers share a failing fetch too, and the slot is cleared in finally", async () => {
+    let t = 1_000_000;
+    let calls = 0;
+    const fetchNasa = vi.fn(async () => { calls += 1; throw new Error("down"); });
+    const fetchUsgs = vi.fn(async () => [USGS_FEATURE]);
+    const svc = createFeedService({ fetchNasa, fetchUsgs, now: () => t, log: quiet });
+    const results = await Promise.all([svc.getFeed(), svc.getFeed(), svc.getFeed()]);
+    expect(calls).toBe(1);
+    for (const r of results) expect(r.sources).toEqual({ nasa: "error", usgs: "ok" });
+    t += SOURCE_RETRY_MS;
+    await svc.getFeed();
+    expect(calls).toBe(2); // slot cleared: the retry after the back-off reaches NASA again
   });
 });
 

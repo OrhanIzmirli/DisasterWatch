@@ -4,14 +4,19 @@
  *  - each source is cached on its own for FEED_CACHE_MS; a request served
  *    inside that window never calls NASA or USGS (callers cannot shorten
  *    or bypass the cache: there is no query parameter for it);
- *  - the two sources are fetched independently (Promise.allSettled): when
- *    one fails the other's items are served with `partial: true` and the
- *    per-source status in `sources`; a failed source is retried at most
- *    once per SOURCE_RETRY_MS;
- *  - when both fail, the previous data is served with `stale: true`; with
- *    nothing cached at all the feed is unavailable (503) — there is no
- *    seeded or demo item anywhere in this path;
- *  - an empty live result is an empty feed, never padded with invented items.
+ *  - each source has at most one upstream fetch in flight: concurrent
+ *    requests during a refresh await the same promise;
+ *  - the two sources are fetched independently (Promise.allSettled). When a
+ *    source fails but its last good data is at most SOURCE_STALE_MAX_MS old,
+ *    that data is still served with sources.<name> = "stale"; older data is
+ *    dropped (sources.<name> = "error", partial: true). A failed source is
+ *    retried at most once per SOURCE_RETRY_MS;
+ *  - when both sources fail, whatever older data exists is served with
+ *    stale: true; with nothing cached at all the feed is unavailable (503).
+ *    There is no seeded or demo item anywhere in this path, and an empty
+ *    live result is an empty feed, never padded with invented items;
+ *  - upstream error details stay in the server log and in status() (for
+ *    logs/admin); the public response never carries them.
  *
  * Fetchers and the clock are injectable for tests.
  */
@@ -23,6 +28,11 @@ import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.j
 export const FEED_CACHE_MS = 5 * 60 * 1000;
 /** A source that just failed is not retried before this much time has passed. */
 export const SOURCE_RETRY_MS = 60 * 1000;
+/** A failed source keeps serving its last good data while it is at most this old. */
+export const SOURCE_STALE_MAX_MS = 60 * 60 * 1000;
+
+/** Message of the public 503; the per-source reasons are logged, never sent. */
+export const FEED_UNAVAILABLE_MESSAGE = "Live disaster sources are not responding";
 
 /** Accepted ranges for the public query parameters (values outside are clamped). */
 export const FEED_PARAM_LIMITS = {
@@ -32,7 +42,7 @@ export const FEED_PARAM_LIMITS = {
 };
 
 export class FeedUnavailableError extends Error {
-  constructor(message) {
+  constructor(message = FEED_UNAVAILABLE_MESSAGE) {
     super(message);
     this.name = "FeedUnavailableError";
   }
@@ -44,22 +54,49 @@ function sanitizeText(s) {
   return String(s).replace(/•/g, " - ").replace(/\s+/g, " ").trim();
 }
 
+const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
+
 export function createFeedService({
   fetchNasa = fetchNasaEvents,
   fetchUsgs = fetchUsgsEarthquakes,
-  now = Date.now,
+  now = () => Date.now(), // read through the global so fake timers in tests apply
   log = console,
   cacheMs = FEED_CACHE_MS,
   retryMs = SOURCE_RETRY_MS,
+  staleMaxMs = SOURCE_STALE_MAX_MS,
 } = {}) {
-  // Raw source payloads, cached per source: { data, updatedAt, failedAt, lastError }
+  // Raw source payloads, cached per source
   const sources = {
-    nasa: { fetch: fetchNasa, data: null, updatedAt: 0, failedAt: 0, lastError: null },
-    usgs: { fetch: fetchUsgs, data: null, updatedAt: 0, failedAt: 0, lastError: null },
+    nasa: { fetch: fetchNasa, data: null, updatedAt: 0, failedAt: 0, lastError: null, inflight: null },
+    usgs: { fetch: fetchUsgs, data: null, updatedAt: 0, failedAt: 0, lastError: null, inflight: null },
   };
 
   const isFresh = (s, t) => s.data !== null && t - s.updatedAt < cacheMs;
   const inRetryBackoff = (s, t) => s.failedAt !== 0 && t - s.failedAt < retryMs;
+
+  /** One upstream fetch per source at a time; every concurrent caller awaits the same promise. */
+  function fetchOnce(name, t) {
+    const s = sources[name];
+    if (s.inflight) return s.inflight;
+    s.inflight = Promise.allSettled([s.fetch()])
+      .then(([outcome]) => {
+        if (outcome.status === "fulfilled") {
+          s.data = Array.isArray(outcome.value) ? outcome.value : [];
+          s.updatedAt = t;
+          s.failedAt = 0;
+          s.lastError = null;
+          return "live";
+        }
+        s.failedAt = t;
+        s.lastError = outcome.reason?.message || String(outcome.reason);
+        log.error(`[feed] ${name} fetch failed: ${s.lastError}`);
+        return "error";
+      })
+      .finally(() => {
+        s.inflight = null;
+      });
+    return s.inflight;
+  }
 
   /**
    * Brings a source up to date. Returns one of
@@ -70,18 +107,7 @@ export function createFeedService({
     const s = sources[name];
     if (isFresh(s, t)) return "cache";
     if (inRetryBackoff(s, t)) return "backoff";
-    const [outcome] = await Promise.allSettled([s.fetch()]);
-    if (outcome.status === "fulfilled") {
-      s.data = Array.isArray(outcome.value) ? outcome.value : [];
-      s.updatedAt = t;
-      s.failedAt = 0;
-      s.lastError = null;
-      return "live";
-    }
-    s.failedAt = t;
-    s.lastError = outcome.reason?.message || String(outcome.reason);
-    log.error(`[feed] ${name} fetch failed: ${s.lastError}`);
-    return "error";
+    return fetchOnce(name, t);
   }
 
   /** Normalises the cached raw payloads into feed items for the requested window/limit. */
@@ -103,11 +129,13 @@ export function createFeedService({
   }
 
   /**
-   * -> { items, count, source, stale, partial, sources, updatedAt, params }
-   *   source:  "CACHE" | "NASA + USGS" | "NASA" | "USGS" | "CACHE-FALLBACK"
-   *   partial: true when only one source contributed items
-   *   sources: { nasa: "ok" | "error", usgs: "ok" | "error" }
-   *   stale:   true when both sources failed and older data is served
+   * -> { items, count, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params }
+   *   sources:          { nasa, usgs } each "ok" (fresh or fetched now), "stale" (failed,
+   *                     last good data still served) or "error" (failed, nothing served)
+   *   sourcesUpdatedAt: { nasa, usgs } ISO time of the data served per source, null when none
+   *   partial:          true when a source contributed nothing
+   *   stale:            true when neither source answered and older data is served
+   *   source:           "CACHE" | "NASA + USGS" | "NASA" | "USGS" | "CACHE-FALLBACK"
    * Throws FeedUnavailableError when both sources fail and nothing is cached.
    */
   async function getFeed({
@@ -118,52 +146,59 @@ export function createFeedService({
     const params = { minutesWindow, limit, minMag };
     const t = now();
     const [nasaState, usgsState] = await Promise.all([refresh("nasa", t), refresh("usgs", t)]);
-    const ok = { nasa: nasaState === "cache" || nasaState === "live", usgs: usgsState === "cache" || usgsState === "live" };
-    const status = { nasa: ok.nasa ? "ok" : "error", usgs: ok.usgs ? "ok" : "error" };
+    const states = { nasa: nasaState, usgs: usgsState };
+    const ok = (name) => states[name] === "cache" || states[name] === "live";
     const liveNow = nasaState === "live" || usgsState === "live";
+    const anyOk = ok("nasa") || ok("usgs");
 
-    if (ok.nasa || ok.usgs) {
-      const used = { nasa: ok.nasa ? sources.nasa.data : null, usgs: ok.usgs ? sources.usgs.data : null };
-      const items = buildItems(used, params);
-      const partial = !(ok.nasa && ok.usgs);
-      const updatedAt = Math.max(ok.nasa ? sources.nasa.updatedAt : 0, ok.usgs ? sources.usgs.updatedAt : 0);
-      const label = ok.nasa && ok.usgs ? "NASA + USGS" : ok.nasa ? "NASA" : "USGS";
-      if (partial) log.warn(`[feed] partial feed: ${ok.nasa ? "USGS" : "NASA"} unavailable (${sources[ok.nasa ? "usgs" : "nasa"].lastError})`);
-      return {
-        items,
-        count: items.length,
-        source: liveNow ? label : "CACHE",
-        stale: false,
-        partial,
-        sources: status,
-        updatedAt: new Date(updatedAt).toISOString(),
-        params,
-      };
+    // Per-source verdict: what is served and under which label
+    const verdict = (name) => {
+      const s = sources[name];
+      if (ok(name)) return { status: "ok", data: s.data };
+      if (s.data === null) return { status: "error", data: null };
+      // failed: recent data is still served; with no source answering at all, any older data is
+      if (anyOk && t - s.updatedAt > staleMaxMs) return { status: "error", data: null };
+      return { status: "stale", data: s.data };
+    };
+    const v = { nasa: verdict("nasa"), usgs: verdict("usgs") };
+    const served = { nasa: v.nasa.data, usgs: v.usgs.data };
+
+    if (served.nasa === null && served.usgs === null) {
+      log.error(`[feed] both sources failed and nothing is cached (NASA: ${sources.nasa.lastError}; USGS: ${sources.usgs.lastError})`);
+      throw new FeedUnavailableError();
     }
 
-    // both sources are down: serve whatever older data exists, flagged stale
-    const reasons = `NASA: ${sources.nasa.lastError}; USGS: ${sources.usgs.lastError}`;
-    if (sources.nasa.data !== null || sources.usgs.data !== null) {
-      log.error(`[feed] both sources failed, serving the previous feed as stale (${reasons})`);
-      const items = buildItems({ nasa: sources.nasa.data, usgs: sources.usgs.data }, params);
-      const updatedAt = Math.max(sources.nasa.updatedAt, sources.usgs.updatedAt);
-      return {
-        items,
-        count: items.length,
-        source: "CACHE-FALLBACK",
-        stale: true,
-        partial: sources.nasa.data === null || sources.usgs.data === null,
-        sources: status,
-        updatedAt: new Date(updatedAt).toISOString(),
-        params,
-      };
+    for (const name of ["nasa", "usgs"]) {
+      if (v[name].status === "stale") log.warn(`[feed] ${name} unreachable (${sources[name].lastError}); serving its data from ${iso(sources[name].updatedAt)}`);
+      if (v[name].status === "error" && sources[name].lastError) log.warn(`[feed] ${name} unavailable (${sources[name].lastError}); its items are dropped`);
     }
-    log.error(`[feed] both sources failed and nothing is cached (${reasons})`);
-    throw new FeedUnavailableError(`Disaster feed unavailable: ${reasons}`);
+
+    const items = buildItems(served, params);
+    const partial = served.nasa === null || served.usgs === null;
+    const status = { nasa: v.nasa.status, usgs: v.usgs.status };
+    const sourcesUpdatedAt = {
+      nasa: served.nasa !== null ? iso(sources.nasa.updatedAt) : null,
+      usgs: served.usgs !== null ? iso(sources.usgs.updatedAt) : null,
+    };
+    const updatedAt = Math.max(served.nasa !== null ? sources.nasa.updatedAt : 0, served.usgs !== null ? sources.usgs.updatedAt : 0);
+    const label = served.nasa !== null && served.usgs !== null ? "NASA + USGS" : served.nasa !== null ? "NASA" : "USGS";
+
+    return {
+      items,
+      count: items.length,
+      source: !anyOk ? "CACHE-FALLBACK" : liveNow ? label : "CACHE",
+      stale: !anyOk,
+      partial,
+      sources: status,
+      sourcesUpdatedAt,
+      updatedAt: iso(updatedAt),
+      params,
+    };
   }
 
+  /** Per-source state for logs/admin (includes the last upstream error; never exposed on the public route). */
   function status() {
-    const entry = (s) => ({ cached: s.data !== null, updatedAt: s.updatedAt ? new Date(s.updatedAt).toISOString() : null, lastError: s.lastError });
+    const entry = (s) => ({ cached: s.data !== null, updatedAt: iso(s.updatedAt), lastError: s.lastError });
     return { nasa: entry(sources.nasa), usgs: entry(sources.usgs) };
   }
 
@@ -174,6 +209,7 @@ export function createFeedService({
       s.updatedAt = 0;
       s.failedAt = 0;
       s.lastError = null;
+      s.inflight = null;
     }
   }
 
