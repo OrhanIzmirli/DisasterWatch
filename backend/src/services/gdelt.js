@@ -6,10 +6,14 @@
  * (not JSON). Everything here is defensive:
  *  - one request at a time, spaced >= MIN_GAP_MS apart (global throttle);
  *  - AbortController timeout (default 8 s);
- *  - non-JSON or non-2xx responses throw a typed GdeltError.
+ *  - non-JSON or non-2xx responses throw a typed GdeltError;
+ *  - after a failure (429 above all) the client backs off exponentially
+ *    with jitter (src/services/backoff.js): calls made while the backoff
+ *    window is open fail at once with kind "backoff" and send nothing.
  *
- * `fetchImpl` and `now`/`sleep` are injectable for tests.
+ * `fetchImpl`, `now`/`sleep` and the backoff gate are injectable for tests.
  */
+import { createBackoffGate } from "./backoff.js";
 
 export const GDELT_ENDPOINT = "https://api.gdeltproject.org/api/v2/doc/doc";
 export const MIN_GAP_MS = 5000;
@@ -19,7 +23,7 @@ export class GdeltError extends Error {
   constructor(message, kind, status = null) {
     super(message);
     this.name = "GdeltError";
-    this.kind = kind; // "timeout" | "rate-limit" | "http" | "non-json" | "network"
+    this.kind = kind; // "timeout" | "rate-limit" | "http" | "non-json" | "network" | "backoff"
     this.status = status;
   }
 }
@@ -93,15 +97,22 @@ export async function gdeltRequest(url, { fetchImpl = fetch, timeoutMs = DEFAULT
 }
 
 /**
- * Convenience: throttled article search. Returns the raw `articles` array
- * (empty when GDELT answers `{}`).
+ * Convenience: throttled, backoff-guarded article search. Returns the raw
+ * `articles` array (empty when GDELT answers `{}`).
  */
-export function createGdeltClient({ fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS, throttle = createThrottle() } = {}) {
+export function createGdeltClient({
+  fetchImpl = fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  throttle = createThrottle(),
+  backoff = createBackoffGate({ name: "GDELT" }),
+} = {}) {
   return {
     async searchArticles(options) {
       const url = buildGdeltUrl(options);
-      const data = await throttle(() => gdeltRequest(url, { fetchImpl, timeoutMs }));
+      // The gate is checked before queueing so a closed window costs no waiting.
+      const data = await backoff.run(() => throttle(() => gdeltRequest(url, { fetchImpl, timeoutMs })));
       return Array.isArray(data?.articles) ? data.articles : [];
     },
+    backoff,
   };
 }

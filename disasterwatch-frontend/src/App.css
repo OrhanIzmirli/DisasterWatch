@@ -3245,6 +3245,33 @@ body {
   font-size: 0.78rem;
 }
 
+/* provider attribution on each card and the Guardian licence logo */
+.news-card-provider {
+  color: var(--dw-text-muted);
+  white-space: nowrap;
+}
+
+.news-powered-by {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 0.6rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  background: rgba(5, 41, 98, 0.55);
+  border: 1px solid rgba(102, 155, 188, 0.35);
+}
+
+.news-powered-by img {
+  display: block;
+  width: 112px;
+  height: 36px;
+}
+
+.news-powered-by:focus-visible {
+  outline: 2px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+
 .news-card-skeleton {
   flex-direction: column;
   gap: 0.45rem;

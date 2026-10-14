@@ -184,9 +184,18 @@ In-app modal showing disaster-related news.
 
 ## News
 
-`GET /news` is served from a cache that a background job refreshes every 15 minutes (`src/services/news.service.js`). Each refresh picks the ~10 most important feed events (high severity first, then newest), cleans their location text (`"Flood in Nepal 1104225"` -> `Nepal`, `"53 km S of Kushiro, Japan"` -> `Kushiro Japan`, in `src/services/newsLinking.js`) and runs one targeted, English-only, last-72-hours GDELT search per event plus one general disaster search. Articles are deduplicated by URL and near-identical title and linked to their event, which powers the "Show on map" button in the news panel and the "Related news" section of the event drawer.
+`GET /news` is served from a cache that a background job refreshes (`src/services/news.service.js`); requests never call a news provider themselves.
 
-GDELT allows one request every 5 seconds and answers violations with HTTP 429 and a plain-text body; the client (`src/services/gdelt.js`) throttles requests, times them out (`GDELT_TIMEOUT_MS`) and treats 429 / non-JSON as failures. A failed refresh keeps the previous articles and marks the response `stale: true`; with no cache at all the endpoint answers 503 and the panel shows a retry button. Response shape: `{ items: [{ title, url, domain, publishedAt, image, relatedEvent }], count, updatedAt, stale }`, filterable with `?type=` and `?event=`.
+**Request budget.** Each refresh picks the ~10 most important feed events (high severity first, then newest), cleans their location text (`"Flood in Nepal 1104225"` -> `Nepal`, `"53 km S of Kushiro, Japan"` -> `Kushiro Japan`, in `src/services/newsLinking.js`) and folds them into at most **3 combined searches** (one per hazard type, the events' place words OR-ed: `(earthquake OR quake OR tremor) (kushiro OR japan OR kokopo OR papua OR guinea)`) plus one general disaster search: **at most 4 requests per refresh** instead of one per event. Articles are then linked to events on our side (`linkArticlesToEvents`: place words in the title or URL path, hazard words for the general search), deduplicated by URL and near-identical title, and filtered to the event's time window. That linking powers the "Show on map" button in the news panel and the "Related news" section of the event drawer.
+
+**Providers and failover** (`src/services/newsProviders/`). GDELT DOC 2.0 is the primary provider; The Guardian Open Platform is the fallback and is only enabled when `GUARDIAN_API_KEY` is set (without it the service runs on GDELT plus the database cache). A refresh runs the same plan on GDELT first and, only if that produced nothing (rate limit, timeouts, backoff), on The Guardian. The provider that served the cache sets the next refresh interval: GDELT 15 minutes, The Guardian 30 minutes (<= 4 requests per refresh, so <= 200 of the developer key's 500 requests/day). Every card says which provider it came from (`via GDELT` / `via The Guardian`) and the response carries `source` and `provider`.
+
+**Guardian licence** (developer key, non-commercial): headlines and links are passed through unchanged, Guardian cards never show an image, the "Powered by The Guardian" logo (linking to theguardian.com) is shown next to Guardian content, and Guardian rows are deleted from the cache 24 hours after they were fetched (`NewsCache.expiresAt`).
+
+**Backoff.** GDELT allows one request every 5 seconds and answers violations with HTTP 429 and a plain-text body; The Guardian allows 1 request/second and 500/day. Both clients space their requests and, after any failure, back off exponentially with jitter (`src/services/backoff.js`: 30 s, 60 s, ... up to 15 min, +/- 25 %); calls made inside the window fail at once with kind `backoff` and send nothing, so a 429 is never retried immediately.
+
+**Persistence.** Every successful refresh is written to the `NewsCache` table (one row per article) and loaded back when the backend starts, so a restart or a Render wake-up serves the previous articles immediately with the real `updatedAt`. A failed refresh keeps the previous articles (in memory and in the table) and marks the response `stale: true`; with nothing cached at all the endpoint answers 503 and the panel shows a retry button. `GET /health` reports `news: { provider, updatedAt, stale, articles }`. Response shape: `{ items: [{ title, url, domain, publishedAt, image, provider, relatedEvent }], count, updatedAt, stale, source, provider }`, filterable with `?type=` and `?event=`.
+
 ---
 ## Event-Driven Notification Pipeline
 
@@ -235,6 +244,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 - **Aiven free Kafka powers off** after a period without traffic and has to be started from the Aiven console. The backend keeps serving the public feed without Kafka; events recorded meanwhile wait in the outbox and are published once the broker is back (see Reliability).
 - Notifications are **in-app only**; there is no e-mail, SMS or push channel.
 - Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
+- **GDELT rate limits by source IP.** Render's shared egress IP can be throttled (HTTP 429) by other tenants' traffic, not only ours. The news job then backs off, falls back to The Guardian when `GUARDIAN_API_KEY` is set, and otherwise serves the last cached articles from the database as stale.
 - **Deploy order:** deploy the consumer before (or together with) producer changes that alter the event contract. A consumer running an older build commits offsets for messages it cannot handle, so those events never produce notifications unless the group offset is reset.
 
 ### Reliability
@@ -339,6 +349,7 @@ Create two **Web Services** from this repository with the **Docker** runtime, ro
 | `ADMIN_EMAILS` | yes | | comma-separated e-mails that get the admin role, e.g. `owner@example.com,ops@example.com` |
 | `COOKIE_NAME` | optional | | session cookie name (default `dw_session`) |
 | `GDELT_TIMEOUT_MS` | optional | | per-request timeout for GDELT news searches (default `8000`; GDELT is often slower than that, see News) |
+| `GUARDIAN_API_KEY` | optional | | Guardian Open Platform developer key; enables The Guardian as the fallback news provider (see News) |
 | `DISABLE_NEWS_JOB` | optional | | `1` disables the background news refresh |
 | `NODE_ENV` | yes | | `production` (enables the Secure cookie flag and the JWT secret check) |
 | `KAFKA_BROKER` | yes | yes | `kafka-xxxx.aivencloud.com:12345` (comma-separated for several brokers) |

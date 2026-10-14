@@ -119,3 +119,28 @@ model Disaster {
   createdBy   String?
   createdAt   DateTime @default(now())
 }
+
+/// Durable copy of the news cache: one row per article of the last
+/// successful refresh, so a restarted backend (Render sleep) can serve the
+/// previous articles instead of 503 until GDELT answers again.
+model NewsCache {
+  id           Int       @id @default(autoincrement())
+  url          String    @unique
+  title        String
+  domain       String
+  image        String?
+  publishedAt  DateTime?
+  /// "gdelt" | "guardian"
+  provider     String
+  relatedEvent Json?
+  /// Order within the refresh (0 = first).
+  position     Int
+  /// When the refresh that produced the row ran; all rows of one refresh share it.
+  fetchedAt    DateTime
+  /// Guardian Open Platform terms: content may be held for at most 24 hours,
+  /// so Guardian rows carry fetchedAt + 24 h and are deleted after that.
+  /// Null for GDELT rows.
+  expiresAt    DateTime?
+
+  @@index([expiresAt])
+}
