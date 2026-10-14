@@ -182,6 +182,12 @@ In-app modal showing disaster-related news.
 
 ---
 
+## News
+
+`GET /news` is served from a cache that a background job refreshes every 15 minutes (`src/services/news.service.js`). Each refresh picks the ~10 most important feed events (high severity first, then newest), cleans their location text (`"Flood in Nepal 1104225"` -> `Nepal`, `"53 km S of Kushiro, Japan"` -> `Kushiro Japan`, in `src/services/newsLinking.js`) and runs one targeted, English-only, last-72-hours GDELT search per event plus one general disaster search. Articles are deduplicated by URL and near-identical title and linked to their event, which powers the "Show on map" button in the news panel and the "Related news" section of the event drawer.
+
+GDELT allows one request every 5 seconds and answers violations with HTTP 429 and a plain-text body; the client (`src/services/gdelt.js`) throttles requests, times them out (`GDELT_TIMEOUT_MS`) and treats 429 / non-JSON as failures. A failed refresh keeps the previous articles and marks the response `stale: true`; with no cache at all the endpoint answers 503 and the panel shows a retry button. Response shape: `{ items: [{ title, url, domain, publishedAt, image, relatedEvent }], count, updatedAt, stale }`, filterable with `?type=` and `?event=`.
+
 ## Tech Stack
 - **Frontend:** React, TypeScript, Vite, Leaflet  
 - **Backend:** Node.js, Express, Prisma ORM, Zod, REST API  
@@ -269,6 +275,8 @@ Create two **Web Services** from this repository with the **Docker** runtime, ro
 | `JWT_SECRET` | yes | | a long random string (32+ chars; production refuses to start otherwise) |
 | `ADMIN_EMAILS` | yes | | comma-separated e-mails that get the admin role, e.g. `owner@example.com,ops@example.com` |
 | `COOKIE_NAME` | optional | | session cookie name (default `dw_session`) |
+| `GDELT_TIMEOUT_MS` | optional | | per-request timeout for GDELT news searches (default `8000`; GDELT is often slower than that, see News) |
+| `DISABLE_NEWS_JOB` | optional | | `1` disables the background news refresh |
 | `NODE_ENV` | yes | | `production` (enables the Secure cookie flag and the JWT secret check) |
 | `KAFKA_BROKER` | yes | yes | `kafka-xxxx.aivencloud.com:12345` (comma-separated for several brokers) |
 | `KAFKA_SASL_USERNAME` | yes | yes | `avnadmin` |

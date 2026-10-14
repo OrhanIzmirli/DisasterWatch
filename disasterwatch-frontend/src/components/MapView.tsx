@@ -1,5 +1,6 @@
 import type { FC } from "react";
 import { useEffect } from "react";
+import { eventRelativeTime, eventTitle } from "../utils/eventText";
 import L from "leaflet";
 import {
   MapContainer,
@@ -35,17 +36,41 @@ export type MapDisaster = {
   lat: number;
   lng: number;
   meta: string;
+  timeMinutesAgo?: number;
+  /** Rich fields from the backend; only what the tooltip needs is read here. */
+  details?: {
+    cleanTitle?: string;
+    occurredAt?: string | null;
+    magnitude?: number | null;
+    /** Pre-formatted magnitude text ("6.1"), the same string every other surface shows. */
+    magnitudeLabel?: string | null;
+  };
 };
 
 type MapViewProps = {
   disasters: MapDisaster[];
   highlightId?: number | null;
+  /** Called with the disaster id when a marker is clicked. */
+  onSelect?: (id: number) => void;
 };
 
 type MapInnerProps = {
   disasters: MapDisaster[];
   highlightId?: number | null;
+  onSelect?: (id: number) => void;
 };
+
+const TYPE_LABELS: Record<DisasterType, string> = {
+  earthquake: "Earthquake",
+  flood: "Flood",
+  wildfire: "Wildfire",
+  storm: "Storm",
+};
+
+/** Tooltip title: the backend's clean title, else the raw location without a trailing id. */
+function tooltipTitle(d: MapDisaster) {
+  return eventTitle(d);
+}
 
 const getColorByType = (type: DisasterType) => {
   switch (type) {
@@ -78,7 +103,7 @@ const getRadiusBySeverity = (severity: Severity) => {
 /**
  * Marker rendering and flyTo logic inside the map
  */
-const MapInner: FC<MapInnerProps> = ({ disasters, highlightId }) => {
+const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
   const map = useMap();
 
   // Fly to a disaster when it is selected in the list
@@ -146,6 +171,9 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId }) => {
               fillColor: getColorByType(d.type),
               fillOpacity: isHighlight ? 1 : 0.95,
             }}
+            eventHandlers={{
+              click: () => onSelect?.(d.id),
+            }}
           >
             {/*
               direction="auto" lets Leaflet flip the tooltip to whichever
@@ -156,11 +184,20 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId }) => {
               default is `white-space: nowrap`, which is what was pushing
               long location names past the edge in the first place.
             */}
-            <Tooltip direction="auto" offset={[0, -4]} opacity={0.95}>
-              <div style={{ maxWidth: 200 }}>
-                <strong>{d.location}</strong>
-                <br />
-                <span style={{ fontSize: "0.75rem" }}>{d.meta}</span>
+            <Tooltip direction="auto" offset={[0, -4]} opacity={1} className="dw-tooltip">
+              <div className="dw-tooltip-inner">
+                <div className="dw-tooltip-kicker">
+                  <span className={`dw-tooltip-type dw-tooltip-type-${d.type}`}>{TYPE_LABELS[d.type]}</span>
+                  <span className={`dw-tooltip-sev dw-tooltip-sev-${d.severity}`}>{d.severity}</span>
+                </div>
+                <div className="dw-tooltip-title">{tooltipTitle(d)}</div>
+                <div className="dw-tooltip-meta">
+                  {eventRelativeTime(d) ?? d.meta}
+                  {d.type === "earthquake" && d.details?.magnitudeLabel && (
+                    <> · M {d.details.magnitudeLabel}</>
+                  )}
+                </div>
+                <div className="dw-tooltip-hint">Click for details</div>
               </div>
             </Tooltip>
           </CircleMarker>
@@ -170,7 +207,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId }) => {
   );
 };
 
-const MapView: FC<MapViewProps> = ({ disasters, highlightId }) => {
+const MapView: FC<MapViewProps> = ({ disasters, highlightId, onSelect }) => {
   const center: [number, number] = [30, 10];
   const zoom = 2.3;
 
@@ -200,7 +237,7 @@ const MapView: FC<MapViewProps> = ({ disasters, highlightId }) => {
         url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
       />
 
-      <MapInner disasters={disasters} highlightId={highlightId} />
+      <MapInner disasters={disasters} highlightId={highlightId} onSelect={onSelect} />
     </MapContainer>
   );
 };

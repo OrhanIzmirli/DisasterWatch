@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import MapView from "../components/MapView";
+import RelatedNews from "../components/RelatedNews";
+import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
+import { relativeTime } from "../utils/formatDate";
+import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low";
@@ -14,6 +19,28 @@ type DisasterItem = {
   description: string;
   lat: number;
   lng: number;
+  /** Rich, source-faithful fields (present for live NASA/USGS items). */
+  details?: EventDetails;
+};
+
+/** Feed row title: clean title from the backend, else the raw location minus a trailing id. */
+const displayTitle = (item: DisasterItem) => eventTitle(item);
+
+/**
+ * Feed row meta: "M 6.1 · 1 hour ago" / "Wildfires · 21 hours ago". The time
+ * is always relative (from occurredAt, else the minutes-ago counter) and the
+ * magnitude is the backend's pre-formatted label, so no surface rounds on
+ * its own. The raw backend meta line ("240 min ago") is never rendered.
+ */
+const displayMeta = (item: DisasterItem) => {
+  const rel = eventRelativeTime(item);
+  const lead =
+    item.type === "earthquake"
+      ? item.details?.magnitudeLabel
+        ? `M ${item.details.magnitudeLabel}`
+        : null
+      : item.details?.category ?? getTypeLabel(item.type);
+  return [lead, rel].filter(Boolean).join(" · ");
 };
 
 type TimelineEvent = {
@@ -33,7 +60,7 @@ const FALLBACK_DISASTERS: DisasterItem[] = [
     id: 1,
     type: "earthquake",
     location: "İzmir, Turkey",
-    meta: "Mag 6.2 • 12 min ago • Depth 10 km",
+    meta: "Mag 6.2 • Depth 10 km",
     severity: "high",
     timeMinutesAgo: 12,
     description:
@@ -45,7 +72,7 @@ const FALLBACK_DISASTERS: DisasterItem[] = [
     id: 2,
     type: "flood",
     location: "Rotterdam, Netherlands",
-    meta: "River overflow • 1 h ago • Evacuations in progress",
+    meta: "River overflow • Evacuations in progress",
     severity: "medium",
     timeMinutesAgo: 60,
     description:
@@ -57,7 +84,7 @@ const FALLBACK_DISASTERS: DisasterItem[] = [
     id: 3,
     type: "wildfire",
     location: "California, USA",
-    meta: "800 ha affected • 3 h ago • Strong winds",
+    meta: "800 ha affected • Strong winds",
     severity: "high",
     timeMinutesAgo: 180,
     description:
@@ -69,7 +96,7 @@ const FALLBACK_DISASTERS: DisasterItem[] = [
     id: 4,
     type: "storm",
     location: "Osaka, Japan",
-    meta: "Category 2 • 6 h ago • Heavy rainfall expected",
+    meta: "Category 2 • Heavy rainfall expected",
     severity: "low",
     timeMinutesAgo: 360,
     description:
@@ -379,6 +406,22 @@ const DashboardPage = () => {
   const [minutesSinceRefresh, setMinutesSinceRefresh] = useState(0);
   const [page, setPage] = useState(1);
 
+  // Deep link from the news panel: /?event=<feed id> selects that event
+  // (the existing highlight -> flyTo mechanism does the rest), then the
+  // parameter is removed so a refresh does not re-select it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const raw = searchParams.get("event");
+    if (!raw) return;
+    const id = Number(raw);
+    const hit = disasters.find((d) => d.id === id);
+    if (!hit) return; // feed not loaded yet (or unknown id): keep waiting
+    setSelectedDisaster(hit);
+    const next = new URLSearchParams(searchParams);
+    next.delete("event");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, disasters, setSearchParams]);
+
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const scrollListToTop = () => {
@@ -514,21 +557,15 @@ const DashboardPage = () => {
       .sort((a, b) => a.timeMinutesAgo - b.timeMinutesAgo)
       .slice(0, 4);
 
-    const fmtTime = (mins: number) => {
-      if (mins <= 0) return "Now";
-      if (mins < 60) return `${mins}m ago`;
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
-    };
-
+    // Same relative-time and clean-title helpers as the feed rows, so no
+    // "240m ago" or "Flood in Nepal 1104225" shows up here either.
     return top.map((d) => ({
-      time: fmtTime(d.timeMinutesAgo),
+      time: eventRelativeTime(d) ?? "Now",
       title: `${getTypeLabel(d.type)} reported`,
-      summary: d.description || d.meta || d.location,
+      summary: d.description ? cleanTitle(d.description) : eventTitle(d),
       type: d.type,
       severity: d.severity,
-      locationHint: d.location,
+      locationHint: d.details?.place ?? eventTitle(d),
     }));
   }, [filteredDisasters]);
 
@@ -548,10 +585,10 @@ const DashboardPage = () => {
     [kpiDisasters]
   );
 
-  const updatedLabel =
-    minutesSinceRefresh === 0
-      ? "Last updated: just now (NASA + USGS live data)"
-      : `Last updated: ${minutesSinceRefresh} min ago (NASA + USGS live data)`;
+  // same wording as every other relative time in the UI ("5 minutes ago")
+  const updatedLabel = `Last updated: ${
+    relativeTime(new Date(Date.now() - minutesSinceRefresh * 60_000)) ?? "just now"
+  } (NASA + USGS live data)`;
 
   /* =========================
      MAP DATA
@@ -781,6 +818,10 @@ const DashboardPage = () => {
             key={activeFilter}
             disasters={mapDisasters}
             highlightId={selectedDisaster?.id ?? null}
+            onSelect={(id) => {
+              const hit = disasters.find((d) => d.id === id);
+              if (hit) setSelectedDisaster(hit);
+            }}
           />
 
           {/* HORIZONTAL LEGEND */}
@@ -947,9 +988,9 @@ const DashboardPage = () => {
                       >
                         {getTypeLabel(item.type)}
                       </span>
-                      <span className="disaster-location">{item.location}</span>
+                      <span className="disaster-location">{displayTitle(item)}</span>
                     </div>
-                    <div className="disaster-meta">{item.meta}</div>
+                    <div className="disaster-meta">{displayMeta(item)}</div>
                   </div>
 
                   <span
@@ -1033,58 +1074,19 @@ const DashboardPage = () => {
         </section>
       </main>
 
-      {/* DETAIL DRAWER */}
+      {/* DETAIL DRAWER (shared by list rows and map markers) */}
       {selectedDisaster && (
-        <>
-          <div className="detail-overlay" onClick={() => setSelectedDisaster(null)} />
-          <aside className="detail-drawer">
-            <header className="detail-header">
-              <div className="detail-header-main">
-                <span
-                  className={
-                    "disaster-type-tag " +
-                    (selectedDisaster.type === "earthquake"
-                      ? "tag-earthquake"
-                      : selectedDisaster.type === "flood"
-                      ? "tag-flood"
-                      : selectedDisaster.type === "wildfire"
-                      ? "tag-wildfire"
-                      : "tag-storm")
-                  }
-                >
-                  {getTypeLabel(selectedDisaster.type)}
-                </span>
-                <h3 className="detail-title">{selectedDisaster.location}</h3>
-                <p className="detail-meta">{selectedDisaster.meta}</p>
-              </div>
-              <button type="button" className="detail-close-btn" onClick={() => setSelectedDisaster(null)}>
-                ✕
-              </button>
-            </header>
-
-            <div className="detail-body">
-              <p className="detail-description">{selectedDisaster.description}</p>
-
-              <div className="detail-footer">
-                <span
-                  className={
-                    "disaster-severity " +
-                    (selectedDisaster.severity === "high"
-                      ? "severity-high"
-                      : selectedDisaster.severity === "medium"
-                      ? "severity-medium"
-                      : "severity-low")
-                  }
-                >
-                  {getSeverityLabel(selectedDisaster.severity)}
-                </span>
-                <span className="detail-footnote">
-                  Live view • this panel can include links to external maps, emergency contacts and related news.
-                </span>
-              </div>
-            </div>
-          </aside>
-        </>
+        <EventDetailDrawer
+          event={selectedDisaster}
+          relatedNews={<RelatedNews eventId={selectedDisaster.id} />}
+          onClose={() => setSelectedDisaster(null)}
+          onZoomTo={() => {
+            // Re-trigger the map's flyTo for the same id by clearing and re-setting the selection
+            const current = selectedDisaster;
+            setSelectedDisaster(null);
+            window.setTimeout(() => setSelectedDisaster(current), 0);
+          }}
+        />
       )}
     </>
   );

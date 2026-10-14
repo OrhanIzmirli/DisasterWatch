@@ -1,4 +1,6 @@
 // backend/src/utils/normalizeDisasters.js
+import { severityFromType } from "./severity.js";
+import { buildEonetDetails, cleanTitle } from "./eventDetails.js";
 
 function toId(str) {
   // Stable numeric id from string
@@ -13,7 +15,7 @@ function minutesAgo(isoDate) {
   return Math.max(0, Math.floor((Date.now() - t) / 60000));
 }
 
-function mapCategoryToType(catTitle) {
+export function mapCategoryToType(catTitle) {
   // EONET v3 category titles
   if (catTitle === "Wildfires") return "wildfire";
   if (catTitle === "Severe Storms") return "storm";
@@ -22,13 +24,9 @@ function mapCategoryToType(catTitle) {
   return null;
 }
 
-function severityFromType(type) {
-  // Simple heuristic (you can improve later)
-  if (type === "wildfire") return "high";
-  if (type === "storm") return "medium";
-  if (type === "flood") return "medium";
-  return "low";
-}
+// Severity rules live in ./severity.js (single source of truth); re-exported
+// here so existing imports keep working.
+export { severityFromType };
 
 /**
  * EONET geometry notes:
@@ -89,7 +87,7 @@ function centroidOfRing(ring) {
   return [sumLng / count, sumLat / count];
 }
 
-function pickBestLatLngFromGeometryArray(geometryArr) {
+export function pickBestLatLngFromGeometryArray(geometryArr) {
   // geometryArr: EONET ev.geometry array
   // we try from last to first, because last is most recent
   const geom = Array.isArray(geometryArr) ? geometryArr : [];
@@ -99,14 +97,14 @@ function pickBestLatLngFromGeometryArray(geometryArr) {
 
     // 1) Try direct extraction (Point or deep nested)
     const p = pickPointFromCoordinates(coords);
-    if (p) return { coords: p, date: g?.date };
+    if (p) return { coords: p, date: g?.date, geometry: g };
 
     // 2) If it looks like Polygon ring, try centroid
     // Polygon structure often: [ [ [lng,lat], ... ] ]
     if (Array.isArray(coords) && Array.isArray(coords[0]) && Array.isArray(coords[0][0])) {
       const ring = coords?.[0]; // first ring
       const cent = centroidOfRing(ring);
-      if (cent) return { coords: cent, date: g?.date };
+      if (cent) return { coords: cent, date: g?.date, geometry: g };
     }
   }
 
@@ -146,9 +144,12 @@ export function normalizeNasaEvents(events) {
       meta,
       severity: sev,
       timeMinutesAgo: mins,
-      description: ev?.description || ev?.title || "",
+      // EONET has no description; the title fallback drops the trailing source id
+      description: ev?.description || cleanTitle(ev?.title),
       lat,
       lng,
+      // Rich, source-faithful fields (new; everything above is unchanged)
+      details: buildEonetDetails(ev, type, best?.geometry ?? null),
     });
   }
 

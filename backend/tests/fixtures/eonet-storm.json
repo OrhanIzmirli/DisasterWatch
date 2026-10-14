@@ -1,0 +1,51 @@
+{
+  "id": "EONET_25094",
+  "title": "Hurricane Simon",
+  "description": null,
+  "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_25094",
+  "closed": null,
+  "categories": [
+    {
+      "id": "severeStorms",
+      "title": "Severe Storms"
+    }
+  ],
+  "sources": [
+    {
+      "id": "JTWC",
+      "url": "https://www.metoc.navy.mil/jtwc/products/ep2026.tcw"
+    }
+  ],
+  "geometry": [
+    {
+      "magnitudeValue": 85,
+      "magnitudeUnit": "kts",
+      "date": "2026-10-13T00:00:00Z",
+      "type": "Point",
+      "coordinates": [
+        -106.9,
+        20.3
+      ]
+    },
+    {
+      "magnitudeValue": 80,
+      "magnitudeUnit": "kts",
+      "date": "2026-10-13T06:00:00Z",
+      "type": "Point",
+      "coordinates": [
+        -107.1,
+        20.5
+      ]
+    },
+    {
+      "magnitudeValue": 80,
+      "magnitudeUnit": "kts",
+      "date": "2026-10-13T12:00:00Z",
+      "type": "Point",
+      "coordinates": [
+        -107.2,
+        20.3
+      ]
+    }
+  ]
+}

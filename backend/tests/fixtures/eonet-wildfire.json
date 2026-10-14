@@ -1,0 +1,31 @@
+{
+  "id": "EONET_25271",
+  "title": "Wildfire in Botswana 1032764",
+  "description": null,
+  "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_25271",
+  "closed": "2026-10-11T00:00:00Z",
+  "categories": [
+    {
+      "id": "wildfires",
+      "title": "Wildfires"
+    }
+  ],
+  "sources": [
+    {
+      "id": "GDACS",
+      "url": "https://www.gdacs.org/report.aspx?eventtype=WF&eventid=1032764"
+    }
+  ],
+  "geometry": [
+    {
+      "magnitudeValue": 6889,
+      "magnitudeUnit": "hectare",
+      "date": "2026-10-11T19:00:00Z",
+      "type": "Point",
+      "coordinates": [
+        25.204749772794,
+        -18.243585212786
+      ]
+    }
+  ]
+}
