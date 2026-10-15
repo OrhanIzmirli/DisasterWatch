@@ -449,8 +449,9 @@ const DashboardPage = () => {
 
     const baseNonEq = filteredDisasters.filter((d) => d.type !== "earthquake");
 
+    // Every type and severity goes on the map (clustering handles the density);
+    // only the per-country wildfire cap and the total marker cap apply.
     const nonEq = baseNonEq
-      .filter((d) => d.severity === "high" || d.severity === "medium")
       .filter((d) => {
         if (d.type !== "wildfire") return true;
 
