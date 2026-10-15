@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createFeedService, FeedUnavailableError, FEED_CACHE_MS, SOURCE_RETRY_MS, SOURCE_STALE_MAX_MS, FEED_UNAVAILABLE_MESSAGE } from "../src/services/feed.service.js";
+import { createFeedService, FeedUnavailableError, FEED_CACHE_MS, SOURCE_RETRY_MS, COLD_START_RETRY_MS, SOURCE_STALE_MAX_MS, FEED_UNAVAILABLE_MESSAGE } from "../src/services/feed.service.js";
 import { countryFromPlace, countryFromToken } from "../src/utils/country.js";
 import { pickBestLatLngFromGeometryArray, normalizeNasaEvents } from "../src/utils/normalizeDisasters.js";
 import { normalizeUsgsEarthquakes } from "../src/services/usgs.service.js";
@@ -149,11 +149,11 @@ describe("sources fail independently", () => {
     const svc = createFeedService({ fetchNasa, fetchUsgs, now: () => t, log: quiet });
 
     expect((await svc.getFeed()).partial).toBe(true);
-    t += 10_000;
-    expect((await svc.getFeed()).partial).toBe(true); // inside the retry delay: no new USGS call
+    t += 5_000;
+    expect((await svc.getFeed()).partial).toBe(true); // inside the (cold-start) retry delay: no new USGS call
     expect(fetchUsgs).toHaveBeenCalledTimes(1);
 
-    t += SOURCE_RETRY_MS;
+    t += COLD_START_RETRY_MS; // USGS has never returned data: the short delay applies
     usgsDown = false;
     const res = await svc.getFeed();
     expect(fetchUsgs).toHaveBeenCalledTimes(2);
@@ -229,6 +229,67 @@ describe("sources fail independently", () => {
     const quakes = Array.from({ length: 10 }, (_, i) => ({ ...USGS_FEATURE, id: `q${i}`, properties: { ...USGS_FEATURE.properties, time: USGS_FEATURE.properties.time - i * 1000 } }));
     const svc = createFeedService({ fetchNasa: async () => { throw new Error("down"); }, fetchUsgs: async () => quakes, log: quiet });
     expect((await svc.getFeed({ limit: 10 })).items).toHaveLength(10);
+  });
+});
+
+describe("retry delay: cold start vs a source that already has data", () => {
+  it("a source that has never returned data retries after COLD_START_RETRY_MS (10 s), not 60 s", async () => {
+    let t = 1_000_000;
+    let nasaDown = true;
+    const fetchNasa = vi.fn(async () => { if (nasaDown) throw new Error("fetch failed"); return [NASA_EVENT]; });
+    const fetchUsgs = vi.fn(async () => { if (nasaDown) throw new Error("fetch failed"); return [USGS_FEATURE]; });
+    const svc = createFeedService({ fetchNasa, fetchUsgs, now: () => t, log: quiet });
+
+    await expect(svc.getFeed()).rejects.toBeInstanceOf(FeedUnavailableError); // cold start during a blip
+    t += COLD_START_RETRY_MS - 1;
+    await expect(svc.getFeed()).rejects.toBeInstanceOf(FeedUnavailableError); // still inside the short delay: no call
+    expect(fetchNasa).toHaveBeenCalledTimes(1);
+    expect(fetchUsgs).toHaveBeenCalledTimes(1);
+
+    t += 1; // 10 s after the failure
+    nasaDown = false;
+    const res = await svc.getFeed();
+    expect(fetchNasa).toHaveBeenCalledTimes(2);
+    expect(fetchUsgs).toHaveBeenCalledTimes(2);
+    expect(res.sources).toEqual({ nasa: "ok", usgs: "ok" });
+    expect(res.items).toHaveLength(2);
+  });
+
+  it("a source that already has data keeps the 60 s back-off after a failure", async () => {
+    let t = 1_000_000;
+    let usgsDown = false;
+    const fetchUsgs = vi.fn(async () => { if (usgsDown) throw new Error("USGS 502"); return [USGS_FEATURE]; });
+    const svc = createFeedService({ fetchNasa: async () => [NASA_EVENT], fetchUsgs, now: () => t, log: quiet });
+    await svc.getFeed();
+    usgsDown = true;
+    t += FEED_CACHE_MS; // cache expired: the refresh fails
+    expect((await svc.getFeed()).sources.usgs).toBe("stale");
+    expect(fetchUsgs).toHaveBeenCalledTimes(2);
+
+    t += COLD_START_RETRY_MS; // 10 s later: NOT retried, the source has data
+    usgsDown = false;
+    expect((await svc.getFeed()).sources.usgs).toBe("stale");
+    expect(fetchUsgs).toHaveBeenCalledTimes(2);
+
+    t += SOURCE_RETRY_MS - COLD_START_RETRY_MS; // 60 s after the failure: retried
+    expect((await svc.getFeed()).sources.usgs).toBe("ok");
+    expect(fetchUsgs).toHaveBeenCalledTimes(3);
+  });
+
+  it("only the cold source gets the short delay when the other already has data", async () => {
+    let t = 1_000_000;
+    let nasaDown = true;
+    const fetchNasa = vi.fn(async () => { if (nasaDown) throw new Error("EONET 503"); return [NASA_EVENT]; });
+    const fetchUsgs = vi.fn(async () => [USGS_FEATURE]);
+    const svc = createFeedService({ fetchNasa, fetchUsgs, now: () => t, log: quiet });
+    expect((await svc.getFeed()).sources).toEqual({ nasa: "error", usgs: "ok" });
+    t += COLD_START_RETRY_MS;
+    nasaDown = false;
+    const res = await svc.getFeed();
+    expect(fetchNasa).toHaveBeenCalledTimes(2);
+    expect(fetchUsgs).toHaveBeenCalledTimes(1); // still fresh, not touched
+    expect(res.sources).toEqual({ nasa: "ok", usgs: "ok" });
+    expect(res.partial).toBe(false);
   });
 });
 

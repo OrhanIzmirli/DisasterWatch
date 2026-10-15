@@ -10,7 +10,9 @@
  *    source fails but its last good data is at most SOURCE_STALE_MAX_MS old,
  *    that data is still served with sources.<name> = "stale"; older data is
  *    dropped (sources.<name> = "error", partial: true). A failed source is
- *    retried at most once per SOURCE_RETRY_MS;
+ *    retried at most once per SOURCE_RETRY_MS, or once per
+ *    COLD_START_RETRY_MS while it has never returned data (a cold start
+ *    during a network blip must not answer 503 for a whole minute);
  *  - when both sources fail, whatever older data exists is served with
  *    stale: true; with nothing cached at all the feed is unavailable (503).
  *    There is no seeded or demo item anywhere in this path, and an empty
@@ -28,6 +30,8 @@ import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.j
 export const FEED_CACHE_MS = 5 * 60 * 1000;
 /** A source that just failed is not retried before this much time has passed. */
 export const SOURCE_RETRY_MS = 60 * 1000;
+/** Shorter retry delay for a source that has never returned data yet (cold start). */
+export const COLD_START_RETRY_MS = 10 * 1000;
 /** A failed source keeps serving its last good data while it is at most this old. */
 export const SOURCE_STALE_MAX_MS = 60 * 60 * 1000;
 
@@ -63,6 +67,7 @@ export function createFeedService({
   log = console,
   cacheMs = FEED_CACHE_MS,
   retryMs = SOURCE_RETRY_MS,
+  coldStartRetryMs = COLD_START_RETRY_MS,
   staleMaxMs = SOURCE_STALE_MAX_MS,
 } = {}) {
   // Raw source payloads, cached per source
@@ -72,7 +77,8 @@ export function createFeedService({
   };
 
   const isFresh = (s, t) => s.data !== null && t - s.updatedAt < cacheMs;
-  const inRetryBackoff = (s, t) => s.failedAt !== 0 && t - s.failedAt < retryMs;
+  // a source with no data at all retries sooner; one with data keeps the normal back-off
+  const inRetryBackoff = (s, t) => s.failedAt !== 0 && t - s.failedAt < (s.data === null ? coldStartRetryMs : retryMs);
 
   /** One upstream fetch per source at a time; every concurrent caller awaits the same promise. */
   function fetchOnce(name, t) {
