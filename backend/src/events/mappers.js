@@ -3,12 +3,8 @@
  * contract. Works from the raw payloads (not the public-feed normalizers) so
  * the stable source ids are preserved: "nasa:EONET_1234", "usgs:us7000abcd".
  */
-import {
-  mapCategoryToType,
-  severityFromType,
-  pickBestLatLngFromGeometryArray,
-} from "../utils/normalizeDisasters.js";
-import { severityFromMag } from "../utils/severity.js";
+import { mapCategoryToType, pickBestLatLngFromGeometryArray } from "../utils/normalizeDisasters.js";
+import { severityFromMag, assessEonetEvent } from "../utils/severity.js";
 import { formatMagnitude } from "../utils/magnitude.js";
 import { cleanTitle } from "../utils/eventDetails.js";
 import { disasterEventSchema } from "./contract.js";
@@ -65,7 +61,7 @@ export function nasaEventsToContract(rawEvents) {
       eventId: `nasa:${id}`,
       source: "nasa",
       type,
-      severity: severityFromType(type),
+      severity: assessEonetEvent(ev, type).severity, // same rule as the feed details
       // trailing EONET source id dropped, same as the public feed and news cards
       title: (cleanTitle(ev?.title) || "Unnamed event").slice(0, 200),
       lat,

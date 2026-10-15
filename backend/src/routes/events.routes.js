@@ -18,6 +18,9 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
   }
 
   const event = parsed.data;
+  if (event.source === "manual" && event.severity === "unrated") {
+    return res.status(400).json({ ok: false, error: "Invalid event: severity: manual events must be low, medium or high" });
+  }
 
   try {
     await publishDisasterEvent(event);

@@ -86,7 +86,7 @@ router.post("/", requireAdmin, async (req, res) => {
     lat: z.number().min(-90).max(90),
     lng: z.number().min(-180).max(180),
     date: z.string().min(1),
-    severity: z.string().trim().optional(),
+    severity: z.enum(["low", "medium", "high"]).optional(), // chosen by the admin; never "unrated"
     description: z.string().trim().optional(),
   });
 
