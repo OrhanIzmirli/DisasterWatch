@@ -1,73 +1,45 @@
-# React + TypeScript + Vite
+# DisasterWatch frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + TypeScript + Vite single-page app: the live map (Leaflet), the disaster feed, the news panel, alert subscriptions, notifications and the admin console. The full project (backend, Kafka consumer, Docker Compose, cloud deployment) is documented in the [root README](../README.md).
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+The app needs the backend: all data comes from relative `/api/...` calls.
 
-## React Compiler
+```bash
+# from the repository root: backend, database and Kafka (see the root README)
+docker compose up --build db dw-kafka backend
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# dev server with hot reload on http://localhost:5173
+cd disasterwatch-frontend
+npm ci
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+`vite.config.ts` proxies `/api/*` to `http://localhost:5000/*`, the same rewrite Nginx does in the Docker image (`nginx/default.conf`) and a Render rewrite rule does in the cloud. The frontend reads no environment variables (`.env.example` is documentation only).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+| Command | What it does |
+|---|---|
+| `npm run dev` | Vite dev server on port 5173 with the `/api` proxy |
+| `npm run build` | `tsc -b` type check, then a production build into `dist/` |
+| `npm run preview` | serves `dist/` on port 4173 |
+| `npm run lint` | ESLint (not part of CI yet) |
+
+Node `24.13.0` (`.nvmrc` in the repository root, `engines` in `package.json`).
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/App.tsx` | routes, session state, header |
+| `src/pages/` | Dashboard, Alerts, Admin, Account, Sign in, Sign up |
+| `src/components/` | map, event drawer, news panel, notification bell, status bar, admin tabs |
+| `src/services/` | feed cache and news client |
+| `src/utils/` | event text and date formatting |
+| `src/App.css`, `src/index.css` | all styling (no CSS framework) |
+| `public/` | `favicon.svg`, `robots.txt`, the "Powered by The Guardian" logo |
+| `nginx/default.conf` | production server: SPA fallback and the `/api` proxy |
+
+`src/components/MapView.tsx` and the map rules in `App.css` are a no-risk zone: see [CONTRIBUTING.md](../CONTRIBUTING.md).

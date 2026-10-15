@@ -169,7 +169,7 @@ describe("assertNoRealUsers (data guard)", () => {
   });
 
   it("(e) stops when the database contains a user with a real e-mail address", async () => {
-    await sql(`INSERT INTO "${SCHEMA}"."User" (email) VALUES ('owner@gmail.com')`);
+    await sql(`INSERT INTO "${SCHEMA}"."User" (email) VALUES ('owner@example.org')`);
     await expect(assertNoRealUsers(probeUrl)).rejects.toThrow(
       /contains 1 user\(s\).*looks like a real \(production\) database/
     );
@@ -192,7 +192,7 @@ describe("test accounts", () => {
       for (const m of src.matchAll(/"([A-Za-z0-9._+-]+@[A-Za-z0-9.-]+)"/g)) emails.add(m[1]);
     }
     // the one deliberately "real" address lives in the data-guard test above
-    emails.delete("owner@gmail.com");
+    emails.delete("owner@example.org");
     expect(emails.size).toBeGreaterThan(5);
     for (const e of emails) expect(e.toLowerCase().endsWith("@example.com"), e).toBe(true);
   });

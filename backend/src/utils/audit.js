@@ -6,7 +6,7 @@
 
 export const AUDIT_ACTIONS = ["user.disable", "user.enable", "user.delete", "disaster.create"];
 
-/** "sesame@18lover.com" -> "ses***@18lover.com": enough to recognise, not enough to identify. */
+/** "someone@example.com" -> "som***@example.com": enough to recognise, not enough to identify. */
 export function maskEmail(email) {
   const s = String(email ?? "");
   const at = s.lastIndexOf("@");

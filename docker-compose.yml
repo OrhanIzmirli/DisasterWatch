@@ -68,11 +68,12 @@ services:
 
       # Kafka (used by the KafkaJS producer)
       - KAFKA_BROKER=dw-kafka:9092
-      - KAFKA_BROKERS=dw-kafka:9092
-      - KAFKA_BOOTSTRAP_SERVERS=dw-kafka:9092
 
       # Inside Docker the DB host is the container_name
       - DATABASE_URL=postgresql://postgres:postgres@disasterwatch_db:5432/disasterwatch
+    # Create or update the tables on every start (idempotent), so a fresh
+    # volume works without a manual `prisma db push`.
+    command: sh -c "npx prisma db push --skip-generate && node src/index.js"
     depends_on:
       db:
         condition: service_healthy
@@ -86,11 +87,15 @@ services:
     environment:
       - NODE_ENV=production
       - KAFKA_BROKER=dw-kafka:9092
-      - KAFKA_BROKERS=dw-kafka:9092
-      - KAFKA_BOOTSTRAP_SERVERS=dw-kafka:9092
+      # The consumer reads AlertSubscription and writes Notification in the app database
+      - DATABASE_URL=postgresql://postgres:postgres@disasterwatch_db:5432/disasterwatch
     depends_on:
+      db:
+        condition: service_healthy
       dw-kafka:
         condition: service_healthy
+      backend:
+        condition: service_started
     restart: unless-stopped
 
   frontend:
