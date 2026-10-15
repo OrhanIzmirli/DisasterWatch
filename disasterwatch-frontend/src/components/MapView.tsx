@@ -399,6 +399,13 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
                 if (el) {
                   el.setAttribute("role", "button");
                   el.setAttribute("aria-label", `${clusterTooltip(f.count, f.props)}. Press Enter to ${expansionZoom(viewIndex, f.clusterId, maxZoom) === null ? "fan out" : "zoom in"}`);
+                  // Enter / Space open the cluster (Leaflet only maps keypress to click; be explicit)
+                  el.onkeydown = (ev: KeyboardEvent) => {
+                    if (ev.key === "Enter" || ev.key === " ") {
+                      ev.preventDefault();
+                      openCluster(f);
+                    }
+                  };
                 }
               },
             }}

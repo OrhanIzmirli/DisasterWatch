@@ -167,8 +167,8 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
   return (
     <>
       <div className="detail-overlay" onClick={onClose} />
-      <aside className="detail-drawer edd" role="dialog" aria-modal="true" aria-label={title}>
-        <header className="detail-header">
+      <div className="detail-drawer edd" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="detail-header">
           <div className="detail-header-main">
             <div className="edd-tags">
               <span className={`disaster-type-tag tag-${event.type}`}>{TYPE_LABELS[event.type]}</span>
@@ -183,7 +183,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
           <button ref={closeRef} type="button" className="detail-close-btn" onClick={onClose} aria-label="Close">
             ✕
           </button>
-        </header>
+        </div>
 
         <div className="detail-body edd-body">
           <Section title="When">
@@ -280,7 +280,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
             )}
           </Section>
         </div>
-      </aside>
+      </div>
     </>
   );
 };

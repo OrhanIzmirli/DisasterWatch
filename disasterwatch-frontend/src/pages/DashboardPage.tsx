@@ -498,9 +498,9 @@ const DashboardPage = () => {
   return (
     <>
       {/* Page header */}
-      <section className="dashboard-header">
+      <section className="dashboard-header" aria-labelledby="dashboard-title">
         <div>
-          <h1 className="dashboard-title">Global Disaster Overview</h1>
+          <h1 id="dashboard-title" className="dashboard-title">Global Disaster Overview</h1>
           <p className="dashboard-subtitle">Live monitoring powered by NASA EONET + USGS.</p>
         </div>
 
@@ -514,7 +514,7 @@ const DashboardPage = () => {
       </section>
 
       {/* KPI cards */}
-      <section className="dashboard-kpis">
+      <section className="dashboard-kpis" aria-label="Key figures">
         <div className="kpi-card">
           <span className="kpi-label">Disasters</span>
           <span className="kpi-value">{kpi(totalDisasters)}</span>
