@@ -18,7 +18,7 @@ Note: The project is designed to be **fully runnable on localhost** via Docker C
 - Performance-safe rendering (pagination + marker caps)
 
 ### 2) Live Dashboard (Map + Feed + KPI)
-- Interactive **world map** with disaster markers
+- Interactive **world map** with disaster markers; nearby events are grouped into numbered clusters (supercluster, `src/utils/clustering.ts`) coloured by the highest severity inside, sized logarithmically, with a "7 events · 6 wildfires, 1 flood · highest: High" tooltip; clicking zooms to the cluster's bounds, or fans the events out when they share coordinates (spiderfy). The selected event is always drawn on its own, on top, so it never disappears inside a cluster
 - Live disaster feed with pagination
 - KPI overview:
   - Total disasters
