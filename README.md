@@ -83,7 +83,7 @@ cd DisasterWatch
 cp backend/.env.example backend/.env
 ```
 
-`backend/.env.example` ships with a **dev-only `JWT_SECRET` placeholder**; change it before exposing the app to anyone (see [Environment variables](#environment-variables)). To get an admin account, put your e-mail in `ADMIN_EMAILS` in `backend/.env` before registering.
+`backend/.env.example` ships with a **dev-only `JWT_SECRET` placeholder** that the server accepts only with `NODE_ENV=development` (which Compose sets for the local stack); in production it is rejected, so generate a real one before any deployment (see [Environment variables](#environment-variables)). To get an admin account, put your e-mail in `ADMIN_EMAILS` in `backend/.env` before registering.
 
 ### 2) Build and start
 
@@ -133,10 +133,10 @@ cd backend
 npm ci
 npx prisma generate
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/disasterwatch npx prisma db push
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/disasterwatch KAFKA_BROKER=localhost:29092 NODE_ENV=development npm run dev
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/disasterwatch KAFKA_BROKER=localhost:29092 npm run dev
 ```
 
-The other variables come from `backend/.env` (`dotenv`). `NODE_ENV=development` keeps the session cookie non-Secure for plain http.
+The other variables come from `backend/.env` (`dotenv`); its `NODE_ENV=development` keeps the session cookie non-Secure for plain http and tolerates the dev `JWT_SECRET` placeholder.
 
 **Frontend** (`disasterwatch-frontend/`)
 
@@ -187,11 +187,11 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `DATABASE_URL` | yes | – | PostgreSQL connection string (Prisma). Compose sets the in-network value |
-| `JWT_SECRET` | yes | dev placeholder | signs session tokens. **32+ characters**; with `NODE_ENV=production` the server refuses to start when it is missing, shorter or the literal `CHANGE_ME`. Generate: `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"` |
+| `JWT_SECRET` | yes | dev placeholder | signs session tokens. **32+ characters**; with `NODE_ENV=production` the server refuses to start when it is missing, shorter, the literal `CHANGE_ME`, the `.env.example` value or anything containing "change me". Generate: `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"` |
 | `JWT_EXPIRES_IN` | no | `1d` | token lifetime; keep in line with the 24 h cookie |
 | `COOKIE_NAME` | no | `dw_session` | session cookie name |
 | `ADMIN_EMAILS` | no | empty | comma-separated e-mails that get the `admin` role (case-insensitive). Synced on every login: added → promoted, removed → demoted. There is no other way to become admin |
-| `NODE_ENV` | no | – | `production` enables the Secure cookie flag and the strict `JWT_SECRET` check; `test` disables the background jobs |
+| `NODE_ENV` | no | – | `production` enables the Secure cookie flag and the strict `JWT_SECRET` check (every deployment); Compose runs the local stack with `development`; `test` disables the background jobs |
 | `PORT` | no | `5000` | HTTP port (Render provides it) |
 | `KAFKA_BROKER` | no | `dw-kafka:9092` | broker(s), comma-separated. `KAFKA_BROKERS` and `KAFKA_BOOTSTRAP_SERVERS` are accepted as aliases |
 | `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | cloud | empty | when both are set the client connects with SASL_SSL (Aiven). One without the other is a configuration error |
@@ -413,6 +413,8 @@ DATABASE_URL="postgresql://...neon.tech/...?sslmode=require" npm run db:push
 
 ### 3) Backend and notification service (Render)
 Create two **Web Services** from this repository with the **Docker** runtime, root directories `backend` and `notification-service`, and health check path `/health`. Set the variables from the [Environment variables](#environment-variables) tables: both services need `DATABASE_URL` (pooler host is fine at runtime), `KAFKA_BROKER`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and, unless `letsencrypt_sasl` is enabled on the Aiven service, `KAFKA_SSL_CA`; the backend additionally needs `JWT_SECRET`, `NODE_ENV=production` and `ADMIN_EMAILS`, optionally `GUARDIAN_API_KEY` and `CORS_ORIGINS`. Render provides `PORT`.
+
+**Generate a new `JWT_SECRET` for the deployment, never reuse the example value**: in production the backend refuses the `.env.example` placeholder and anything containing "change me" (`node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`).
 
 Free Render web services sleep after inactivity, so the consumer only processes messages while the service is awake.
 
