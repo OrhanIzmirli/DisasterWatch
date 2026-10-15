@@ -10,6 +10,10 @@ import {
   clusterLeaves,
   zoomToReveal,
   spiderPositions,
+  typeSegments,
+  clusterBackground,
+  TYPE_ORDER,
+  TYPE_COLORS,
   type ClusterPoint,
 } from "./clustering";
 
@@ -96,6 +100,53 @@ describe("severity and type aggregation", () => {
     expect(typeBreakdown(cluster.props)).toBe("6 wildfires, 1 flood");
     expect(clusterTooltip(cluster.count, cluster.props)).toBe("7 events · 6 wildfires, 1 flood · highest: High");
     expect(typeBreakdown({ earthquake: 1, flood: 0, wildfire: 0, storm: 3, high: 0, medium: 0, low: 4 })).toBe("3 storms, 1 earthquake");
+  });
+});
+
+describe("type colours", () => {
+  const props = (o: Partial<Record<string, number>>) => ({ earthquake: 0, flood: 0, wildfire: 0, storm: 0, high: 0, medium: 0, low: 0, ...o });
+
+  it("segment percentages are proportional to the type counts", () => {
+    expect(typeSegments(props({ wildfire: 5, earthquake: 2, flood: 1 }))).toEqual([
+      { type: "wildfire", count: 5, percent: 62.5 },
+      { type: "earthquake", count: 2, percent: 25 },
+      { type: "flood", count: 1, percent: 12.5 },
+    ]);
+    const sum = typeSegments(props({ wildfire: 1, earthquake: 1, flood: 1 })).reduce((n, s) => n + s.percent, 0);
+    expect(Math.abs(sum - 100)).toBeLessThan(0.05);
+  });
+
+  it("a single-type cluster gets one solid colour, the marker colour of that type", () => {
+    expect(typeSegments(props({ flood: 3 }))).toEqual([{ type: "flood", count: 3, percent: 100 }]);
+    expect(clusterBackground(props({ flood: 3 }))).toBe(TYPE_COLORS.flood);
+    expect(clusterBackground(props({ wildfire: 7 }))).toBe("#F97316");
+    expect(clusterBackground(props({ earthquake: 2 }))).toBe("#C1121F");
+    expect(clusterBackground(props({ storm: 2 }))).toBe("#9CA3AF");
+  });
+
+  it("the order of the types is fixed regardless of the counts", () => {
+    expect(TYPE_ORDER).toEqual(["wildfire", "earthquake", "flood", "storm"]);
+    expect(typeSegments(props({ storm: 9, flood: 1, earthquake: 4, wildfire: 2 })).map((s) => s.type)).toEqual(["wildfire", "earthquake", "flood", "storm"]);
+    expect(typeSegments(props({ storm: 1, earthquake: 1 })).map((s) => s.type)).toEqual(["earthquake", "storm"]);
+  });
+
+  it("a mixed cluster is a conic-gradient split at the cumulative percentages", () => {
+    expect(clusterBackground(props({ wildfire: 5, earthquake: 2, flood: 1 }))).toBe(
+      "conic-gradient(#F97316 0% 62.5%, #C1121F 62.5% 87.5%, #3B82F6 87.5% 100%)"
+    );
+    // the last segment always closes the ring at 100% (no rounding gap)
+    expect(clusterBackground(props({ wildfire: 1, earthquake: 1, flood: 1 }))).toMatch(/#3B82F6 66\.66% 100%\)$/);
+  });
+
+  it("an aggregated cluster from the index reports its type split", () => {
+    const index = buildClusterIndex(AUSTRALIA);
+    const cluster = getClustersInView(index, WORLD, 2).find((f) => f.kind === "cluster");
+    const p = (cluster as { props: Parameters<typeof typeSegments>[0] }).props;
+    expect(typeSegments(p)).toEqual([
+      { type: "wildfire", count: 6, percent: 85.71 },
+      { type: "flood", count: 1, percent: 14.29 },
+    ]);
+    expect(clusterBackground(p).startsWith("conic-gradient(#F97316 0% 85.71%")).toBe(true);
   });
 });
 
