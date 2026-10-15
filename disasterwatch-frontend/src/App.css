@@ -2484,6 +2484,20 @@ body {
   color: #fde68a;
 }
 
+.edd-gdacs {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid currentColor;
+}
+.edd-gdacs-green { color: #86efac; }
+.edd-gdacs-orange { color: #fdba74; }
+.edd-gdacs-red { color: #fca5a5; }
+
 .edd .disaster-severity.severity-unrated {
   background: rgba(168, 162, 158, 0.18);
   color: #e7e5e4;

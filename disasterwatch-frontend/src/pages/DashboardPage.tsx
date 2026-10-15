@@ -379,8 +379,9 @@ const DashboardPage = () => {
 
   const totalDisasters = kpiDisasters.length;
 
-  const activeAlerts = useMemo(
-    () => kpiDisasters.filter((d) => d.severity === "high").length,
+  // Significant events: rated high or medium (not-rated events never count)
+  const significantEvents = useMemo(
+    () => kpiDisasters.filter((d) => d.severity === "high" || d.severity === "medium").length,
     [kpiDisasters]
   );
 
@@ -512,9 +513,9 @@ const DashboardPage = () => {
         </div>
 
         <div className="kpi-card">
-          <span className="kpi-label">Active alerts</span>
-          <span className="kpi-value kpi-value-warning">{kpi(activeAlerts)}</span>
-          <span className="kpi-footnote">High severity</span>
+          <span className="kpi-label">Significant events</span>
+          <span className="kpi-value kpi-value-warning">{kpi(significantEvents)}</span>
+          <span className="kpi-footnote">High or medium severity</span>
         </div>
 
         <div className="kpi-card">

@@ -3,20 +3,27 @@
  * and the sentence that explains it. The explanation is generated from the
  * same thresholds that produce the rating, so the two cannot drift apart.
  *
- * Rules:
+ * Rules (calibrated 2026-10-15, see README "Severity"):
  *   earthquake: rounded magnitude ≥ 6.0 → high, 5.0–5.9 → medium, < 5.0 → low
- *   storm (EONET wind speed in kts): ≥ 96 → high (Saffir-Simpson category 3+),
- *               64–95 → medium (hurricane), < 64 → low (tropical storm)
- *   wildfire (EONET burned area, normalised to hectares): ≥ 40,000 ha → high,
- *               4,000–39,999 ha → medium, < 4,000 ha → low
- *   no value, an unknown unit, floods, anything else → "unrated"
- *               ("Not rated: the source reports no intensity for this event")
+ *   wildfire:   GDACS impact level is primary (Red → high, Orange → medium,
+ *               Green → low). Without a level (US/IRWIN fires, GDACS down):
+ *               burned area in hectares ≥ 10,000 → high, 7,000–9,999 → medium,
+ *               < 7,000 → low (acres × 0.40469; 10,000 ha ≈ the top decile and
+ *               7,000 ha ≈ the third quartile of 90 days of EONET fires).
+ *   flood:      GDACS impact level; without one → "unrated" (EONET reports
+ *               no flood magnitude).
+ *   storm:      Saffir-Simpson on the PEAK advisory wind of the event (max
+ *               magnitudeValue over the geometry series): ≥ 96 kts → high
+ *               (category 3+), 64–95 → medium (category 1–2), < 64 → low.
+ *               The current wind is reported next to the peak.
+ *   no value / unknown unit / other types → "unrated"
  *
  * Manual (admin) entries never go through this module: they keep the
  * severity the admin chose (low | medium | high).
  */
 
 import { formatMagnitude, roundMagnitude } from "./magnitude.js";
+import { GDACS_LEVEL_SEVERITY } from "../services/gdacs.js";
 
 export const EARTHQUAKE_HIGH_MAG = 6.0;
 export const EARTHQUAKE_MEDIUM_MAG = 5.0;
@@ -24,10 +31,10 @@ export const EARTHQUAKE_MEDIUM_MAG = 5.0;
 export const STORM_HIGH_KTS = 96;
 export const STORM_MEDIUM_KTS = 64;
 
-export const WILDFIRE_HIGH_HA = 40_000;
-export const WILDFIRE_MEDIUM_HA = 4_000;
+export const WILDFIRE_HIGH_HA = 10_000;
+export const WILDFIRE_MEDIUM_HA = 7_000;
 
-/** 1 acre = 0.40469 ha (so 100,000 acres ≈ 40,469 ha, 10,000 acres ≈ 4,047 ha). */
+/** 1 acre = 0.40469 ha. */
 export const ACRES_TO_HA = 0.40469;
 
 export const UNRATED = "unrated";
@@ -35,6 +42,7 @@ export const UNRATED_REASON = "Not rated: the source reports no intensity for th
 
 const fmt = formatMagnitude;
 const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function numOrNull(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -64,16 +72,47 @@ export function toKnots(value, unit) {
   return u === "kts" || u === "kt" || u === "knots" ? n : null;
 }
 
+/** Saffir-Simpson label for a wind in knots. */
+export function saffirSimpson(kts) {
+  if (kts >= 137) return "Saffir-Simpson category 5";
+  if (kts >= 113) return "Saffir-Simpson category 4";
+  if (kts >= 96) return "Saffir-Simpson category 3";
+  if (kts >= 83) return "Saffir-Simpson category 2";
+  if (kts >= 64) return "Saffir-Simpson category 1";
+  if (kts >= 34) return "tropical storm, below hurricane strength";
+  return "tropical depression, below hurricane strength";
+}
+
 const unrated = () => ({ severity: UNRATED, reason: UNRATED_REASON });
 
+function fromGdacs(level, detail) {
+  const severity = GDACS_LEVEL_SEVERITY[level];
+  const suffix = detail ? ` (${detail})` : "";
+  return { severity, reason: `${cap(severity)}: GDACS impact level ${cap(level)}${suffix}` };
+}
+
 /**
- * @param {{ type: string, magnitude?: number|null, magnitudeValue?: number|null, magnitudeUnit?: string|null, areaHa?: number|null }} input
+ * @param {{ type: string, magnitude?: number|null, magnitudeValue?: number|null, magnitudeUnit?: string|null,
+ *           areaHa?: number|null, peakKts?: number|null, currentKts?: number|null, gdacsLevel?: string|null }} input
  *   - earthquake: `magnitude` (USGS)
- *   - storm: `magnitudeValue` + `magnitudeUnit` ("kts") from EONET
- *   - wildfire: `areaHa` (already normalised), or `magnitudeValue` + `magnitudeUnit` ("hectare" | "acres")
+ *   - wildfire: `gdacsLevel` ("green" | "orange" | "red") first, else `areaHa` or `magnitudeValue` + `magnitudeUnit`
+ *   - flood: `gdacsLevel` only
+ *   - storm: `peakKts` (max over the advisory series) and `currentKts` (latest), or `magnitudeValue` + `magnitudeUnit`
  * @returns {{ severity: "low"|"medium"|"high"|"unrated", reason: string }}
  */
-export function assessSeverity({ type, magnitude = null, magnitudeValue = null, magnitudeUnit = null, areaHa = null }) {
+export function assessSeverity({
+  type,
+  magnitude = null,
+  magnitudeValue = null,
+  magnitudeUnit = null,
+  areaHa = null,
+  peakKts = null,
+  currentKts = null,
+  gdacsLevel = null,
+}) {
+  const level = gdacsLevel ? String(gdacsLevel).toLowerCase() : null;
+  const hasLevel = level !== null && level in GDACS_LEVEL_SEVERITY;
+
   if (type === "earthquake") {
     // The rating and the explanation both work from the ROUNDED magnitude (the
     // one every surface displays, see magnitude.js): a quake shown as "M 6.0"
@@ -95,20 +134,22 @@ export function assessSeverity({ type, magnitude = null, magnitudeValue = null, 
   }
 
   if (type === "storm") {
-    const kts = toKnots(magnitudeValue, magnitudeUnit);
-    if (kts === null) return unrated();
-    const shown = fmtInt(kts);
-    if (kts >= STORM_HIGH_KTS) {
-      return { severity: "high", reason: `High: ${shown} kts sustained wind (≥ ${STORM_HIGH_KTS} kts, Saffir-Simpson category 3 or stronger)` };
+    const peak = numOrNull(peakKts) ?? toKnots(magnitudeValue, magnitudeUnit);
+    if (peak === null) return unrated();
+    const current = numOrNull(currentKts) ?? toKnots(magnitudeValue, magnitudeUnit) ?? peak;
+    const nowText = `, now ${fmtInt(current)} kts`;
+    if (peak >= STORM_HIGH_KTS) {
+      return { severity: "high", reason: `High: peak wind ${fmtInt(peak)} kts (${saffirSimpson(peak)}, ≥ ${STORM_HIGH_KTS} kts)${nowText}` };
     }
-    if (kts >= STORM_MEDIUM_KTS) {
-      return { severity: "medium", reason: `Medium: ${shown} kts sustained wind (${STORM_MEDIUM_KTS}–${STORM_HIGH_KTS - 1} kts, hurricane strength)` };
+    if (peak >= STORM_MEDIUM_KTS) {
+      return { severity: "medium", reason: `Medium: peak wind ${fmtInt(peak)} kts (${saffirSimpson(peak)}, ${STORM_MEDIUM_KTS}–${STORM_HIGH_KTS - 1} kts)${nowText}` };
     }
-    return { severity: "low", reason: `Low: ${shown} kts sustained wind (< ${STORM_MEDIUM_KTS} kts, tropical storm)` };
+    return { severity: "low", reason: `Low: peak wind ${fmtInt(peak)} kts (${saffirSimpson(peak)}, < ${STORM_MEDIUM_KTS} kts)${nowText}` };
   }
 
   if (type === "wildfire") {
     const ha = areaHa !== null && areaHa !== undefined ? numOrNull(areaHa) : toHectares(magnitudeValue, magnitudeUnit);
+    if (hasLevel) return fromGdacs(level, ha !== null ? `${fmtInt(ha)} ha burned` : null);
     if (ha === null) return unrated();
     const shown = fmtInt(ha);
     if (ha >= WILDFIRE_HIGH_HA) {
@@ -120,7 +161,11 @@ export function assessSeverity({ type, magnitude = null, magnitudeValue = null, 
     return { severity: "low", reason: `Low: ${shown} ha burned (< ${fmtInt(WILDFIRE_MEDIUM_HA)} ha)` };
   }
 
-  // floods and every other type: EONET reports no intensity we can rate
+  if (type === "flood") {
+    return hasLevel ? fromGdacs(level, null) : unrated();
+  }
+
+  // every other type: no rule
   return unrated();
 }
 
@@ -130,16 +175,34 @@ export function severityFromMag(mag) {
 }
 
 /**
- * Severity for an EONET event from its latest geometry entry that carries a
- * magnitude. Returns the rating, the reason, the raw measurement and the
- * normalised burned area so callers (feed details, Kafka mapper) agree.
+ * Severity for an EONET event: the GDACS level attached by services/gdacs.js
+ * (`event.gdacs`) when present, otherwise the event's own measurement. Storms
+ * use the peak of the advisory series and report the latest value as well.
+ * Returns the rating, the reason, the raw measurement, the normalised burned
+ * area, the wind pair and the GDACS level, so the feed details and the Kafka
+ * mapper agree.
  */
 export function assessEonetEvent(event, type) {
   const geometry = Array.isArray(event?.geometry) ? event.geometry : [];
-  const withMagnitude = [...geometry].reverse().find((g) => g && g.magnitudeValue !== null && g.magnitudeValue !== undefined);
-  const magnitudeValue = withMagnitude ? numOrNull(withMagnitude.magnitudeValue) : null;
-  const magnitudeUnit = withMagnitude?.magnitudeUnit ? String(withMagnitude.magnitudeUnit) : null;
+  const withMagnitude = geometry.filter((g) => g && g.magnitudeValue !== null && g.magnitudeValue !== undefined);
+  const latest = withMagnitude.at(-1) ?? null;
+  const magnitudeValue = latest ? numOrNull(latest.magnitudeValue) : null;
+  const magnitudeUnit = latest?.magnitudeUnit ? String(latest.magnitudeUnit) : null;
   const areaHa = type === "wildfire" ? toHectares(magnitudeValue, magnitudeUnit) : null;
-  const { severity, reason } = assessSeverity({ type, magnitudeValue, magnitudeUnit, areaHa });
-  return { severity, reason, magnitudeValue, magnitudeUnit, areaHa };
+
+  let peakKts = null;
+  let currentKts = null;
+  if (type === "storm") {
+    const winds = withMagnitude.map((g) => toKnots(g.magnitudeValue, g.magnitudeUnit)).filter((v) => v !== null);
+    if (winds.length) {
+      peakKts = Math.max(...winds);
+      currentKts = toKnots(magnitudeValue, magnitudeUnit) ?? winds.at(-1);
+    }
+  }
+
+  const gdacsLevel = event?.gdacs?.level && event.gdacs.level in GDACS_LEVEL_SEVERITY ? event.gdacs.level : null;
+  const gdacsScore = gdacsLevel ? (numOrNull(event.gdacs.score) ?? null) : null;
+
+  const { severity, reason } = assessSeverity({ type, magnitudeValue, magnitudeUnit, areaHa, peakKts, currentKts, gdacsLevel });
+  return { severity, reason, magnitudeValue, magnitudeUnit, areaHa, peakKts, currentKts, gdacsLevel, gdacsScore };
 }

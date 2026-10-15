@@ -69,9 +69,10 @@ describe("severity rules and their explanations agree", () => {
     }
     expect(assessSeverity({ type: "wildfire", magnitudeValue: 9965, magnitudeUnit: "hectare" })).toEqual({
       severity: "medium",
-      reason: "Medium: 9,965 ha burned (4,000–39,999 ha)",
+      reason: "Medium: 9,965 ha burned (7,000–9,999 ha)",
     });
-    expect(assessSeverity({ type: "storm", magnitudeValue: 100, magnitudeUnit: "kts" }).severity).toBe("high");
+    expect(assessSeverity({ type: "wildfire", magnitudeValue: 9965, magnitudeUnit: "hectare", gdacsLevel: "red" }).severity).toBe("high");
+    expect(assessSeverity({ type: "storm", peakKts: 100, currentKts: 40 }).severity).toBe("high");
   });
 
   it("the reason sentence always starts with the rating it explains", () => {
@@ -81,9 +82,11 @@ describe("severity rules and their explanations agree", () => {
       { type: "earthquake", magnitude: 4.6 },
       { type: "wildfire", magnitudeValue: 50_000, magnitudeUnit: "hectare" },
       { type: "wildfire", magnitudeValue: 12_000, magnitudeUnit: "acres" },
-      { type: "storm", magnitudeValue: 70, magnitudeUnit: "kts" },
-      { type: "storm", magnitudeValue: 30, magnitudeUnit: "kts" },
+      { type: "wildfire", magnitudeValue: 2_000, magnitudeUnit: "hectare", gdacsLevel: "orange" },
+      { type: "storm", peakKts: 70, currentKts: 40 },
+      { type: "storm", peakKts: 30, currentKts: 30 },
       { type: "flood" },
+      { type: "flood", gdacsLevel: "green" },
     ];
     for (const c of cases) {
       const { severity, reason } = assessSeverity(c);
@@ -159,9 +162,18 @@ describe("buildEonetDetails (real events)", () => {
       pagerAlert: null,
       tsunami: null,
       feltReports: null,
+      gdacsLevel: null, // the fixture carries no GDACS level, so the size rule applies
+      severity: "low",
+      severityReason: "Low: 6,889 ha burned (< 7,000 ha)",
+      severitySource: "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)",
+    });
+    // with the GDACS level attached (as services/gdacs.js does at fetch time) the level wins
+    expect(buildEonetDetails({ ...FIRE, gdacs: { level: "orange", score: 2 } }, "wildfire")).toMatchObject({
       severity: "medium",
-      severityReason: "Medium: 6,889 ha burned (4,000–39,999 ha)",
-      severitySource: "Severity rule applied to the burned area reported by EONET",
+      gdacsLevel: "orange",
+      gdacsScore: 2,
+      severityReason: "Medium: GDACS impact level Orange (6,889 ha burned)",
+      severitySource: "Impact level assigned by GDACS (gdacs.org)",
     });
     expect(d.sources[0]).toEqual({ name: "NASA EONET", url: FIRE.link });
     expect(d.sources.map((s) => s.name)).toContain("GDACS");
@@ -179,9 +191,11 @@ describe("buildEonetDetails (real events)", () => {
       magnitudeValue: 80,
       magnitudeUnit: "kts",
       areaHa: null,
+      peakKts: 85,
+      currentKts: 80,
       severity: "medium",
-      severityReason: "Medium: 80 kts sustained wind (64–95 kts, hurricane strength)",
-      severitySource: "Severity rule applied to the wind speed reported by EONET",
+      severityReason: "Medium: peak wind 85 kts (Saffir-Simpson category 2, 64–95 kts), now 80 kts",
+      severitySource: "Severity rule applied to the peak advisory wind reported by EONET",
     });
     expect(d.sources.map((s) => s.name)).toEqual(["NASA EONET", "JTWC"]);
     expect(d.updatedAt).toBe("2026-10-13T12:00:00.000Z");
@@ -189,7 +203,8 @@ describe("buildEonetDetails (real events)", () => {
 
   it("flood: polygon geometry, no magnitude, dates still resolved", () => {
     const d = buildEonetDetails(FLOOD, "flood", FLOOD.geometry[0]);
-    expect(d).toMatchObject({ category: "Floods", cleanTitle: "Flood in Nepal", place: "Nepal", magnitudeValue: null, magnitudeUnit: null, severity: "unrated", severityReason: UNRATED_REASON });
+    expect(d).toMatchObject({ category: "Floods", cleanTitle: "Flood in Nepal", place: "Nepal", magnitudeValue: null, magnitudeUnit: null, severity: "unrated", severityReason: UNRATED_REASON, gdacsLevel: null });
+    expect(buildEonetDetails({ ...FLOOD, gdacs: { level: "green", score: 1 } }, "flood")).toMatchObject({ severity: "low", gdacsLevel: "green", severityReason: "Low: GDACS impact level Green" });
     expect(d.occurredAt).not.toBeNull();
   });
 });
@@ -203,7 +218,7 @@ describe("normalizers stay backwards compatible", () => {
     expect(item).toMatchObject({
       type: "wildfire",
       location: "Wildfire in Botswana 1032764", // raw title, as before
-      severity: "medium", // 6,889 ha burned: rated from the EONET area now
+      severity: "low", // 6,889 ha burned and no GDACS level in the fixture: size rule, < 7,000 ha
       description: "Wildfire in Botswana", // title fallback without the source id (shown in Today's events)
     });
     expect(item.meta).toMatch(/^Wildfires • \d+ min ago$/);

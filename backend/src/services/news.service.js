@@ -22,7 +22,7 @@
  */
 import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, mentionsDisaster, MAX_EVENT_QUERIES } from "./newsLinking.js";
 import { createNewsProviders } from "./newsProviders/index.js";
-import { fetchNasaEvents } from "./nasa.service.js";
+import { fetchNasaEventsRated } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
 import { cleanTitle } from "../utils/eventDetails.js";
 import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
@@ -44,7 +44,7 @@ export class NewsUnavailableError extends Error {
 }
 
 /** Current feed events, same normalisation as GET /disasters. */
-export async function loadFeedEvents({ fetchNasa = fetchNasaEvents, fetchUsgs = fetchUsgsEarthquakes } = {}) {
+export async function loadFeedEvents({ fetchNasa = fetchNasaEventsRated, fetchUsgs = fetchUsgsEarthquakes } = {}) {
   const [nasa, usgs] = await Promise.all([
     fetchNasa().then(normalizeNasaEvents).catch(() => []),
     fetchUsgs()

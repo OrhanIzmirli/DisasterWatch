@@ -64,6 +64,9 @@ export type MapDisaster = {
     magnitudeLabel?: string | null;
     /** Why the event is rated as it is; shown in the tooltip. */
     severityReason?: string;
+    /** Storms: peak and latest advisory wind (kts). */
+    peakKts?: number | null;
+    currentKts?: number | null;
   };
 };
 
@@ -342,6 +345,11 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
             <div className="dw-tooltip-meta">
               {eventRelativeTime(d) ?? d.meta}
               {d.type === "earthquake" && d.details?.magnitudeLabel && <> · M {d.details.magnitudeLabel}</>}
+              {d.type === "storm" && d.details?.peakKts != null && (
+                <>
+                  {" "}· peak {Math.round(d.details.peakKts)} kts · now {Math.round(d.details.currentKts ?? d.details.peakKts)} kts
+                </>
+              )}
             </div>
             {d.details?.severityReason && <div className="dw-tooltip-reason">{d.details.severityReason}</div>}
             <div className="dw-tooltip-hint">Click for details</div>

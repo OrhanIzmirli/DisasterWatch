@@ -38,17 +38,18 @@ The whole stack runs on localhost with one `docker compose up`; the same images 
 - Interactive world map (Leaflet) with severity-coloured markers and an event detail drawer (related news, USGS PAGER alert level, EONET sources).
 - Nearby events are grouped into numbered clusters (supercluster, `src/utils/clustering.ts`) coloured by event type like the markers: one solid colour when a single type is inside, a ring split proportionally to the type counts for a mix, with the count on a dark disc. Clusters are sized logarithmically and carry a "7 events · 6 wildfires, 1 flood · highest: High" tooltip (severity lives in the tooltip, not in the colour); clicking zooms to the cluster's bounds, or fans the events out when they share coordinates (spiderfy). The selected event is always drawn on its own, on top, so it never disappears inside a cluster.
 - Live feed with filters (earthquake / wildfire / flood / storm), search by place, sorting by newest or severity.
-- KPIs: total events, high-severity alerts, countries affected (derived by the backend from the source place names; events whose country cannot be derived, e.g. "North Atlantic Ocean", are not counted).
+- KPIs: total events, significant events (high + medium severity), countries affected (derived by the backend from the source place names; events whose country cannot be derived, e.g. "North Atlantic Ocean", are not counted).
 - Honest states: a skeleton while loading, a per-source note when one source is down, the last good feed flagged STALE when a refresh fails, an explicit error state with "Try again" when nothing is cached. There are no demo or fallback events anywhere.
 
 ### 3) Severity from the source (LOW / MEDIUM / HIGH, or NOT RATED)
-- Rated from the measurement the source reports, in `backend/src/utils/severity.js` (the single source of truth; the explanation sentence is generated from the same thresholds):
-  - earthquake: rounded magnitude ≥ 6.0 high, 5.0–5.9 medium, < 5.0 low
-  - storm (EONET wind speed, kts): ≥ 96 high (Saffir-Simpson category 3+), 64–95 medium (hurricane), < 64 low (tropical storm)
-  - wildfire (EONET burned area, normalised to hectares: `hectare` as is, `acres` × 0.40469): ≥ 40,000 ha high, 4,000–39,999 ha medium, < 4,000 ha low
-  - no value, an unknown unit, or a flood: **not rated** (`unrated`, "Not rated: the source reports no intensity for this event")
+- Decided in `backend/src/utils/severity.js` (the single source of truth; the explanation sentence is generated from the same rules):
+  - **earthquake:** rounded magnitude ≥ 6.0 high, 5.0–5.9 medium, < 5.0 low
+  - **wildfire and flood: the GDACS impact level is primary** (Red → high, Orange → medium, Green → low). GDACS, the source behind every non-US fire and every flood in EONET, publishes its own impact level per event; the backend looks it up on gdacs.org by the event id in EONET's source link (see [Severity](#severity)).
+  - **wildfire without a GDACS level** (US/IRWIN fires, GDACS unreachable): burned area normalised to hectares (`hectare` as is, `acres` × 0.40469): ≥ 10,000 ha high, 7,000–9,999 ha medium, < 7,000 ha low
+  - **storm:** Saffir-Simpson on the **peak** advisory wind of the event (highest `magnitudeValue` of the series): ≥ 96 kts high (category 3+), 64–95 kts medium (category 1–2), < 64 kts low; the current wind is shown next to the peak ("Peaked 135 kts (Cat-4), now 55 kts")
+  - flood without a GDACS level, no value, unknown unit: **not rated** (`unrated`, "Not rated: the source reports no intensity for this event")
   - manual (admin) entries keep the severity the admin chose (low / medium / high, never unrated)
-- Shown as badges in the feed, in the map tooltip and in the drawer, each with the reason sentence. Not-rated events sort last, never count as "Active alerts" (high only) and wear a neutral stone-grey pill, distinct from the storm marker grey.
+- Shown as badges in the feed, in the map tooltip and in the drawer, each with the reason sentence and the GDACS attribution where it applies. Not-rated events sort last and wear a neutral stone-grey pill, distinct from the storm marker grey. The **"Significant events"** KPI counts high + medium (never not-rated); it is unrelated to the users' alert subscriptions.
 
 ### 4) News linked to events
 - GDELT (primary) and The Guardian (optional fallback) are searched for the most important feed events; articles are linked to events on our side and shown in the news panel and the event drawer ("Show on map", "Related news"). Details in [News](#news).
@@ -205,6 +206,8 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | `KAFKA_SSL_CA` | cloud | empty | CA certificate (PEM) for providers with a private CA; `\n` accepted for newlines |
 | `GUARDIAN_API_KEY` | no | empty | enables The Guardian as the fallback news provider ([News](#news)) |
 | `GDELT_TIMEOUT_MS` | no | `8000` | per-request timeout for GDELT searches |
+| `GDACS_TIMEOUT_MS` | no | `4000` | per-request timeout for GDACS impact-level lookups ([Severity](#severity)) |
+| `DISABLE_GDACS` | no | – | `1` switches the GDACS lookups off (wildfires fall back to the size rule, floods are not rated) |
 | `CORS_ORIGINS` | no | live frontend + `localhost:8080/5173/4173` | browser origins allowed to call the API directly; the `/api` proxy never needs it |
 | `DISABLE_NEWS_JOB` | no | – | `1` switches off the background news refresh |
 | `DISABLE_INGESTION` | no | – | `1` switches off the NASA/USGS ingestion job (no events reach Kafka) |
@@ -232,7 +235,7 @@ All paths are relative to the backend (`http://localhost:5000`) or to the proxy 
 
 | Method and path | Auth | Purpose |
 |---|---|---|
-| `GET /health` | – | `{ ok, service, kafka, outboxPending, news: { provider, updatedAt, stale, articles }, time }` |
+| `GET /health` | – | `{ ok, service, kafka, outboxPending, news: { provider, updatedAt, stale, articles }, gdacs: { requests, hits, failures, cached, lastError }, time }` |
 | `GET /disasters` | – | the public feed ([contract below](#feed-contract-get-disasters)) |
 | `GET /news?type=&event=` | – | cached news articles linked to feed events ([News](#news)) |
 | `POST /users/register`, `POST /users/login`, `POST /users/logout` | – | `{ email, password }`; sets or clears the session cookie. Rate limited |
@@ -273,9 +276,22 @@ Response `200`:
 | `updatedAt` | string | ISO timestamp of the newest source data; the dashboard derives every "ago" label from it |
 | `params` | object | the effective `minutesWindow`, `limit`, `minMag` after clamping |
 
-Each item: `id`, `type` (`earthquake` | `wildfire` | `flood` | `storm`), `location`, `meta` (one-line summary), `severity` (`low` | `medium` | `high` | `unrated`), `timeMinutesAgo`, `description`, `lat`, `lng`, `country` (derived from the USGS place or the EONET title, `null` when not derivable) and `details`: source-faithful fields for the event drawer (`eventId` such as `usgs:us7000abcd`, `source`, `category`, `cleanTitle`, `place`, `occurredAt`, `updatedAt`, `status`, `sources` [{ name, url }], `magnitude`, `magnitudeLabel`, `magType`, `depthKm`, `pagerAlert`, `tsunami`, `feltReports` for USGS; `magnitudeValue`/`magnitudeUnit` as reported by EONET plus `areaHa` (wildfire area normalised to hectares, `null` otherwise); `severity`, `severityReason`, `severitySource`). Polygon events (GDACS floods) are placed at the polygon centroid.
+Each item: `id`, `type` (`earthquake` | `wildfire` | `flood` | `storm`), `location`, `meta` (one-line summary), `severity` (`low` | `medium` | `high` | `unrated`), `timeMinutesAgo`, `description`, `lat`, `lng`, `country` (derived from the USGS place or the EONET title, `null` when not derivable) and `details`: source-faithful fields for the event drawer (`eventId` such as `usgs:us7000abcd`, `source`, `category`, `cleanTitle`, `place`, `occurredAt`, `updatedAt`, `status`, `sources` [{ name, url }], `magnitude`, `magnitudeLabel`, `magType`, `depthKm`, `pagerAlert`, `tsunami`, `feltReports` for USGS; `magnitudeValue`/`magnitudeUnit` as reported by EONET plus `areaHa` (wildfire area normalised to hectares), `peakKts`/`currentKts` (storms), `gdacsLevel`/`gdacsScore` (wildfires and floods rated by GDACS; `null` otherwise); `severity`, `severityReason`, `severitySource`). Polygon events (GDACS floods) are placed at the polygon centroid.
 
 Failure behaviour: a source that fails keeps serving its last good data while it is at most 60 minutes old; a source that has never returned data is retried after 10 seconds, otherwise after a minute. When both sources fail and nothing is cached the endpoint answers `503 { message: "Live disaster sources are not responding", retryAfterSeconds: 60 }`. Upstream error details never leave the server log.
+
+---
+
+## Severity
+
+How the thresholds were derived (2026-10-15, full analysis in the review notes):
+
+- **EONET exposes no alert level.** Its events carry only id, title, link, status, categories, sources and a geometry series with `magnitudeValue`/`magnitudeUnit`. But every GDACS-sourced event links to its GDACS report (`https://www.gdacs.org/report.aspx?eventtype=WF&eventid=…`), and GDACS's public API (`https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=WF&eventid=…`, no key) answers with the impact level GDACS assigned (Green / Orange / Red, based on population exposed and country capacity). In EONET's last 90 days, 915 of 1,000 wildfires and 180 of 180 floods are GDACS-sourced; storms come from JTWC/NOAA and have no GDACS key. Over the last 12 months GDACS rated 15 wildfires and 18 floods Orange or Red; the rest are Green.
+- **Wildfire fallback (hectares):** 1,000 EONET fires over 90 days have a median of 5,701 ha, third quartile 7,075 ha, top decile 9,537 ha and a maximum of 43,703 ha; GDACS only lists fires from about 5,000 ha, US (IRWIN) fires are small (median 424 ha). The cut is the top decile for high (10,000 ha) and the third quartile for medium (7,000 ha), rounded: 8.5 % / 17.4 % / 74.1 % of that population.
+- **Storms:** the 64 / 96 kts cut is the Saffir-Simpson hurricane / major-hurricane boundary. EONET storms are a series of advisories; the peak is rated because the latest advisory of a dissipating hurricane is a remnant (90 days: on the latest wind 0 of 42 storms are "high", on the peak 15).
+- **Floods:** EONET reports no magnitude at all (0 of 180), so only the GDACS level can rate them.
+
+**GDACS as an ingestion dependency** (`backend/src/services/gdacs.js`): one GET per GDACS event, cached per event id for 6 hours (levels move slowly), fetched 8 at a time with a 4-second timeout, failures remembered for 10 minutes. The lookup runs when the backend fetches EONET (feed cache, ingestion job, news job) and never blocks: when GDACS is down or slow the events keep the EONET measurement and the drawer says "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)". `GET /health` reports `gdacs: { requests, hits, failures, cached, lastError }`; `GDACS_TIMEOUT_MS` and `DISABLE_GDACS=1` configure it.
 
 ---
 
@@ -327,7 +343,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 | `eventId` | string | stable id from the source, `source:id` with `[A-Za-z0-9_.-]`: `nasa:EONET_1234`, `usgs:us7000abcd`, `manual:42` |
 | `source` | `nasa` \| `usgs` \| `manual` | |
 | `type` | string | lower-case hazard type, 1–40 chars: `earthquake`, `flood`, `wildfire`, `storm` |
-| `severity` | `low` \| `medium` \| `high` \| `unrated` | `unrated` was added on 2026-10-15 as an additive v1 change: the source reports no intensity (floods, fires/storms without a measurement). Manual events are never unrated |
+| `severity` | `low` \| `medium` \| `high` \| `unrated` | `unrated` was added on 2026-10-15 as an additive v1 change: no GDACS level and no measurement (floods without a level, fires/storms without a value). Manual events are never unrated |
 | `title` | string | 1–200 chars |
 | `lat`, `lng` | number | WGS84 |
 | `occurredAt` | string | ISO-8601 with timezone |

@@ -74,6 +74,10 @@ export function buildUsgsDetails(feature) {
     magnitudeValue: null,
     magnitudeUnit: null,
     areaHa: null,
+    peakKts: null,
+    currentKts: null,
+    gdacsLevel: null,
+    gdacsScore: null,
     severity,
     severityReason: reason,
     severitySource: "Severity rule applied to the USGS magnitude",
@@ -93,13 +97,17 @@ export function buildEonetDetails(event, type, pickedGeometry = null) {
 
   // Latest geometry entry that carries a magnitude (EONET updates these over
   // time); the burned area is normalised to hectares in severity.js.
-  const { severity, reason, magnitudeValue, magnitudeUnit, areaHa } = assessEonetEvent(event, type);
+  const { severity, reason, magnitudeValue, magnitudeUnit, areaHa, peakKts, currentKts, gdacsLevel, gdacsScore } = assessEonetEvent(event, type);
   const severitySource =
-    severity === "unrated"
-      ? "EONET reports no intensity this rule can rate"
+    gdacsLevel
+      ? "Impact level assigned by GDACS (gdacs.org)"
+      : severity === "unrated"
+      ? type === "flood"
+        ? "GDACS impact level unavailable; EONET reports no flood magnitude"
+        : "EONET reports no intensity this rule can rate"
       : type === "wildfire"
-      ? "Severity rule applied to the burned area reported by EONET"
-      : "Severity rule applied to the wind speed reported by EONET";
+      ? "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)"
+      : "Severity rule applied to the peak advisory wind reported by EONET";
 
   const sources = [];
   if (event?.link) sources.push({ name: "NASA EONET", url: String(event.link) });
@@ -127,6 +135,10 @@ export function buildEonetDetails(event, type, pickedGeometry = null) {
     magnitudeValue, // as reported by the source (original unit)
     magnitudeUnit,
     areaHa, // wildfires: burned area normalised to hectares (acres × 0.40469); null otherwise
+    peakKts, // storms: highest advisory wind of the series (the rated value); null otherwise
+    currentKts, // storms: latest advisory wind
+    gdacsLevel, // "green" | "orange" | "red" when GDACS rates this event, else null
+    gdacsScore,
     severity,
     severityReason: reason,
     severitySource,
