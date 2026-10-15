@@ -67,7 +67,7 @@ const StatusBar = () => {
   const newsClass = status.news === "OK" ? "status-ok" : status.news === "Stale" ? "status-warn" : status.news === "…" ? "" : "status-bad";
 
   return (
-    <div className="status-bar">
+    <div className="status-bar" role="region" aria-label="System status">
       <div className="status-left">
         <span className={dotClass} />
         <span>

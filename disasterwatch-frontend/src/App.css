@@ -3260,3 +3260,143 @@ body {
     white-space: normal;
   }
 }
+
+/* =========================
+   ACCESSIBILITY AND POLISH (PR-C)
+   ========================= */
+
+/* Visually hidden, still read by screen readers (labels for the sort select) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Feed rows are keyboard buttons: a ring for keyboard focus only, nothing on a mouse click */
+.disaster-row:focus {
+  outline: none;
+}
+.disaster-row:focus-visible {
+  outline: 3px solid var(--dw-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px rgba(0, 48, 73, 0.9);
+}
+
+/* The severity pill never breaks onto two lines (390 px) */
+.disaster-severity {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Active filter chip: cream on #669bbc was 2.5:1; dark navy keeps the look at 11:1 */
+.filter-chip-active {
+  background: #003049;
+  color: #f6e8d9;
+  border-color: #003049;
+}
+.filter-chip-active:hover {
+  background: #00263a;
+}
+
+/* Map: markers and clusters show a ring for keyboard focus only (the black
+   outline after a mouse click is gone); disabled zoom buttons stay readable */
+.leaflet-container .leaflet-interactive:focus,
+.leaflet-container .leaflet-marker-icon:focus {
+  outline: none;
+}
+.leaflet-container .leaflet-interactive:focus-visible,
+.leaflet-container .leaflet-marker-icon:focus-visible {
+  outline: 3px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+.leaflet-container .leaflet-control-zoom a.leaflet-disabled {
+  color: #6b7280;
+  background-color: #f4f4f4;
+}
+
+/* 404 page */
+.not-found-code {
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #c1121f;
+  line-height: 1;
+}
+.not-found-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  word-break: break-all;
+}
+.not-found-card .card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+/* Header at phone widths: logo on the first row, the whole nav (links,
+   bell, account, News) on one wrapping row below it, left-aligned, no
+   orphaned button on a third line */
+@media (max-width: 600px) {
+  .app-header {
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+    padding: 0.6rem 1rem;
+  }
+  .header-right {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0.4rem;
+  }
+  .nav-links {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0.4rem;
+  }
+  .nav-btn,
+  .news-toggle-btn {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+  }
+}
+
+/* Feed row as a real button: keep the row look, reset the button defaults */
+.disaster-row-item {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+button.disaster-row {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.disaster-row-main,
+.disaster-row-top {
+  display: flex;
+}
+.disaster-row-main {
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* News button: cream on #669bbc was 2.6:1; navy with a cream border reads at 11:1 */
+.news-toggle-btn {
+  background: #003049;
+  border-color: #f6e8d9;
+  color: #f6e8d9;
+}
+.news-toggle-btn:hover {
+  background: #00263a;
+}

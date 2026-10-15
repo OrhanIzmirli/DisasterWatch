@@ -324,6 +324,14 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
         }}
         eventHandlers={{
           click: () => onSelect?.(d.id),
+          // screen readers: "Wildfire, low, Wildfire in Australia"
+          add: (e) => {
+            const el = (e.target as L.Path).getElement();
+            if (el) {
+              el.setAttribute("role", "img");
+              el.setAttribute("aria-label", `${TYPE_LABELS[d.type]}, ${d.severity === "unrated" ? "not rated" : d.severity}, ${tooltipTitle(d)}`);
+            }
+          },
         }}
       >
         {/*
@@ -381,8 +389,19 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
             key={`c${f.clusterId}`}
             position={[f.lat, f.lng]}
             icon={clusterIcon(f.count, f.props)}
-            keyboard={false}
-            eventHandlers={{ click: () => openCluster(f) }}
+            keyboard={true}
+            alt={clusterTooltip(f.count, f.props)}
+            eventHandlers={{
+              click: () => openCluster(f),
+              // Leaflet makes keyboard markers focusable and fires click on Enter; label them for screen readers
+              add: (e) => {
+                const el = (e.target as L.Marker).getElement();
+                if (el) {
+                  el.setAttribute("role", "button");
+                  el.setAttribute("aria-label", `${clusterTooltip(f.count, f.props)}. Press Enter to ${expansionZoom(viewIndex, f.clusterId, maxZoom) === null ? "fan out" : "zoom in"}`);
+                }
+              },
+            }}
           >
             <Tooltip direction="top" offset={[0, -clusterRadius(f.count)]} opacity={1} className="dw-tooltip">
               <div className="dw-tooltip-inner">

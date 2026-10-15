@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { formatDateTime, relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime } from "../utils/eventText";
 
@@ -118,6 +119,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => {
   const d = event.details;
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Escape closes the drawer (the opener restores focus, see DashboardPage);
+  // the close button takes focus on open so keyboard users start inside the dialog.
+  useEffect(() => {
+    closeRef.current?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const title = d?.cleanTitle || cleanTitle(event.location);
   const occurredAt = d?.occurredAt ?? null;
   const occurredRelative = eventRelativeTime(event); // falls back to the feed's minutes-ago counter
@@ -151,7 +167,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
   return (
     <>
       <div className="detail-overlay" onClick={onClose} />
-      <aside className="detail-drawer edd" role="dialog" aria-label={title}>
+      <aside className="detail-drawer edd" role="dialog" aria-modal="true" aria-label={title}>
         <header className="detail-header">
           <div className="detail-header-main">
             <div className="edd-tags">
@@ -164,7 +180,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
             <h3 className="detail-title">{title}</h3>
             {d?.category && <p className="detail-meta">{d.category}</p>}
           </div>
-          <button type="button" className="detail-close-btn" onClick={onClose} aria-label="Close">
+          <button ref={closeRef} type="button" className="detail-close-btn" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </header>
