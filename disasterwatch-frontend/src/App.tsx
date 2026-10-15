@@ -18,6 +18,7 @@ import SignUpPage from "./pages/SignUpPage";
 import NewsPanel from "./components/NewsPanel";
 import StatusBar from "./components/StatusBar";
 import NotificationBell from "./components/NotificationBell";
+import NotFoundPage from "./pages/NotFoundPage";
 
 export type AuthUser = {
   email: string;
@@ -228,7 +229,7 @@ export default function App() {
           <Route path="/signin" element={<SignInPage onSignedIn={onSignedIn} />} />
           <Route path="/signup" element={<SignUpPage onSignedIn={onSignedIn} />} />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </div>
 

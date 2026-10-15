@@ -268,6 +268,7 @@ Response `200`:
 |---|---|---|
 | `items` | array | normalized events (see below) |
 | `count` | number | `items.length` |
+| `counts` | object | `{ total, bySeverity: { high, medium, low, unrated }, byType: { <type>: { total, high, medium, low, unrated } } }` over the whole window, independent of `limit`; the dashboard KPIs ("Disasters", "Significant events") use it |
 | `source` | string | `NASA + USGS`, `NASA` or `USGS` when live data was fetched in this call, `CACHE` when served from the 5-minute cache, `CACHE-FALLBACK` when both sources failed |
 | `stale` | boolean | `true` when both sources failed and the previous feed is being served |
 | `partial` | boolean | `true` when one source is missing from this answer |

@@ -60,6 +60,27 @@ function sanitizeText(s) {
 
 const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
 
+export const FEED_TYPES = ["earthquake", "wildfire", "flood", "storm"];
+export const FEED_SEVERITIES = ["high", "medium", "low", "unrated"];
+
+/**
+ * { total, bySeverity: { high, medium, low, unrated }, byType: { <type>: { total, high, medium, low, unrated } } }
+ * over every event in the window, independent of the page limit.
+ */
+export function countEvents(events) {
+  const zero = () => Object.fromEntries(FEED_SEVERITIES.map((s) => [s, 0]));
+  const counts = { total: 0, bySeverity: zero(), byType: Object.fromEntries(FEED_TYPES.map((t) => [t, { total: 0, ...zero() }])) };
+  for (const e of events) {
+    const sev = FEED_SEVERITIES.includes(e.severity) ? e.severity : "unrated";
+    counts.total++;
+    counts.bySeverity[sev]++;
+    const t = counts.byType[e.type] ?? (counts.byType[e.type] = { total: 0, ...zero() });
+    t.total++;
+    t[sev]++;
+  }
+  return counts;
+}
+
 export function createFeedService({
   fetchNasa = fetchNasaEventsRated, // EONET events with their GDACS impact level attached
   fetchUsgs = fetchUsgsEarthquakes,
@@ -116,26 +137,31 @@ export function createFeedService({
     return fetchOnce(name, t);
   }
 
-  /** Normalises the cached raw payloads into feed items for the requested window/limit. */
+  /**
+   * Normalises the cached raw payloads into feed items for the requested
+   * window/limit, plus counts over the WHOLE window (before the limit) so the
+   * dashboard KPIs do not depend on the page size.
+   */
   function buildItems({ nasa, usgs }, { minutesWindow, limit, minMag }) {
     const both = nasa !== null && usgs !== null;
     const perSource = both ? Math.ceil(limit * 0.6) : limit; // up to 60 % of the limit per source when both answer
     const inWindow = (e) => (e.timeMinutesAgo ?? 999999) <= minutesWindow;
 
-    const nasaItems = nasa ? normalizeNasaEvents(nasa).filter(inWindow).slice(0, perSource) : [];
-    const quakes = usgs ? normalizeUsgsEarthquakes(usgs, { minMag, limit: perSource }).filter(inWindow) : [];
-
-    return [...nasaItems, ...quakes].slice(0, limit).map((e) => ({
+    const nasaAll = nasa ? normalizeNasaEvents(nasa).filter(inWindow) : [];
+    const quakesAll = usgs ? normalizeUsgsEarthquakes(usgs, { minMag, limit: Number.MAX_SAFE_INTEGER }).filter(inWindow) : [];
+    const items = [...nasaAll.slice(0, perSource), ...quakesAll.slice(0, perSource)].slice(0, limit).map((e) => ({
       ...e,
       meta: sanitizeText(e.meta),
       description: sanitizeText(e.description),
       location: sanitizeText(e.location),
       title: sanitizeText(e.title),
     }));
+    return { items, counts: countEvents([...nasaAll, ...quakesAll]) };
   }
 
   /**
-   * -> { items, count, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params }
+   * -> { items, count, counts, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params }
+   *   counts:           { total, bySeverity, byType } over the whole window (not just the returned page)
    *   sources:          { nasa, usgs } each "ok" (fresh or fetched now), "stale" (failed,
    *                     last good data still served) or "error" (failed, nothing served)
    *   sourcesUpdatedAt: { nasa, usgs } ISO time of the data served per source, null when none
@@ -179,7 +205,7 @@ export function createFeedService({
       if (v[name].status === "error" && sources[name].lastError) log.warn(`[feed] ${name} unavailable (${sources[name].lastError}); its items are dropped`);
     }
 
-    const items = buildItems(served, params);
+    const { items, counts } = buildItems(served, params);
     const partial = served.nasa === null || served.usgs === null;
     const status = { nasa: v.nasa.status, usgs: v.usgs.status };
     const sourcesUpdatedAt = {
@@ -192,6 +218,7 @@ export function createFeedService({
     return {
       items,
       count: items.length,
+      counts, // whole window, before the limit: KPIs must not depend on the page size
       source: !anyOk ? "CACHE-FALLBACK" : liveNow ? label : "CACHE",
       stale: !anyOk,
       partial,

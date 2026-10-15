@@ -39,7 +39,7 @@ const SignUpPage = ({ onSignedIn }: Props) => {
       const data = await res.json().catch(() => null);
 
       if (res.status === 409) {
-        setError("Bu e-posta zaten kayıtlı, giriş yapın.");
+        setError("This e-mail is already registered. Sign in instead.");
         return;
       }
 

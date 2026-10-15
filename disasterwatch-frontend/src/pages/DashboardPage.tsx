@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import FeedRow from "../components/FeedRow";
+import { kpiFromCounts, kpiFromItems, readCounts, type FeedCounts } from "../utils/kpi";
 import MapView from "../components/MapView";
 import RelatedNews from "../components/RelatedNews";
 import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
@@ -175,6 +177,10 @@ const DashboardPage = () => {
   // When the data was fetched from the sources, as reported by the backend: every "ago" label
   // on the page derives from this, never from the time the browser received the response.
   const [feedUpdatedAt, setFeedUpdatedAt] = useState<string | null>(() => getCachedFeed()?.updatedAt ?? null);
+  // Whole-window counts from the backend (null until the first live answer)
+  const [feedCounts, setFeedCounts] = useState<FeedCounts | null>(null);
+  // The feed row that opened the drawer; it gets focus back when the drawer closes
+  const openerRef = useRef<HTMLElement | null>(null); // the feed row button
   const [activeFilter, setActiveFilter] = useState<"all" | DisasterType>("all");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"time" | "severity">("time");
@@ -230,11 +236,14 @@ const DashboardPage = () => {
     const hasCache = Boolean(getCachedFeed());
     if (!hasCache) setFeedStatus("loading");
     try {
-      const res = await fetch("/api/disasters", { signal });
+      // The whole window (the API's maximum page), so severity sort can bring every
+      // significant event to the top; the KPIs use the backend's full-window counts.
+      const res = await fetch("/api/disasters?limit=200", { signal });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(`Feed request failed (${res.status})`);
       const items: DisasterItem[] = Array.isArray(data?.items) ? data.items : [];
       if (signal?.aborted) return;
+      setFeedCounts(readCounts(data?.counts));
       const stale = Boolean(data?.stale);
       const sources = readSources(data?.sources);
       const sourcesUpdatedAt = readSourcesUpdatedAt(data?.sourcesUpdatedAt);
@@ -377,12 +386,11 @@ const DashboardPage = () => {
     return disasters.filter((d) => d.type === activeFilter);
   }, [disasters, activeFilter]);
 
-  const totalDisasters = kpiDisasters.length;
-
-  // Significant events: rated high or medium (not-rated events never count)
-  const significantEvents = useMemo(
-    () => kpiDisasters.filter((d) => d.severity === "high" || d.severity === "medium").length,
-    [kpiDisasters]
+  // KPIs over the WHOLE feed window (backend counts), not the loaded page;
+  // the loaded items are the fallback when an old cached payload has no counts.
+  const { total: totalDisasters, significant: significantEvents } = useMemo(
+    () => (feedCounts ? kpiFromCounts(feedCounts, activeFilter) : kpiFromItems(kpiDisasters, activeFilter)),
+    [feedCounts, kpiDisasters, activeFilter]
   );
 
   // same wording as every other relative time in the UI ("5 minutes ago")
@@ -426,7 +434,7 @@ const DashboardPage = () => {
   ========================= */
   const MAX_WILDFIRE_PER_COUNTRY = 30;
 
-  const mapDisasters = useMemo(() => {
+  const mapMarkers = useMemo(() => {
     const countryCounter = new Map<string, number>();
 
     const showEarthquakes = activeFilter === "all" || activeFilter === "earthquake";
@@ -441,8 +449,9 @@ const DashboardPage = () => {
 
     const baseNonEq = filteredDisasters.filter((d) => d.type !== "earthquake");
 
+    // Every type and severity goes on the map (clustering handles the density);
+    // only the per-country wildfire cap and the total marker cap apply.
     const nonEq = baseNonEq
-      .filter((d) => d.severity === "high" || d.severity === "medium")
       .filter((d) => {
         if (d.type !== "wildfire") return true;
 
@@ -456,8 +465,9 @@ const DashboardPage = () => {
       });
 
     const merged = [...eq, ...nonEq].slice(0, MAP_MAX_MARKERS);
-    return merged;
+    return { list: merged, earthquakesShown: eq.length, earthquakesTotal: showEarthquakes ? filteredDisasters.filter((d) => d.type === "earthquake").length : 0 };
   }, [filteredDisasters, activeFilter]);
+  const mapDisasters = mapMarkers.list;
 
   /* =========================
      COUNTRIES AFFECTED
@@ -489,9 +499,9 @@ const DashboardPage = () => {
   return (
     <>
       {/* Page header */}
-      <section className="dashboard-header">
+      <section className="dashboard-header" aria-labelledby="dashboard-title">
         <div>
-          <h1 className="dashboard-title">Global Disaster Overview</h1>
+          <h1 id="dashboard-title" className="dashboard-title">Global Disaster Overview</h1>
           <p className="dashboard-subtitle">Live monitoring powered by NASA EONET + USGS.</p>
         </div>
 
@@ -505,7 +515,7 @@ const DashboardPage = () => {
       </section>
 
       {/* KPI cards */}
-      <section className="dashboard-kpis">
+      <section className="dashboard-kpis" aria-label="Key figures">
         <div className="kpi-card">
           <span className="kpi-label">Disasters</span>
           <span className="kpi-value">{kpi(totalDisasters)}</span>
@@ -532,7 +542,8 @@ const DashboardPage = () => {
           <div className="panel-header">
             <h2>Map view</h2>
             <span className="panel-caption">
-              Showing max {MAP_MAX_MARKERS} markers • Earthquakes: last {MAP_EARTHQUAKE_CAP}.
+              Showing {mapDisasters.length} marker{mapDisasters.length === 1 ? "" : "s"} • Earthquakes: {mapMarkers.earthquakesShown}
+              {mapMarkers.earthquakesTotal > mapMarkers.earthquakesShown ? ` of ${mapMarkers.earthquakesTotal} (latest ${MAP_EARTHQUAKE_CAP})` : ""}.
             </span>
           </div>
 
@@ -646,6 +657,7 @@ const DashboardPage = () => {
               <input
                 type="text"
                 className="disaster-search"
+                aria-label="Search city or country"
                 placeholder="Search city or country…"
                 value={search}
                 onChange={(e) => {
@@ -654,7 +666,11 @@ const DashboardPage = () => {
                   scrollListToTop();
                 }}
               />
+              <label htmlFor="feed-sort" className="sr-only">
+                Sort events
+              </label>
               <select
+                id="feed-sort"
                 className="disaster-sort"
                 value={sortBy}
                 onChange={(e) => {
@@ -759,43 +775,29 @@ const DashboardPage = () => {
           <div ref={listRef} style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}>
             <ul className="disaster-list">
               {pagedDisasters.map((item) => (
-                <li key={item.id} className="disaster-row" onClick={() => setSelectedDisaster(item)}>
-                  <div className="disaster-row-main">
-                    <div className="disaster-row-top">
-                      <span
-                        className={
-                          "disaster-type-tag " +
-                          (item.type === "earthquake"
-                            ? "tag-earthquake"
-                            : item.type === "flood"
-                            ? "tag-flood"
-                            : item.type === "wildfire"
-                            ? "tag-wildfire"
-                            : "tag-storm")
-                        }
-                      >
-                        {getTypeLabel(item.type)}
-                      </span>
-                      <span className="disaster-location">{displayTitle(item)}</span>
-                    </div>
-                    <div className="disaster-meta">{displayMeta(item)}</div>
-                  </div>
-
-                  <span
-                    className={
-                      "disaster-severity " +
-                      (item.severity === "high"
-                        ? "severity-high"
-                        : item.severity === "medium"
-                        ? "severity-medium"
-                        : item.severity === "low"
-                        ? "severity-low"
-                        : "severity-unrated")
-                    }
-                  >
-                    {getSeverityLabel(item.severity)}
-                  </span>
-                </li>
+                <FeedRow
+                  key={item.id}
+                  typeLabel={getTypeLabel(item.type)}
+                  typeClass={
+                    item.type === "earthquake" ? "tag-earthquake" : item.type === "flood" ? "tag-flood" : item.type === "wildfire" ? "tag-wildfire" : "tag-storm"
+                  }
+                  title={displayTitle(item)}
+                  meta={displayMeta(item)}
+                  severityLabel={getSeverityLabel(item.severity)}
+                  severityClass={
+                    item.severity === "high"
+                      ? "severity-high"
+                      : item.severity === "medium"
+                      ? "severity-medium"
+                      : item.severity === "low"
+                      ? "severity-low"
+                      : "severity-unrated"
+                  }
+                  onSelect={(element) => {
+                    openerRef.current = element;
+                    setSelectedDisaster(item);
+                  }}
+                />
               ))}
             </ul>
           </div>
@@ -873,7 +875,13 @@ const DashboardPage = () => {
         <EventDetailDrawer
           event={selectedDisaster}
           relatedNews={<RelatedNews eventId={selectedDisaster.id} />}
-          onClose={() => setSelectedDisaster(null)}
+          onClose={() => {
+            setSelectedDisaster(null);
+            // back to the row (or marker) that opened the drawer, for keyboard users
+            const opener = openerRef.current;
+            openerRef.current = null;
+            if (opener && document.contains(opener)) window.setTimeout(() => opener.focus(), 0);
+          }}
           onZoomTo={() => {
             // Re-trigger the map's flyTo for the same id by clearing and re-setting the selection
             const current = selectedDisaster;
