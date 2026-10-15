@@ -1,19 +1,36 @@
 import jwt from "jsonwebtoken";
 
-const MIN_SECRET_LENGTH = 32;
+export const MIN_SECRET_LENGTH = 32;
+
+/** The placeholder shipped in backend/.env.example (tests keep the two in sync). */
+export const EXAMPLE_JWT_SECRET = "dev-only-change-me-0123456789abcdef0123456789";
+
+/**
+ * Returns a human-readable problem with the secret, or null when it is usable.
+ * In production a placeholder of any kind is a problem: the example value is
+ * public, so anyone could forge admin tokens with it.
+ */
+export function validateJwtSecret(secret, { isProduction }) {
+  if (!secret) return "JWT_SECRET is not set";
+  if (secret === "CHANGE_ME") return 'JWT_SECRET is still the placeholder value "CHANGE_ME"';
+  if (secret.length < MIN_SECRET_LENGTH) {
+    return `JWT_SECRET is too short (${secret.length} chars, minimum ${MIN_SECRET_LENGTH})`;
+  }
+  if (isProduction) {
+    if (secret === EXAMPLE_JWT_SECRET) {
+      return "JWT_SECRET is the public placeholder from backend/.env.example";
+    }
+    if (/change[-_ ]?me/i.test(secret)) {
+      return 'JWT_SECRET looks like a placeholder (contains "change me")';
+    }
+  }
+  return null;
+}
 
 function resolveJwtSecret() {
   const secret = process.env.JWT_SECRET;
   const isProduction = process.env.NODE_ENV === "production";
-
-  let problem = null;
-  if (!secret) {
-    problem = "JWT_SECRET is not set";
-  } else if (secret === "CHANGE_ME") {
-    problem = 'JWT_SECRET is still the placeholder value "CHANGE_ME"';
-  } else if (secret.length < MIN_SECRET_LENGTH) {
-    problem = `JWT_SECRET is too short (${secret.length} chars, minimum ${MIN_SECRET_LENGTH})`;
-  }
+  const problem = validateJwtSecret(secret, { isProduction });
 
   if (problem) {
     const hint =
