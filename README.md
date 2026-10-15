@@ -378,7 +378,7 @@ docker compose logs notification
 [consumer] manual:demo-1 (earthquake/high): 1 active subscription(s), 1 match(es), 1 notification(s) created
 ```
 
-With no subscription within range the line ends in `0 match(es), 0 notification(s) created`. A message that violates the contract is logged as `[consumer] skipping message: <field>: <reason>` and skipped. To see a notification in the UI, sign in, create an alert on the Alerts page (type earthquake or any, minimum severity ≤ high, a centre within the radius of 52.23, 21.01), send the message, and wait for the bell (it polls every 60 s). The same payload can be sent as an admin with `POST /api/events` (JSON body, session cookie).
+With no subscription within range the line ends in `0 match(es), 0 notification(s) created`. A message that violates the contract is logged as `[consumer] skipping message: <field>: <reason>` and skipped. To see a notification in the UI, sign in, create an alert on the Alerts page (type earthquake or any, minimum severity ≤ high, a centre within the radius of 52.23, 21.01), then send the message: a subscription only matches events that occurred after it was created, so the message has to be sent after the alert, not in the same second. The bell polls every 60 s; `GET /api/notifications` shows the row at once. The same payload can be sent as an admin with `POST /api/events` (JSON body, session cookie).
 
 ---
 
