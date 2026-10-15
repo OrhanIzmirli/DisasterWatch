@@ -178,7 +178,7 @@ const NotificationBell = ({ pollMs = 60_000 }: Props) => {
                   >
                     <div className="notif-item-top">
                       <span className={`notif-tag notif-tag-${n.severity}`}>
-                        {TYPE_LABELS[n.type] ?? capitalise(n.type)} · {capitalise(n.severity)}
+                        {TYPE_LABELS[n.type] ?? capitalise(n.type)} · {n.severity === "unrated" ? "Not rated" : capitalise(n.severity)}
                       </span>
                       {!n.readAt && <span className="notif-dot" aria-label="unread" />}
                     </div>

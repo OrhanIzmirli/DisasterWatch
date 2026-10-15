@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assessSeverity, severityFromMag, severityFromType, EARTHQUAKE_HIGH_MAG, EARTHQUAKE_MEDIUM_MAG } from "../src/utils/severity.js";
+import { assessSeverity, severityFromMag, EARTHQUAKE_HIGH_MAG, EARTHQUAKE_MEDIUM_MAG, UNRATED_REASON } from "../src/utils/severity.js";
 import { cleanTitle, placeFromEonetTitle, buildUsgsDetails, buildEonetDetails } from "../src/utils/eventDetails.js";
 import { normalizeNasaEvents } from "../src/utils/normalizeDisasters.js";
 import { normalizeUsgsEarthquakes } from "../src/services/usgs.service.js";
@@ -63,17 +63,15 @@ describe("severity rules and their explanations agree", () => {
     });
   });
 
-  it("EONET types use fixed ratings with matching sentences", () => {
-    expect(assessSeverity({ type: "wildfire" })).toEqual({
-      severity: "high",
-      reason: "High: wildfires are always rated high (no intensity data from the source)",
-    });
-    expect(assessSeverity({ type: "storm" })).toEqual({ severity: "medium", reason: "Medium: severe storms are always rated medium" });
-    expect(assessSeverity({ type: "flood" })).toEqual({ severity: "medium", reason: "Medium: floods are always rated medium" });
-    expect(assessSeverity({ type: "volcano" })).toEqual({ severity: "low", reason: "Low: no severity rule for this event type" });
+  it("EONET types without a measurement are unrated (rules with a measurement: see severity.test.js)", () => {
     for (const t of ["wildfire", "storm", "flood", "other"]) {
-      expect(severityFromType(t)).toBe(assessSeverity({ type: t }).severity);
+      expect(assessSeverity({ type: t })).toEqual({ severity: "unrated", reason: UNRATED_REASON });
     }
+    expect(assessSeverity({ type: "wildfire", magnitudeValue: 9965, magnitudeUnit: "hectare" })).toEqual({
+      severity: "medium",
+      reason: "Medium: 9,965 ha burned (4,000–39,999 ha)",
+    });
+    expect(assessSeverity({ type: "storm", magnitudeValue: 100, magnitudeUnit: "kts" }).severity).toBe("high");
   });
 
   it("the reason sentence always starts with the rating it explains", () => {
@@ -81,13 +79,16 @@ describe("severity rules and their explanations agree", () => {
       { type: "earthquake", magnitude: 6.5 },
       { type: "earthquake", magnitude: 5.5 },
       { type: "earthquake", magnitude: 4.6 },
-      { type: "wildfire" },
-      { type: "storm" },
+      { type: "wildfire", magnitudeValue: 50_000, magnitudeUnit: "hectare" },
+      { type: "wildfire", magnitudeValue: 12_000, magnitudeUnit: "acres" },
+      { type: "storm", magnitudeValue: 70, magnitudeUnit: "kts" },
+      { type: "storm", magnitudeValue: 30, magnitudeUnit: "kts" },
       { type: "flood" },
     ];
     for (const c of cases) {
       const { severity, reason } = assessSeverity(c);
-      expect(reason.toLowerCase().startsWith(`${severity}:`)).toBe(true);
+      const expected = severity === "unrated" ? "not rated:" : `${severity}:`;
+      expect(reason.toLowerCase().startsWith(expected), reason).toBe(true);
     }
   });
 
@@ -153,11 +154,14 @@ describe("buildEonetDetails (real events)", () => {
       status: "closed",
       magnitudeValue: 6889,
       magnitudeUnit: "hectare",
+      areaHa: 6889,
       magnitude: null,
       pagerAlert: null,
       tsunami: null,
       feltReports: null,
-      severity: "high",
+      severity: "medium",
+      severityReason: "Medium: 6,889 ha burned (4,000–39,999 ha)",
+      severitySource: "Severity rule applied to the burned area reported by EONET",
     });
     expect(d.sources[0]).toEqual({ name: "NASA EONET", url: FIRE.link });
     expect(d.sources.map((s) => s.name)).toContain("GDACS");
@@ -174,8 +178,10 @@ describe("buildEonetDetails (real events)", () => {
       status: "open",
       magnitudeValue: 80,
       magnitudeUnit: "kts",
+      areaHa: null,
       severity: "medium",
-      severityReason: "Medium: severe storms are always rated medium",
+      severityReason: "Medium: 80 kts sustained wind (64–95 kts, hurricane strength)",
+      severitySource: "Severity rule applied to the wind speed reported by EONET",
     });
     expect(d.sources.map((s) => s.name)).toEqual(["NASA EONET", "JTWC"]);
     expect(d.updatedAt).toBe("2026-10-13T12:00:00.000Z");
@@ -183,7 +189,7 @@ describe("buildEonetDetails (real events)", () => {
 
   it("flood: polygon geometry, no magnitude, dates still resolved", () => {
     const d = buildEonetDetails(FLOOD, "flood", FLOOD.geometry[0]);
-    expect(d).toMatchObject({ category: "Floods", cleanTitle: "Flood in Nepal", place: "Nepal", magnitudeValue: null, magnitudeUnit: null, severity: "medium" });
+    expect(d).toMatchObject({ category: "Floods", cleanTitle: "Flood in Nepal", place: "Nepal", magnitudeValue: null, magnitudeUnit: null, severity: "unrated", severityReason: UNRATED_REASON });
     expect(d.occurredAt).not.toBeNull();
   });
 });
@@ -197,7 +203,7 @@ describe("normalizers stay backwards compatible", () => {
     expect(item).toMatchObject({
       type: "wildfire",
       location: "Wildfire in Botswana 1032764", // raw title, as before
-      severity: "high",
+      severity: "medium", // 6,889 ha burned: rated from the EONET area now
       description: "Wildfire in Botswana", // title fallback without the source id (shown in Today's events)
     });
     expect(item.meta).toMatch(/^Wildfires • \d+ min ago$/);

@@ -88,8 +88,12 @@ describe("severity and type aggregation", () => {
     const [cluster] = getClustersInView(index, WORLD, 2).filter((f) => f.kind === "cluster");
     const props = (cluster as { props: Parameters<typeof highestSeverity>[0] }).props;
     expect(highestSeverity(props)).toBe("high");
-    expect(highestSeverity({ earthquake: 0, flood: 2, wildfire: 0, storm: 0, high: 0, medium: 1, low: 1 })).toBe("medium");
-    expect(highestSeverity({ earthquake: 0, flood: 2, wildfire: 0, storm: 0, high: 0, medium: 0, low: 2 })).toBe("low");
+    expect(highestSeverity({ earthquake: 0, flood: 2, wildfire: 0, storm: 0, high: 0, medium: 1, low: 1, unrated: 0 })).toBe("medium");
+    expect(highestSeverity({ earthquake: 0, flood: 2, wildfire: 0, storm: 0, high: 0, medium: 0, low: 2, unrated: 0 })).toBe("low");
+    // not-rated events never count as a rating; a cluster of only unrated events says so
+    expect(highestSeverity({ earthquake: 0, flood: 2, wildfire: 0, storm: 0, high: 0, medium: 0, low: 1, unrated: 1 })).toBe("low");
+    expect(highestSeverity({ earthquake: 0, flood: 2, wildfire: 0, storm: 0, high: 0, medium: 0, low: 0, unrated: 2 })).toBe("unrated");
+    expect(clusterTooltip(2, { earthquake: 0, flood: 2, wildfire: 0, storm: 0, high: 0, medium: 0, low: 0, unrated: 2 })).toBe("2 events · 2 floods · highest: Not rated");
   });
 
   it("counts types and builds the tooltip text", () => {
@@ -99,12 +103,12 @@ describe("severity and type aggregation", () => {
     expect(cluster.props.flood).toBe(1);
     expect(typeBreakdown(cluster.props)).toBe("6 wildfires, 1 flood");
     expect(clusterTooltip(cluster.count, cluster.props)).toBe("7 events · 6 wildfires, 1 flood · highest: High");
-    expect(typeBreakdown({ earthquake: 1, flood: 0, wildfire: 0, storm: 3, high: 0, medium: 0, low: 4 })).toBe("3 storms, 1 earthquake");
+    expect(typeBreakdown({ earthquake: 1, flood: 0, wildfire: 0, storm: 3, high: 0, medium: 0, low: 4, unrated: 0 })).toBe("3 storms, 1 earthquake");
   });
 });
 
 describe("type colours", () => {
-  const props = (o: Partial<Record<string, number>>) => ({ earthquake: 0, flood: 0, wildfire: 0, storm: 0, high: 0, medium: 0, low: 0, ...o });
+  const props = (o: Partial<Record<string, number>>) => ({ earthquake: 0, flood: 0, wildfire: 0, storm: 0, high: 0, medium: 0, low: 0, unrated: 0, ...o });
 
   it("segment percentages are proportional to the type counts", () => {
     expect(typeSegments(props({ wildfire: 5, earthquake: 2, flood: 1 }))).toEqual([

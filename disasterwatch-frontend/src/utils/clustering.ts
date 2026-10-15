@@ -11,7 +11,7 @@
 import Supercluster from "supercluster";
 
 export type ClusterType = "earthquake" | "flood" | "wildfire" | "storm";
-export type ClusterSeverity = "high" | "medium" | "low";
+export type ClusterSeverity = "high" | "medium" | "low" | "unrated";
 
 export type ClusterPoint = {
   id: number;
@@ -30,13 +30,14 @@ export type ClusterProps = {
   high: number;
   medium: number;
   low: number;
+  unrated: number;
 };
 
 type PointProps = { pointId: number; type: ClusterType; severity: ClusterSeverity };
 
 export const CLUSTER_RADIUS_PX = 48;
 export const CLUSTER_MIN_POINTS = 2;
-export const SEVERITY_RANK: Record<ClusterSeverity, number> = { high: 0, medium: 1, low: 2 };
+export const SEVERITY_RANK: Record<ClusterSeverity, number> = { high: 0, medium: 1, low: 2, unrated: 3 };
 const TYPE_LABELS: Record<ClusterType, [string, string]> = {
   earthquake: ["earthquake", "earthquakes"],
   flood: ["flood", "floods"],
@@ -60,6 +61,7 @@ export function buildClusterIndex(points: ClusterPoint[], { maxZoom = 10, radius
       high: p.severity === "high" ? 1 : 0,
       medium: p.severity === "medium" ? 1 : 0,
       low: p.severity === "low" ? 1 : 0,
+      unrated: p.severity === "unrated" ? 1 : 0,
     }),
     reduce: (acc, p) => {
       acc.earthquake += p.earthquake;
@@ -69,6 +71,7 @@ export function buildClusterIndex(points: ClusterPoint[], { maxZoom = 10, radius
       acc.high += p.high;
       acc.medium += p.medium;
       acc.low += p.low;
+      acc.unrated += p.unrated;
     },
   });
   index.load(
@@ -154,7 +157,8 @@ export function clusterBackground(props: ClusterProps): string {
 export function highestSeverity(props: ClusterProps): ClusterSeverity {
   if (props.high > 0) return "high";
   if (props.medium > 0) return "medium";
-  return "low";
+  if (props.low > 0) return "low";
+  return "unrated"; // only events without a rating inside
 }
 
 /** "6 wildfires, 1 flood" (most frequent type first). */
@@ -167,7 +171,7 @@ export function typeBreakdown(props: ClusterProps): string {
     .join(", ");
 }
 
-const SEVERITY_LABEL: Record<ClusterSeverity, string> = { high: "High", medium: "Medium", low: "Low" };
+const SEVERITY_LABEL: Record<ClusterSeverity, string> = { high: "High", medium: "Medium", low: "Low", unrated: "Not rated" };
 
 /** Tooltip text: "7 events · 6 wildfires, 1 flood · highest: High". */
 export function clusterTooltip(count: number, props: ClusterProps): string {

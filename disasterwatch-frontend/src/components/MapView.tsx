@@ -44,7 +44,7 @@ function minZoomForContainer(width: number, height: number) {
 }
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
-type Severity = "high" | "medium" | "low";
+type Severity = "high" | "medium" | "low" | "unrated";
 
 export type MapDisaster = {
   id: number;
@@ -62,6 +62,8 @@ export type MapDisaster = {
     magnitude?: number | null;
     /** Pre-formatted magnitude text ("6.1"), the same string every other surface shows. */
     magnitudeLabel?: string | null;
+    /** Why the event is rated as it is; shown in the tooltip. */
+    severityReason?: string;
   };
 };
 
@@ -112,6 +114,8 @@ const getRadiusBySeverity = (severity: Severity) => {
     case "medium":
       return 8;
     case "low":
+      return 6;
+    case "unrated":
       return 6;
     default:
       return 7;
@@ -332,13 +336,14 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
           <div className="dw-tooltip-inner">
             <div className="dw-tooltip-kicker">
               <span className={`dw-tooltip-type dw-tooltip-type-${d.type}`}>{TYPE_LABELS[d.type]}</span>
-              <span className={`dw-tooltip-sev dw-tooltip-sev-${d.severity}`}>{d.severity}</span>
+              <span className={`dw-tooltip-sev dw-tooltip-sev-${d.severity}`}>{d.severity === "unrated" ? "not rated" : d.severity}</span>
             </div>
             <div className="dw-tooltip-title">{tooltipTitle(d)}</div>
             <div className="dw-tooltip-meta">
               {eventRelativeTime(d) ?? d.meta}
               {d.type === "earthquake" && d.details?.magnitudeLabel && <> · M {d.details.magnitudeLabel}</>}
             </div>
+            {d.details?.severityReason && <div className="dw-tooltip-reason">{d.details.severityReason}</div>}
             <div className="dw-tooltip-hint">Click for details</div>
           </div>
         </Tooltip>

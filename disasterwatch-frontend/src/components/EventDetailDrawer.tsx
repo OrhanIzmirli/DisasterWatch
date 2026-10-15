@@ -24,7 +24,9 @@ export type EventDetails = {
   feltReports: number | null;
   magnitudeValue: number | null;
   magnitudeUnit: string | null;
-  severity: "high" | "medium" | "low";
+  /** Wildfires: burned area normalised to hectares by the backend (acres × 0.40469); null otherwise. */
+  areaHa?: number | null;
+  severity: "high" | "medium" | "low" | "unrated";
   severityReason: string;
   severitySource: string;
 };
@@ -32,7 +34,7 @@ export type EventDetails = {
 export type DrawerEvent = {
   id: number;
   type: "earthquake" | "flood" | "wildfire" | "storm";
-  severity: "high" | "medium" | "low";
+  severity: "high" | "medium" | "low" | "unrated";
   location: string;
   meta: string;
   description: string;
@@ -61,7 +63,7 @@ const TYPE_LABELS: Record<DrawerEvent["type"], string> = {
   storm: "Storm",
 };
 
-const SEVERITY_LABELS = { high: "High", medium: "Medium", low: "Low" } as const;
+const SEVERITY_LABELS = { high: "High", medium: "Medium", low: "Low", unrated: "Not rated" } as const;
 
 /** USGS PAGER alert levels, as documented by USGS (estimated impact). */
 const PAGER_TEXT: Record<NonNullable<EventDetails["pagerAlert"]>, string> = {
@@ -118,10 +120,16 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
   const sizeLabel = isQuake ? "Magnitude" : "Size";
   // The magnitude text comes pre-formatted from the backend so this row, the
   // title, the feed row, the tooltip and the severity reason all agree.
+  // Wildfire areas are shown in hectares (normalised by the backend); when the
+  // source reported acres the original figure follows in brackets.
   const sizeValue = isQuake
     ? d?.magnitudeLabel
       ? `M ${d.magnitudeLabel}${d.magType ? ` (${d.magType})` : ""}`
       : null
+    : event.type === "wildfire" && d?.areaHa !== null && d?.areaHa !== undefined
+    ? `${Math.round(d.areaHa).toLocaleString("en-GB")} ha${
+        d.magnitudeUnit && /^acres?$/i.test(d.magnitudeUnit) && d.magnitudeValue !== null ? ` (${d.magnitudeValue.toLocaleString("en-GB")} acres)` : ""
+      }`
     : d?.magnitudeValue !== null && d?.magnitudeValue !== undefined
     ? `${d.magnitudeValue.toLocaleString("en-GB")} ${UNIT_LABELS[d.magnitudeUnit ?? ""] ?? d.magnitudeUnit ?? ""}`.trim()
     : null;

@@ -815,6 +815,13 @@
   border: 1px solid rgba(234, 179, 8, 0.65);
 }
 
+/* Not rated: warm stone grey, deliberately unlike the storm grey (#9CA3AF) */
+.severity-unrated {
+  background: rgba(168, 162, 158, 0.22);
+  color: #57534e;
+  border: 1px solid rgba(120, 113, 108, 0.6);
+}
+
 .severity-low {
   background: rgba(16, 185, 129, 0.12);
   color: #047857;
@@ -1553,6 +1560,10 @@
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.28);
 }
 
+.dot-unrated {
+  background: #a8a29e;
+}
+
 .dot-low {
   background: #10b981;
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
@@ -1668,6 +1679,12 @@
   background: rgba(245, 158, 11, 0.12);
   border: 1px solid rgba(245, 158, 11, 0.55);
   color: #92400e;
+}
+
+.timeline-mini-sev.sev-unrated {
+  background: rgba(168, 162, 158, 0.22);
+  color: #57534e;
+  border: 1px solid rgba(120, 113, 108, 0.6);
 }
 
 .timeline-mini-sev.sev-low {
@@ -2398,6 +2415,15 @@ body {
 .dw-tooltip-sev-high { border-color: rgba(248, 113, 113, 0.8); color: #fecaca; }
 .dw-tooltip-sev-medium { border-color: rgba(251, 191, 36, 0.8); color: #fde68a; }
 .dw-tooltip-sev-low { border-color: rgba(110, 231, 183, 0.8); color: #a7f3d0; }
+.dw-tooltip-sev-unrated { border-color: rgba(168, 162, 158, 0.9); color: #e7e5e4; }
+
+/* the severity reason sentence ("Not rated: the source reports no intensity for this event") */
+.dw-tooltip-reason {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: rgba(246, 232, 217, 0.82);
+}
 
 .dw-tooltip-title {
   font-size: 0.85rem;
@@ -2456,6 +2482,12 @@ body {
   background: rgba(234, 179, 8, 0.22);
   border-color: rgba(251, 191, 36, 0.8);
   color: #fde68a;
+}
+
+.edd .disaster-severity.severity-unrated {
+  background: rgba(168, 162, 158, 0.18);
+  color: #e7e5e4;
+  border-color: rgba(168, 162, 158, 0.8);
 }
 
 .edd .disaster-severity.severity-low {
@@ -2645,6 +2677,7 @@ body {
 .news-event-tag-high { border-color: rgba(248, 113, 113, 0.8); color: #fecaca; }
 .news-event-tag-medium { border-color: rgba(251, 191, 36, 0.8); color: #fde68a; }
 .news-event-tag-low { border-color: rgba(110, 231, 183, 0.8); color: #a7f3d0; }
+.news-event-tag-unrated { border-color: rgba(168, 162, 158, 0.9); color: #e7e5e4; }
 
 .news-state {
   display: flex;
@@ -2972,6 +3005,12 @@ body {
   border-color: rgba(251, 191, 36, 0.8);
   color: #fde68a;
 }
+.notif-tag-unrated {
+  background: rgba(168, 162, 158, 0.18);
+  color: #e7e5e4;
+  border: 1px solid rgba(168, 162, 158, 0.8);
+}
+
 .notif-tag-low {
   border-color: rgba(110, 231, 183, 0.8);
   color: #a7f3d0;

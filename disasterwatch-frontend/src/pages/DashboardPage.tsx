@@ -8,7 +8,7 @@ import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
 import { getCachedFeed, isFeedFresh, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt } from "../services/feedCache";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
-type Severity = "high" | "medium" | "low";
+type Severity = "high" | "medium" | "low" | "unrated";
 
 type DisasterItem = {
   id: number;
@@ -82,7 +82,8 @@ type TimelineEvent = {
 /* =========================
    HELPERS
 ========================= */
-const severityOrder: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
+// sort by severity puts not-rated events last
+const severityOrder: Record<Severity, number> = { high: 0, medium: 1, low: 2, unrated: 3 };
 
 const getSeverityLabel = (severity: Severity): string => {
   switch (severity) {
@@ -92,6 +93,8 @@ const getSeverityLabel = (severity: Severity): string => {
       return "▲ MEDIUM";
     case "low":
       return "● LOW";
+    case "unrated":
+      return "○ NOT RATED";
   }
 };
 
@@ -126,7 +129,7 @@ const getTypeIcon = (type: DisasterType) => {
 };
 
 const sevDotClass = (s: Severity) =>
-  s === "high" ? "dot-high" : s === "medium" ? "dot-medium" : "dot-low";
+  s === "high" ? "dot-high" : s === "medium" ? "dot-medium" : s === "low" ? "dot-low" : "dot-unrated";
 
 /** Text normalize for search (lowercase + remove accents) */
 const normalizeText = (s: string) =>
@@ -784,7 +787,9 @@ const DashboardPage = () => {
                         ? "severity-high"
                         : item.severity === "medium"
                         ? "severity-medium"
-                        : "severity-low")
+                        : item.severity === "low"
+                        ? "severity-low"
+                        : "severity-unrated")
                     }
                   >
                     {getSeverityLabel(item.severity)}
@@ -834,10 +839,12 @@ const DashboardPage = () => {
                               ? "sev-high"
                               : ev.severity === "medium"
                               ? "sev-medium"
-                              : "sev-low")
+                              : ev.severity === "low"
+                              ? "sev-low"
+                              : "sev-unrated")
                           }
                         >
-                          {ev.severity}
+                          {ev.severity === "unrated" ? "not rated" : ev.severity}
                         </span>
                       </div>
 

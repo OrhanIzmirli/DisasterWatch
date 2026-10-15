@@ -41,15 +41,21 @@ The whole stack runs on localhost with one `docker compose up`; the same images 
 - KPIs: total events, high-severity alerts, countries affected (derived by the backend from the source place names; events whose country cannot be derived, e.g. "North Atlantic Ocean", are not counted).
 - Honest states: a skeleton while loading, a per-source note when one source is down, the last good feed flagged STALE when a refresh fails, an explicit error state with "Try again" when nothing is cached. There are no demo or fallback events anywhere.
 
-### 3) Severity scoring (LOW / MEDIUM / HIGH)
-- Earthquakes by rounded magnitude, EONET events by hazard type. Shown as badges in the feed and on the map.
+### 3) Severity from the source (LOW / MEDIUM / HIGH, or NOT RATED)
+- Rated from the measurement the source reports, in `backend/src/utils/severity.js` (the single source of truth; the explanation sentence is generated from the same thresholds):
+  - earthquake: rounded magnitude ≥ 6.0 high, 5.0–5.9 medium, < 5.0 low
+  - storm (EONET wind speed, kts): ≥ 96 high (Saffir-Simpson category 3+), 64–95 medium (hurricane), < 64 low (tropical storm)
+  - wildfire (EONET burned area, normalised to hectares: `hectare` as is, `acres` × 0.40469): ≥ 40,000 ha high, 4,000–39,999 ha medium, < 4,000 ha low
+  - no value, an unknown unit, or a flood: **not rated** (`unrated`, "Not rated: the source reports no intensity for this event")
+  - manual (admin) entries keep the severity the admin chose (low / medium / high, never unrated)
+- Shown as badges in the feed, in the map tooltip and in the drawer, each with the reason sentence. Not-rated events sort last, never count as "Active alerts" (high only) and wear a neutral stone-grey pill, distinct from the storm marker grey.
 
 ### 4) News linked to events
 - GDELT (primary) and The Guardian (optional fallback) are searched for the most important feed events; articles are linked to events on our side and shown in the news panel and the event drawer ("Show on map", "Related news"). Details in [News](#news).
 
 ### 5) Accounts, alerts and notifications
 - Cookie-based sessions (JWT in an `httpOnly` cookie), registration and login with rate limiting.
-- **Alert subscriptions:** hazard type (or any), minimum severity, a centre point and a radius in km.
+- **Alert subscriptions:** hazard type (or any), minimum severity, a centre point and a radius in km. Minimum `low` means every event, including not-rated ones; `medium` and `high` never match a not-rated event.
 - **Notifications:** new events that match a subscription appear in the bell in the header (polled every 60 s). Delivery is in-app only.
 
 ### 6) Admin console
@@ -267,7 +273,7 @@ Response `200`:
 | `updatedAt` | string | ISO timestamp of the newest source data; the dashboard derives every "ago" label from it |
 | `params` | object | the effective `minutesWindow`, `limit`, `minMag` after clamping |
 
-Each item: `id`, `type` (`earthquake` | `wildfire` | `flood` | `storm`), `location`, `meta` (one-line summary), `severity` (`low` | `medium` | `high`), `timeMinutesAgo`, `description`, `lat`, `lng`, `country` (derived from the USGS place or the EONET title, `null` when not derivable) and `details`: source-faithful fields for the event drawer (`eventId` such as `usgs:us7000abcd`, `source`, `category`, `cleanTitle`, `place`, `occurredAt`, `updatedAt`, `status`, `sources` [{ name, url }], `magnitude`, `magnitudeLabel`, `magType`, `depthKm`, `pagerAlert`, `tsunami`, `feltReports` for USGS; `magnitudeValue`/`magnitudeUnit` for EONET; `severity`, `severityReason`, `severitySource`). Polygon events (GDACS floods) are placed at the polygon centroid.
+Each item: `id`, `type` (`earthquake` | `wildfire` | `flood` | `storm`), `location`, `meta` (one-line summary), `severity` (`low` | `medium` | `high` | `unrated`), `timeMinutesAgo`, `description`, `lat`, `lng`, `country` (derived from the USGS place or the EONET title, `null` when not derivable) and `details`: source-faithful fields for the event drawer (`eventId` such as `usgs:us7000abcd`, `source`, `category`, `cleanTitle`, `place`, `occurredAt`, `updatedAt`, `status`, `sources` [{ name, url }], `magnitude`, `magnitudeLabel`, `magType`, `depthKm`, `pagerAlert`, `tsunami`, `feltReports` for USGS; `magnitudeValue`/`magnitudeUnit` as reported by EONET plus `areaHa` (wildfire area normalised to hectares, `null` otherwise); `severity`, `severityReason`, `severitySource`). Polygon events (GDACS floods) are placed at the polygon centroid.
 
 Failure behaviour: a source that fails keeps serving its last good data while it is at most 60 minutes old; a source that has never returned data is retried after 10 seconds, otherwise after a minute. When both sources fail and nothing is cached the endpoint answers `503 { message: "Live disaster sources are not responding", retryAfterSeconds: 60 }`. Upstream error details never leave the server log.
 
@@ -306,7 +312,7 @@ Admin POST /events ──validate contract──┘                             
 
 1. **Ingestion (backend, `src/jobs/ingest.js`)** runs at start-up and every 5 minutes: fetches NASA EONET and USGS (M ≥ 4.5), maps them to the event contract and inserts into `IngestedEvent` with `ON CONFLICT DO NOTHING` (`publishedAt = NULL`). It then drains the **outbox**: unpublished rows, oldest first, up to 500 per run, are published and marked `publishedAt`. The public `GET /disasters` feed is a separate path and is not affected.
 2. **Kafka topic `disaster-events`** carries one JSON message per event (contract below).
-3. **notification-service** validates each message, loads active `AlertSubscription` rows and creates a `Notification` when the rule matches (type is `any` or equal, event severity ≥ `minSeverity`, haversine distance ≤ `radiusKm`), the event is at most 48 h old and the subscription was created before the event. Inserts are `ON CONFLICT (userId, eventId) DO NOTHING`; invalid messages are logged and skipped, database errors make Kafka redeliver the message.
+3. **notification-service** validates each message, loads active `AlertSubscription` rows and creates a `Notification` when the rule matches (type is `any` or equal, event severity ≥ `minSeverity` where `unrated` ranks below `low` and is matched only by `minSeverity: "low"`, haversine distance ≤ `radiusKm`), the event is at most 48 h old and the subscription was created before the event. Inserts are `ON CONFLICT (userId, eventId) DO NOTHING`; invalid messages are logged and skipped, database errors make Kafka redeliver the message.
 4. **Backend API** `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` (all scoped to the signed-in user) feed the **bell in the header**, which polls every 60 s.
 
 Admin entries from `POST /disasters` are stored but **not** published; a verification step for manual entries comes in a later release. Admins can publish a test event with `POST /events`.
@@ -321,7 +327,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 | `eventId` | string | stable id from the source, `source:id` with `[A-Za-z0-9_.-]`: `nasa:EONET_1234`, `usgs:us7000abcd`, `manual:42` |
 | `source` | `nasa` \| `usgs` \| `manual` | |
 | `type` | string | lower-case hazard type, 1–40 chars: `earthquake`, `flood`, `wildfire`, `storm` |
-| `severity` | `low` \| `medium` \| `high` | |
+| `severity` | `low` \| `medium` \| `high` \| `unrated` | `unrated` was added on 2026-10-15 as an additive v1 change: the source reports no intensity (floods, fires/storms without a measurement). Manual events are never unrated |
 | `title` | string | 1–200 chars |
 | `lat`, `lng` | number | WGS84 |
 | `occurredAt` | string | ISO-8601 with timezone |
@@ -345,7 +351,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 - Notifications are **in-app only**; there is no e-mail, SMS or push channel.
 - Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
 - **GDELT rate limits by source IP.** Render's shared egress IP can be throttled (HTTP 429) by other tenants' traffic. The news job then backs off, falls back to The Guardian when `GUARDIAN_API_KEY` is set, and otherwise serves the last cached articles from the database as stale.
-- **Deploy order:** deploy the consumer before (or together with) producer changes that alter the event contract. A consumer running an older build commits offsets for messages it cannot handle, so those events never produce notifications unless the group offset is reset.
+- **Deploy order: notification-service first, then the backend.** A consumer running an older build rejects messages with a value it does not know (such as `severity: "unrated"`) and commits their offsets, so those events never produce notifications unless the group offset is reset. On Render: 1) deploy the `notification-service` web service and wait for its `/health` to answer with `kafka: "connected"`; 2) only then deploy the backend. With auto-deploy from `main` on both services, suspend the backend's auto-deploy before merging a contract change, merge, let the notification-service build finish, then deploy the backend manually.
 
 ### Future work
 
@@ -353,7 +359,6 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 - Pre-filter subscriptions in SQL with a bounding box around the event before the haversine check, instead of loading every active subscription per message.
 - Frontend lint: `npm run lint` reports 5 errors (setState inside effects in `NewsPanel` and `RelatedNews`, non-component exports in `NewsPanel`, an impure call during render in `MapView`); fix them and add `npm run lint` to CI.
 - News: when the cache is empty and every provider failed, retry after a couple of minutes instead of waiting the full refresh interval; keep the first real provider error in `lastError` instead of the local backoff refusal that follows it.
-- Wildfire severity is always rated high; when EONET reports an area, derive the severity from it.
 - WebSocket live updates, e-mail / SMS / push channels, metrics and tracing.
 
 ---
