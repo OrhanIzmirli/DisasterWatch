@@ -564,24 +564,20 @@ const DashboardPage = () => {
                 <span>Storm</span>
               </div>
             </div>
-            {/* cluster colours: a numbered circle takes the highest severity inside it */}
+            {/* clusters take the event colours: one colour for a single type, a split ring for a mix */}
             <span className="legend-divider" aria-hidden="true" />
             <span className="legend-title legend-title-sub">Clusters</span>
-            <div className="legend-pills legend-clusters" aria-label="Cluster colours by highest severity">
+            <div className="legend-pills legend-clusters">
               <div className="legend-pill">
-                <span className="legend-cluster legend-cluster-high" aria-hidden="true">3</span>
-                <span>High</span>
-              </div>
-              <div className="legend-pill">
-                <span className="legend-cluster legend-cluster-medium" aria-hidden="true">3</span>
-                <span>Medium</span>
-              </div>
-              <div className="legend-pill">
-                <span className="legend-cluster legend-cluster-low" aria-hidden="true">3</span>
-                <span>Low</span>
+                <span className="legend-cluster legend-cluster-single" aria-hidden="true">
+                  <span className="legend-cluster-count">3</span>
+                </span>
+                <span className="legend-cluster legend-cluster-split" aria-hidden="true">
+                  <span className="legend-cluster-count">7</span>
+                </span>
+                <span className="legend-cluster-caption">Clusters use the event colours; mixed clusters are split</span>
               </div>
             </div>
-            <span className="legend-hint">Numbered circles group nearby events</span>
           </div>
         </section>
 

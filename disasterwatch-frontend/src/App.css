@@ -241,7 +241,10 @@
   opacity: 0.9;
 }
 
-/* Clusters: numbered circles coloured by the highest severity inside */
+/* Clusters: numbered circles coloured by event TYPE (the marker colours).
+   A single-type cluster is one solid colour; a mixed cluster is a ring split
+   proportionally to the type counts (conic-gradient set inline by MapView).
+   The count sits on a dark disc in the centre so it stays readable. */
 .map-cluster-icon {
   background: none;
   border: none;
@@ -253,30 +256,29 @@
   justify-content: center;
   border-radius: 50%;
   border: 2px solid #f6e8d9;
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.01em;
   cursor: pointer;
   box-shadow: 0 0 0 4px rgba(246, 232, 217, 0.18), 0 4px 14px rgba(0, 0, 0, 0.45);
   transition: transform 120ms ease;
-  font-variant-numeric: tabular-nums;
 }
 
 .map-cluster:hover {
   transform: scale(1.08);
 }
 
-.map-cluster-high {
-  background: #c1121f;
-}
-
-.map-cluster-medium {
-  background: #b45309;
-}
-
-.map-cluster-low {
-  background: #1f7a4d;
+.map-cluster-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: rgba(11, 37, 69, 0.92);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Marker highlight (when a list item is clicked) */
@@ -519,8 +521,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.45rem 0.6rem;
-  border-radius: 999px;
+  /* enough room so wrapped rows never touch the border, and a modest radius
+     so a legend that wraps onto two or three rows does not clip its corners */
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.9rem;
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(193, 18, 31, 0.35);
   font-size: 0.8rem;
@@ -580,7 +584,7 @@
   background: #4b5563;
 }
 
-/* cluster colours (severity), kept apart from the type dots by a divider and their own caption */
+/* cluster example, kept apart from the type dots by a divider and its own caption */
 .legend-divider {
   width: 1px;
   align-self: stretch;
@@ -592,38 +596,43 @@
   letter-spacing: 0.08em;
 }
 
+/* the two example circles: a solid single-type cluster and a split ring */
 .legend-cluster {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1.5px solid #f6e8d9;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.45);
+  flex: 0 0 auto;
+}
+
+.legend-cluster-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: rgba(11, 37, 69, 0.92);
   color: #fff;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   line-height: 1;
 }
 
-.legend-cluster-high {
-  background: #c1121f;
+.legend-cluster-single {
+  background: #f97316;
 }
 
-.legend-cluster-medium {
-  background: #b45309;
+.legend-cluster-split {
+  background: conic-gradient(#f97316 0% 50%, #c1121f 50% 75%, #3b82f6 75% 100%);
 }
 
-.legend-cluster-low {
-  background: #1f7a4d;
-}
-
-/* on phones the legend wraps onto several rows: a pill radius would turn it into an ellipse */
-@media (max-width: 600px) {
-  .map-legend {
-    border-radius: 1rem;
-  }
+.legend-cluster-caption {
+  white-space: normal;
 }
 
 /* DISASTER LIST + FILTERS + TOOLS */

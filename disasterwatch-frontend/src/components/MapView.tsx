@@ -19,12 +19,12 @@ import {
   clusterTooltip,
   expansionZoom,
   getClustersInView,
-  highestSeverity,
+  clusterBackground,
   spiderPositions,
   zoomToReveal,
   type ClusterFeature,
   type ClusterPoint,
-  type ClusterSeverity,
+  type ClusterProps,
   type PointFeature,
 } from "../utils/clustering";
 
@@ -180,14 +180,18 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
   };
 
   const iconCache = useRef(new Map<string, L.DivIcon>());
-  const clusterIcon = (count: number, severity: ClusterSeverity) => {
+  // Coloured by event TYPE: one solid marker colour, or a ring split
+  // proportionally to the type counts (conic-gradient) with the count on a
+  // dark disc in the centre so the number stays readable on every colour.
+  const clusterIcon = (count: number, props: ClusterProps) => {
     const r = clusterRadius(count);
-    const key = `${severity}-${r}-${count}`;
+    const background = clusterBackground(props);
+    const key = `${background}-${r}-${count}`;
     let icon = iconCache.current.get(key);
     if (!icon) {
       const d = r * 2;
       icon = L.divIcon({
-        html: `<div class="map-cluster map-cluster-${severity}" style="width:${d}px;height:${d}px">${count}</div>`,
+        html: `<div class="map-cluster" style="width:${d}px;height:${d}px;background:${background}"><span class="map-cluster-count">${count}</span></div>`,
         className: "map-cluster-icon",
         iconSize: [d, d],
         iconAnchor: [r, r],
@@ -359,12 +363,11 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
           return d ? renderPoint(d, [d.lat, d.lng], false) : null;
         }
         if (spider && spider.clusterId === f.clusterId) return null; // replaced by the spider below
-        const severity = highestSeverity(f.props);
         return (
           <Marker
             key={`c${f.clusterId}`}
             position={[f.lat, f.lng]}
-            icon={clusterIcon(f.count, severity)}
+            icon={clusterIcon(f.count, f.props)}
             keyboard={false}
             eventHandlers={{ click: () => openCluster(f) }}
           >

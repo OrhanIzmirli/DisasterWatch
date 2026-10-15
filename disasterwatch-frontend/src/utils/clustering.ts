@@ -104,7 +104,53 @@ export function getClustersInView(index: ClusterIndex, bbox: [number, number, nu
   });
 }
 
-/** Highest severity present in a cluster. */
+/** Fixed order of the types in a split ring and in the breakdown text. */
+export const TYPE_ORDER: ClusterType[] = ["wildfire", "earthquake", "flood", "storm"];
+
+/** Cluster colours = the marker colours of the types (MapView.getColorByType). */
+export const TYPE_COLORS: Record<ClusterType, string> = {
+  wildfire: "#F97316",
+  earthquake: "#C1121F",
+  flood: "#3B82F6",
+  storm: "#9CA3AF",
+};
+
+export type TypeSegment = { type: ClusterType; count: number; percent: number };
+
+/**
+ * The types present in a cluster, in TYPE_ORDER, with their share of the
+ * events in percent (rounded to 0.01, summing to 100 up to rounding).
+ */
+export function typeSegments(props: ClusterProps): TypeSegment[] {
+  const total = TYPE_ORDER.reduce((n, t) => n + (props[t] ?? 0), 0);
+  if (total <= 0) return [];
+  return TYPE_ORDER.filter((t) => (props[t] ?? 0) > 0).map((t) => ({
+    type: t,
+    count: props[t],
+    percent: Math.round((100 * props[t]) / total * 100) / 100,
+  }));
+}
+
+/**
+ * CSS background of a cluster: one solid type colour when a single type is
+ * inside, otherwise a conic-gradient ring split proportionally to the type
+ * counts, in TYPE_ORDER starting at 12 o'clock.
+ */
+export function clusterBackground(props: ClusterProps): string {
+  const segments = typeSegments(props);
+  if (segments.length === 0) return TYPE_COLORS.storm;
+  if (segments.length === 1) return TYPE_COLORS[segments[0].type];
+  let from = 0;
+  const stops = segments.map((s, i) => {
+    const to = i === segments.length - 1 ? 100 : from + s.percent;
+    const stop = `${TYPE_COLORS[s.type]} ${from}% ${to}%`;
+    from = to;
+    return stop;
+  });
+  return `conic-gradient(${stops.join(", ")})`;
+}
+
+/** Highest severity present in a cluster (tooltip only; colours come from the types). */
 export function highestSeverity(props: ClusterProps): ClusterSeverity {
   if (props.high > 0) return "high";
   if (props.medium > 0) return "medium";
