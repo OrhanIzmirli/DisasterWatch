@@ -24,7 +24,15 @@ export type EventDetails = {
   feltReports: number | null;
   magnitudeValue: number | null;
   magnitudeUnit: string | null;
-  severity: "high" | "medium" | "low";
+  /** Wildfires: burned area normalised to hectares by the backend (acres × 0.40469); null otherwise. */
+  areaHa?: number | null;
+  /** Storms: highest advisory wind of the series (the rated value) and the latest one, in kts. */
+  peakKts?: number | null;
+  currentKts?: number | null;
+  /** GDACS impact level when GDACS rates this event (wildfires, floods). */
+  gdacsLevel?: "green" | "orange" | "red" | null;
+  gdacsScore?: number | null;
+  severity: "high" | "medium" | "low" | "unrated";
   severityReason: string;
   severitySource: string;
 };
@@ -32,7 +40,7 @@ export type EventDetails = {
 export type DrawerEvent = {
   id: number;
   type: "earthquake" | "flood" | "wildfire" | "storm";
-  severity: "high" | "medium" | "low";
+  severity: "high" | "medium" | "low" | "unrated";
   location: string;
   meta: string;
   description: string;
@@ -61,7 +69,7 @@ const TYPE_LABELS: Record<DrawerEvent["type"], string> = {
   storm: "Storm",
 };
 
-const SEVERITY_LABELS = { high: "High", medium: "Medium", low: "Low" } as const;
+const SEVERITY_LABELS = { high: "High", medium: "Medium", low: "Low", unrated: "Not rated" } as const;
 
 /** USGS PAGER alert levels, as documented by USGS (estimated impact). */
 const PAGER_TEXT: Record<NonNullable<EventDetails["pagerAlert"]>, string> = {
@@ -115,13 +123,24 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
   const occurredRelative = eventRelativeTime(event); // falls back to the feed's minutes-ago counter
   const isQuake = event.type === "earthquake";
 
-  const sizeLabel = isQuake ? "Magnitude" : "Size";
+  const isStorm = event.type === "storm";
+  const sizeLabel = isQuake ? "Magnitude" : isStorm ? "Wind" : "Size";
+  const stormCategory = (kts: number) =>
+    kts >= 137 ? "Cat-5" : kts >= 113 ? "Cat-4" : kts >= 96 ? "Cat-3" : kts >= 83 ? "Cat-2" : kts >= 64 ? "Cat-1" : "tropical storm";
   // The magnitude text comes pre-formatted from the backend so this row, the
   // title, the feed row, the tooltip and the severity reason all agree.
+  // Wildfire areas are shown in hectares (normalised by the backend); when the
+  // source reported acres the original figure follows in brackets.
   const sizeValue = isQuake
     ? d?.magnitudeLabel
       ? `M ${d.magnitudeLabel}${d.magType ? ` (${d.magType})` : ""}`
       : null
+    : isStorm && d?.peakKts !== null && d?.peakKts !== undefined
+    ? `Peaked ${Math.round(d.peakKts).toLocaleString("en-GB")} kts (${stormCategory(d.peakKts)}), now ${Math.round(d.currentKts ?? d.peakKts).toLocaleString("en-GB")} kts`
+    : event.type === "wildfire" && d?.areaHa !== null && d?.areaHa !== undefined
+    ? `${Math.round(d.areaHa).toLocaleString("en-GB")} ha${
+        d.magnitudeUnit && /^acres?$/i.test(d.magnitudeUnit) && d.magnitudeValue !== null ? ` (${d.magnitudeValue.toLocaleString("en-GB")} acres)` : ""
+      }`
     : d?.magnitudeValue !== null && d?.magnitudeValue !== undefined
     ? `${d.magnitudeValue.toLocaleString("en-GB")} ${UNIT_LABELS[d.magnitudeUnit ?? ""] ?? d.magnitudeUnit ?? ""}`.trim()
     : null;
@@ -215,6 +234,15 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
           <Section title="Why it's on the map">
             <p className="edd-text">{d?.severityReason ?? `${SEVERITY_LABELS[event.severity]} severity`}</p>
             {d?.severitySource && <p className="edd-sub">{d.severitySource}</p>}
+            {d?.gdacsLevel && (
+              <p className="edd-sub">
+                <span className={`edd-gdacs edd-gdacs-${d.gdacsLevel}`}>{d.gdacsLevel}</span> GDACS impact level
+                {d.gdacsScore !== null && d.gdacsScore !== undefined ? ` (score ${d.gdacsScore})` : ""} ·{" "}
+                <a href="https://www.gdacs.org/" target="_blank" rel="noreferrer">
+                  gdacs.org
+                </a>
+              </p>
+            )}
           </Section>
 
           {relatedNews !== undefined && <Section title="Related news">{relatedNews}</Section>}

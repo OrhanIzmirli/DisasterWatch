@@ -7,7 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 
 const mocks = vi.hoisted(() => ({ nasa: vi.fn(), usgs: vi.fn() }));
-vi.mock("../src/services/nasa.service.js", () => ({ fetchNasaEvents: mocks.nasa }));
+// the feed uses the GDACS-rated variant; both resolve to the same raw events here (no GDACS lookups in tests)
+vi.mock("../src/services/nasa.service.js", () => ({ fetchNasaEvents: mocks.nasa, fetchNasaEventsRated: mocks.nasa }));
 vi.mock("../src/services/usgs.service.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchUsgsEarthquakes: mocks.usgs };

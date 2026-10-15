@@ -12,7 +12,14 @@ import { z } from "zod";
 export const TOPIC = "disaster-events";
 
 export const EVENT_SOURCES = ["nasa", "usgs", "manual"];
-export const SEVERITIES = ["low", "medium", "high"];
+/**
+ * "unrated" was added in an additive change to v1 (2026-10-15): events whose
+ * source reports no intensity (floods, fires/storms without a measurement).
+ * Consumers must be deployed before producers that emit it; a subscription
+ * with minSeverity "low" matches unrated events, medium/high do not.
+ * Manual (admin) events are never unrated.
+ */
+export const SEVERITIES = ["low", "medium", "high", "unrated"];
 
 export const disasterEventSchema = z.object({
   v: z.literal(1),

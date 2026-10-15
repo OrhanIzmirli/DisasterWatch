@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assessSeverity, severityFromMag, severityFromType, EARTHQUAKE_HIGH_MAG, EARTHQUAKE_MEDIUM_MAG } from "../src/utils/severity.js";
+import { assessSeverity, severityFromMag, EARTHQUAKE_HIGH_MAG, EARTHQUAKE_MEDIUM_MAG, UNRATED_REASON } from "../src/utils/severity.js";
 import { cleanTitle, placeFromEonetTitle, buildUsgsDetails, buildEonetDetails } from "../src/utils/eventDetails.js";
 import { normalizeNasaEvents } from "../src/utils/normalizeDisasters.js";
 import { normalizeUsgsEarthquakes } from "../src/services/usgs.service.js";
@@ -63,17 +63,16 @@ describe("severity rules and their explanations agree", () => {
     });
   });
 
-  it("EONET types use fixed ratings with matching sentences", () => {
-    expect(assessSeverity({ type: "wildfire" })).toEqual({
-      severity: "high",
-      reason: "High: wildfires are always rated high (no intensity data from the source)",
-    });
-    expect(assessSeverity({ type: "storm" })).toEqual({ severity: "medium", reason: "Medium: severe storms are always rated medium" });
-    expect(assessSeverity({ type: "flood" })).toEqual({ severity: "medium", reason: "Medium: floods are always rated medium" });
-    expect(assessSeverity({ type: "volcano" })).toEqual({ severity: "low", reason: "Low: no severity rule for this event type" });
+  it("EONET types without a measurement are unrated (rules with a measurement: see severity.test.js)", () => {
     for (const t of ["wildfire", "storm", "flood", "other"]) {
-      expect(severityFromType(t)).toBe(assessSeverity({ type: t }).severity);
+      expect(assessSeverity({ type: t })).toEqual({ severity: "unrated", reason: UNRATED_REASON });
     }
+    expect(assessSeverity({ type: "wildfire", magnitudeValue: 9965, magnitudeUnit: "hectare" })).toEqual({
+      severity: "medium",
+      reason: "Medium: 9,965 ha burned (7,000–9,999 ha)",
+    });
+    expect(assessSeverity({ type: "wildfire", magnitudeValue: 9965, magnitudeUnit: "hectare", gdacsLevel: "red" }).severity).toBe("high");
+    expect(assessSeverity({ type: "storm", peakKts: 100, currentKts: 40 }).severity).toBe("high");
   });
 
   it("the reason sentence always starts with the rating it explains", () => {
@@ -81,13 +80,18 @@ describe("severity rules and their explanations agree", () => {
       { type: "earthquake", magnitude: 6.5 },
       { type: "earthquake", magnitude: 5.5 },
       { type: "earthquake", magnitude: 4.6 },
-      { type: "wildfire" },
-      { type: "storm" },
+      { type: "wildfire", magnitudeValue: 50_000, magnitudeUnit: "hectare" },
+      { type: "wildfire", magnitudeValue: 12_000, magnitudeUnit: "acres" },
+      { type: "wildfire", magnitudeValue: 2_000, magnitudeUnit: "hectare", gdacsLevel: "orange" },
+      { type: "storm", peakKts: 70, currentKts: 40 },
+      { type: "storm", peakKts: 30, currentKts: 30 },
       { type: "flood" },
+      { type: "flood", gdacsLevel: "green" },
     ];
     for (const c of cases) {
       const { severity, reason } = assessSeverity(c);
-      expect(reason.toLowerCase().startsWith(`${severity}:`)).toBe(true);
+      const expected = severity === "unrated" ? "not rated:" : `${severity}:`;
+      expect(reason.toLowerCase().startsWith(expected), reason).toBe(true);
     }
   });
 
@@ -153,11 +157,23 @@ describe("buildEonetDetails (real events)", () => {
       status: "closed",
       magnitudeValue: 6889,
       magnitudeUnit: "hectare",
+      areaHa: 6889,
       magnitude: null,
       pagerAlert: null,
       tsunami: null,
       feltReports: null,
-      severity: "high",
+      gdacsLevel: null, // the fixture carries no GDACS level, so the size rule applies
+      severity: "low",
+      severityReason: "Low: 6,889 ha burned (< 7,000 ha)",
+      severitySource: "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)",
+    });
+    // with the GDACS level attached (as services/gdacs.js does at fetch time) the level wins
+    expect(buildEonetDetails({ ...FIRE, gdacs: { level: "orange", score: 2 } }, "wildfire")).toMatchObject({
+      severity: "medium",
+      gdacsLevel: "orange",
+      gdacsScore: 2,
+      severityReason: "Medium: GDACS impact level Orange (6,889 ha burned)",
+      severitySource: "Impact level assigned by GDACS (gdacs.org)",
     });
     expect(d.sources[0]).toEqual({ name: "NASA EONET", url: FIRE.link });
     expect(d.sources.map((s) => s.name)).toContain("GDACS");
@@ -174,8 +190,12 @@ describe("buildEonetDetails (real events)", () => {
       status: "open",
       magnitudeValue: 80,
       magnitudeUnit: "kts",
+      areaHa: null,
+      peakKts: 85,
+      currentKts: 80,
       severity: "medium",
-      severityReason: "Medium: severe storms are always rated medium",
+      severityReason: "Medium: peak wind 85 kts (Saffir-Simpson category 2, 64–95 kts), now 80 kts",
+      severitySource: "Severity rule applied to the peak advisory wind reported by EONET",
     });
     expect(d.sources.map((s) => s.name)).toEqual(["NASA EONET", "JTWC"]);
     expect(d.updatedAt).toBe("2026-10-13T12:00:00.000Z");
@@ -183,7 +203,8 @@ describe("buildEonetDetails (real events)", () => {
 
   it("flood: polygon geometry, no magnitude, dates still resolved", () => {
     const d = buildEonetDetails(FLOOD, "flood", FLOOD.geometry[0]);
-    expect(d).toMatchObject({ category: "Floods", cleanTitle: "Flood in Nepal", place: "Nepal", magnitudeValue: null, magnitudeUnit: null, severity: "medium" });
+    expect(d).toMatchObject({ category: "Floods", cleanTitle: "Flood in Nepal", place: "Nepal", magnitudeValue: null, magnitudeUnit: null, severity: "unrated", severityReason: UNRATED_REASON, gdacsLevel: null });
+    expect(buildEonetDetails({ ...FLOOD, gdacs: { level: "green", score: 1 } }, "flood")).toMatchObject({ severity: "low", gdacsLevel: "green", severityReason: "Low: GDACS impact level Green" });
     expect(d.occurredAt).not.toBeNull();
   });
 });
@@ -197,7 +218,7 @@ describe("normalizers stay backwards compatible", () => {
     expect(item).toMatchObject({
       type: "wildfire",
       location: "Wildfire in Botswana 1032764", // raw title, as before
-      severity: "high",
+      severity: "low", // 6,889 ha burned and no GDACS level in the fixture: size rule, < 7,000 ha
       description: "Wildfire in Botswana", // title fallback without the source id (shown in Today's events)
     });
     expect(item.meta).toMatch(/^Wildfires • \d+ min ago$/);

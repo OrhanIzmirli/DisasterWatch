@@ -3,7 +3,11 @@
  * AlertSubscription row. No I/O, no clock access except through `now`.
  */
 
-export const SEVERITY_RANK = { low: 0, medium: 1, high: 2 };
+/** "unrated" (no intensity reported by the source) ranks below low. */
+export const SEVERITY_RANK = { unrated: -1, low: 0, medium: 1, high: 2 };
+
+/** Subscriptions choose one of these; "unrated" is never a minimum. */
+export const SUBSCRIPTION_SEVERITIES = ["low", "medium", "high"];
 
 /** How far back an event may lie and still trigger a notification. */
 export const MAX_EVENT_AGE_MS = 48 * 60 * 60 * 1000;
@@ -24,11 +28,16 @@ export function typeMatches(subscriptionType, eventType) {
   return subscriptionType === "any" || subscriptionType === eventType;
 }
 
+/**
+ * minSeverity "low" means everything, so it also matches unrated events;
+ * "medium" and "high" never match an unrated event.
+ */
 export function severityMatches(minSeverity, eventSeverity) {
-  const min = SEVERITY_RANK[minSeverity];
+  if (!SUBSCRIPTION_SEVERITIES.includes(minSeverity)) return false;
   const ev = SEVERITY_RANK[eventSeverity];
-  if (min === undefined || ev === undefined) return false;
-  return ev >= min;
+  if (ev === undefined) return false;
+  if (eventSeverity === "unrated") return minSeverity === "low";
+  return ev >= SEVERITY_RANK[minSeverity];
 }
 
 /**

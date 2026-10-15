@@ -3,7 +3,7 @@ export type NewsType = "earthquake" | "flood" | "wildfire" | "storm";
 export type RelatedEvent = {
   id: number;
   type: NewsType;
-  severity: "high" | "medium" | "low";
+  severity: "high" | "medium" | "low" | "unrated";
   location: string;
   lat: number;
   lng: number;

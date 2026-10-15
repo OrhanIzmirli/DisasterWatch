@@ -18,7 +18,7 @@
  */
 import { Prisma } from "@prisma/client";
 import defaultPrisma from "../prisma.js";
-import { fetchNasaEvents } from "../services/nasa.service.js";
+import { fetchNasaEventsRated } from "../services/nasa.service.js";
 import { fetchUsgsEarthquakes } from "../services/usgs.service.js";
 import { publishDisasterEvents } from "../services/kafkaProducer.js";
 import { nasaEventsToContract, usgsFeaturesToContract } from "../events/mappers.js";
@@ -125,7 +125,7 @@ export async function publishOutbox({
  */
 export async function ingestOnce({
   prisma = defaultPrisma,
-  fetchNasa = fetchNasaEvents,
+  fetchNasa = fetchNasaEventsRated, // same GDACS-rated events as the public feed
   fetchUsgs = fetchUsgsEarthquakes,
   publish = publishDisasterEvents,
   log = console,

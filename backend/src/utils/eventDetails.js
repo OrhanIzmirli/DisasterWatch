@@ -3,7 +3,7 @@
  * the NASA EONET / USGS payloads the backend already fetches — no extra
  * requests, no guessed values. A field the source does not provide is null.
  */
-import { assessSeverity } from "./severity.js";
+import { assessSeverity, assessEonetEvent } from "./severity.js";
 import { formatMagnitude } from "./magnitude.js";
 
 /** "Wildfire in Tanzania 1032766" -> "Wildfire in Tanzania"; "Flood in Nepal 1104225" -> "Flood in Nepal" */
@@ -73,6 +73,11 @@ export function buildUsgsDetails(feature) {
     feltReports: numOrNull(p.felt),
     magnitudeValue: null,
     magnitudeUnit: null,
+    areaHa: null,
+    peakKts: null,
+    currentKts: null,
+    gdacsLevel: null,
+    gdacsScore: null,
     severity,
     severityReason: reason,
     severitySource: "Severity rule applied to the USGS magnitude",
@@ -88,11 +93,21 @@ export function buildEonetDetails(event, type, pickedGeometry = null) {
   const geometry = Array.isArray(event?.geometry) ? event.geometry : [];
   const category = event?.categories?.[0]?.title ?? null;
 
-  // Latest geometry entry that carries a magnitude (EONET updates these over time)
-  const withMagnitude = [...geometry].reverse().find((g) => g && g.magnitudeValue !== null && g.magnitudeValue !== undefined);
   const dates = geometry.map((g) => toIso(g?.date)).filter(Boolean).sort();
 
-  const { severity, reason } = assessSeverity({ type });
+  // Latest geometry entry that carries a magnitude (EONET updates these over
+  // time); the burned area is normalised to hectares in severity.js.
+  const { severity, reason, magnitudeValue, magnitudeUnit, areaHa, peakKts, currentKts, gdacsLevel, gdacsScore } = assessEonetEvent(event, type);
+  const severitySource =
+    gdacsLevel
+      ? "Impact level assigned by GDACS (gdacs.org)"
+      : severity === "unrated"
+      ? type === "flood"
+        ? "GDACS impact level unavailable; EONET reports no flood magnitude"
+        : "EONET reports no intensity this rule can rate"
+      : type === "wildfire"
+      ? "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)"
+      : "Severity rule applied to the peak advisory wind reported by EONET";
 
   const sources = [];
   if (event?.link) sources.push({ name: "NASA EONET", url: String(event.link) });
@@ -117,10 +132,15 @@ export function buildEonetDetails(event, type, pickedGeometry = null) {
     pagerAlert: null,
     tsunami: null,
     feltReports: null,
-    magnitudeValue: withMagnitude ? numOrNull(withMagnitude.magnitudeValue) : null,
-    magnitudeUnit: withMagnitude?.magnitudeUnit ? String(withMagnitude.magnitudeUnit) : null,
+    magnitudeValue, // as reported by the source (original unit)
+    magnitudeUnit,
+    areaHa, // wildfires: burned area normalised to hectares (acres × 0.40469); null otherwise
+    peakKts, // storms: highest advisory wind of the series (the rated value); null otherwise
+    currentKts, // storms: latest advisory wind
+    gdacsLevel, // "green" | "orange" | "red" when GDACS rates this event, else null
+    gdacsScore,
     severity,
     severityReason: reason,
-    severitySource: "Severity rule applied to the EONET category",
+    severitySource,
   };
 }

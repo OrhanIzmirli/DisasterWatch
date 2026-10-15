@@ -37,7 +37,7 @@ export function eventTagText(item: NewsItem) {
   const e = item.relatedEvent;
   if (!e) return null;
   // the location is the event's clean title; older cached payloads may still carry the raw source id
-  return `${TYPE_LABELS[e.type] ?? capitalise(e.type)} · ${cleanTitle(e.location)} · ${capitalise(e.severity)}`;
+  return `${TYPE_LABELS[e.type] ?? capitalise(e.type)} · ${cleanTitle(e.location)} · ${e.severity === "unrated" ? "Not rated" : capitalise(e.severity)}`;
 }
 
 function Skeleton() {

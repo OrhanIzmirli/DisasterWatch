@@ -32,7 +32,7 @@ const TYPE_LABELS: Record<AlertType, string> = {
 };
 
 const SEVERITY_LABELS: Record<Severity, string> = {
-  low: "Low and above",
+  low: "Low and above (every event, including not-rated ones)",
   medium: "Medium and above",
   high: "High only",
 };

@@ -22,7 +22,7 @@
  *
  * Fetchers and the clock are injectable for tests.
  */
-import { fetchNasaEvents } from "./nasa.service.js";
+import { fetchNasaEventsRated } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
 import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
 
@@ -61,7 +61,7 @@ function sanitizeText(s) {
 const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
 
 export function createFeedService({
-  fetchNasa = fetchNasaEvents,
+  fetchNasa = fetchNasaEventsRated, // EONET events with their GDACS impact level attached
   fetchUsgs = fetchUsgsEarthquakes,
   now = () => Date.now(), // read through the global so fake timers in tests apply
   log = console,

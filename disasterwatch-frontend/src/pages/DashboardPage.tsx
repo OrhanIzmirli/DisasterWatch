@@ -8,7 +8,7 @@ import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
 import { getCachedFeed, isFeedFresh, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt } from "../services/feedCache";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
-type Severity = "high" | "medium" | "low";
+type Severity = "high" | "medium" | "low" | "unrated";
 
 type DisasterItem = {
   id: number;
@@ -82,7 +82,8 @@ type TimelineEvent = {
 /* =========================
    HELPERS
 ========================= */
-const severityOrder: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
+// sort by severity puts not-rated events last
+const severityOrder: Record<Severity, number> = { high: 0, medium: 1, low: 2, unrated: 3 };
 
 const getSeverityLabel = (severity: Severity): string => {
   switch (severity) {
@@ -92,6 +93,8 @@ const getSeverityLabel = (severity: Severity): string => {
       return "▲ MEDIUM";
     case "low":
       return "● LOW";
+    case "unrated":
+      return "○ NOT RATED";
   }
 };
 
@@ -126,7 +129,7 @@ const getTypeIcon = (type: DisasterType) => {
 };
 
 const sevDotClass = (s: Severity) =>
-  s === "high" ? "dot-high" : s === "medium" ? "dot-medium" : "dot-low";
+  s === "high" ? "dot-high" : s === "medium" ? "dot-medium" : s === "low" ? "dot-low" : "dot-unrated";
 
 /** Text normalize for search (lowercase + remove accents) */
 const normalizeText = (s: string) =>
@@ -376,8 +379,9 @@ const DashboardPage = () => {
 
   const totalDisasters = kpiDisasters.length;
 
-  const activeAlerts = useMemo(
-    () => kpiDisasters.filter((d) => d.severity === "high").length,
+  // Significant events: rated high or medium (not-rated events never count)
+  const significantEvents = useMemo(
+    () => kpiDisasters.filter((d) => d.severity === "high" || d.severity === "medium").length,
     [kpiDisasters]
   );
 
@@ -509,9 +513,9 @@ const DashboardPage = () => {
         </div>
 
         <div className="kpi-card">
-          <span className="kpi-label">Active alerts</span>
-          <span className="kpi-value kpi-value-warning">{kpi(activeAlerts)}</span>
-          <span className="kpi-footnote">High severity</span>
+          <span className="kpi-label">Significant events</span>
+          <span className="kpi-value kpi-value-warning">{kpi(significantEvents)}</span>
+          <span className="kpi-footnote">High or medium severity</span>
         </div>
 
         <div className="kpi-card">
@@ -784,7 +788,9 @@ const DashboardPage = () => {
                         ? "severity-high"
                         : item.severity === "medium"
                         ? "severity-medium"
-                        : "severity-low")
+                        : item.severity === "low"
+                        ? "severity-low"
+                        : "severity-unrated")
                     }
                   >
                     {getSeverityLabel(item.severity)}
@@ -834,10 +840,12 @@ const DashboardPage = () => {
                               ? "sev-high"
                               : ev.severity === "medium"
                               ? "sev-medium"
-                              : "sev-low")
+                              : ev.severity === "low"
+                              ? "sev-low"
+                              : "sev-unrated")
                           }
                         >
-                          {ev.severity}
+                          {ev.severity === "unrated" ? "not rated" : ev.severity}
                         </span>
                       </div>
 

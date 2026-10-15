@@ -14,6 +14,7 @@ import notificationsRoutes from "./routes/notifications.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import { producerStatus } from "./services/kafkaProducer.js";
 import { countPendingOutbox } from "./jobs/ingest.js";
+import { gdacsClient } from "./services/gdacs.js";
 
 /**
  * Build the Express app without starting a server or touching Kafka,
@@ -74,6 +75,7 @@ export function createApp(options = {}) {
       kafka: producerStatus(),
       outboxPending,
       news: newsStatus(),
+      gdacs: gdacsClient.status(),
       time: new Date().toISOString(),
     });
   });

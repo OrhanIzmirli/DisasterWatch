@@ -7,7 +7,9 @@ import {
   shouldNotify,
   buildNotifications,
   MAX_EVENT_AGE_MS,
+  SEVERITY_RANK,
 } from "../src/match.js";
+import { disasterEventSchema } from "../src/contract.js";
 
 const NOW = new Date("2026-10-13T12:00:00.000Z");
 const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600 * 1000).toISOString();
@@ -172,5 +174,39 @@ describe("buildNotifications", () => {
   it("returns an empty list when nothing matches", () => {
     expect(buildNotifications({ ...FLOOD_NEAR, severity: "low" }, [WARSAW], NOW)).toEqual([]);
     expect(buildNotifications(FLOOD_NEAR, [], NOW)).toEqual([]);
+  });
+});
+
+describe("unrated events (contract v1 addition)", () => {
+  it("rank below low", () => {
+    expect(SEVERITY_RANK.unrated).toBeLessThan(SEVERITY_RANK.low);
+  });
+
+  it("a subscription with minSeverity 'low' (= everything) matches an unrated event", () => {
+    expect(severityMatches("low", "unrated")).toBe(true);
+    expect(matchesSubscription({ ...FLOOD_NEAR, severity: "unrated" }, { ...WARSAW, minSeverity: "low" }).matched).toBe(true);
+  });
+
+  it("minSeverity 'medium' and 'high' never match an unrated event", () => {
+    expect(severityMatches("medium", "unrated")).toBe(false);
+    expect(severityMatches("high", "unrated")).toBe(false);
+    expect(matchesSubscription({ ...FLOOD_NEAR, severity: "unrated" }, { ...WARSAW, minSeverity: "medium" }).matched).toBe(false);
+    expect(matchesSubscription({ ...FLOOD_NEAR, severity: "unrated" }, { ...WARSAW, minSeverity: "high" }).matched).toBe(false);
+  });
+
+  it("'unrated' is never accepted as a subscription minimum", () => {
+    expect(severityMatches("unrated", "high")).toBe(false);
+    expect(severityMatches("unrated", "unrated")).toBe(false);
+  });
+
+  it("the contract accepts severity 'unrated' and still rejects unknown values", () => {
+    expect(disasterEventSchema.safeParse({ ...FLOOD_NEAR, severity: "unrated" }).success).toBe(true);
+    expect(disasterEventSchema.safeParse({ ...FLOOD_NEAR, severity: "none" }).success).toBe(false);
+  });
+
+  it("builds a notification for a 'low' subscription on an unrated event", () => {
+    const rows = buildNotifications({ ...FLOOD_NEAR, severity: "unrated" }, [{ ...WARSAW, minSeverity: "low" }], NOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].severity).toBe("unrated");
   });
 });

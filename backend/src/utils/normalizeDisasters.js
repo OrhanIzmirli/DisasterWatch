@@ -1,5 +1,4 @@
 // backend/src/utils/normalizeDisasters.js
-import { severityFromType } from "./severity.js";
 import { buildEonetDetails, cleanTitle } from "./eventDetails.js";
 import { countryFromPlace } from "./country.js";
 
@@ -25,9 +24,8 @@ export function mapCategoryToType(catTitle) {
   return null;
 }
 
-// Severity rules live in ./severity.js (single source of truth); re-exported
+// Severity rules live in ./severity.js (single source of truth).
 // here so existing imports keep working.
-export { severityFromType };
 
 /**
  * EONET geometry notes:
@@ -135,7 +133,9 @@ export function normalizeNasaEvents(events) {
     const mins = minutesAgo(when);
 
     const location = ev?.title || "Unknown location";
-    const sev = severityFromType(type);
+    // Rated from the EONET measurement (wind speed, burned area); unrated when there is none
+    const details = buildEonetDetails(ev, type, best?.geometry ?? null);
+    const sev = details.severity;
 
     // Build a more descriptive meta line
     const meta = `${catTitle} • ${mins} min ago`;
@@ -152,7 +152,7 @@ export function normalizeNasaEvents(events) {
       lat,
       lng,
       // Rich, source-faithful fields (new; everything above is unchanged)
-      details: buildEonetDetails(ev, type, best?.geometry ?? null),
+      details,
     });
     // Country from the source place name only (null when it cannot be derived)
     const last = out[out.length - 1];

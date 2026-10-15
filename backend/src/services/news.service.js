@@ -22,7 +22,7 @@
  */
 import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, mentionsDisaster, MAX_EVENT_QUERIES } from "./newsLinking.js";
 import { createNewsProviders } from "./newsProviders/index.js";
-import { fetchNasaEvents } from "./nasa.service.js";
+import { fetchNasaEventsRated } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
 import { cleanTitle } from "../utils/eventDetails.js";
 import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
@@ -34,7 +34,7 @@ export const GROUP_LIMIT = 25;
 /** Hard cap on provider requests per refresh (3 event groups + 1 general). */
 export const MAX_REQUESTS_PER_REFRESH = MAX_EVENT_QUERIES + 1;
 const EVENT_WINDOW_MS = 24 * 3600 * 1000;
-const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2, unrated: 3 };
 
 export class NewsUnavailableError extends Error {
   constructor(message) {
@@ -44,7 +44,7 @@ export class NewsUnavailableError extends Error {
 }
 
 /** Current feed events, same normalisation as GET /disasters. */
-export async function loadFeedEvents({ fetchNasa = fetchNasaEvents, fetchUsgs = fetchUsgsEarthquakes } = {}) {
+export async function loadFeedEvents({ fetchNasa = fetchNasaEventsRated, fetchUsgs = fetchUsgsEarthquakes } = {}) {
   const [nasa, usgs] = await Promise.all([
     fetchNasa().then(normalizeNasaEvents).catch(() => []),
     fetchUsgs()
