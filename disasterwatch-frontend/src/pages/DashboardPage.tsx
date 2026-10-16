@@ -8,6 +8,10 @@ import EventDetailDrawer, { type EventDetails } from "../components/EventDetailD
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
 import { getCachedFeed, isFeedFresh, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt } from "../services/feedCache";
+import HeadlineStrip from "../components/HeadlineStrip";
+import { headlineText } from "../utils/headline";
+import { pulseIds } from "../utils/liveness";
+import { usePrefersReducedMotion } from "../utils/usePrefersReducedMotion";
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low" | "unrated";
@@ -164,7 +168,12 @@ const LIST_PAGE_SIZE = 50;
 const MAP_MAX_MARKERS = 300;
 const MAP_EARTHQUAKE_CAP = 15;
 
-const DashboardPage = () => {
+type DashboardProps = {
+  /** Only changes the wording under the alerts call-to-action. */
+  signedIn?: boolean;
+};
+
+const DashboardPage = ({ signedIn = false }: DashboardProps) => {
   // Start from the feed cached by the previous visit (survives route changes), else the fallback rows.
   // Start from the feed cached by the previous visit (survives route changes); otherwise the
   // list is empty and the skeleton is shown until the backend answers. Never demo rows.
@@ -470,6 +479,29 @@ const DashboardPage = () => {
   const mapDisasters = mapMarkers.list;
 
   /* =========================
+     MAP LIVENESS
+     - the newest marker and up to 3 significant events from the last 24 h
+       pulse; nothing pulses with prefers-reduced-motion
+  ========================= */
+  const reducedMotion = usePrefersReducedMotion();
+  const pulsing = useMemo(() => pulseIds(mapDisasters, { reducedMotion }), [mapDisasters, reducedMotion]);
+
+  /* =========================
+     HEADLINE (whole feed, every type; same numbers as the KPI definitions)
+  ========================= */
+  const wholeFeed = useMemo(() => (feedCounts ? kpiFromCounts(feedCounts, "all") : kpiFromItems(disasters, "all")), [feedCounts, disasters]);
+  const headline = headlineText({
+    status: feedStatus,
+    significant: wholeFeed.significant,
+    total: wholeFeed.total,
+    items: disasters,
+    stale: feedStale,
+    dataAge: relativeTime(feedUpdatedAt),
+  });
+  const headlineTone =
+    feedStatus === "loading" ? "loading" : feedStatus === "error" ? "offline" : wholeFeed.significant > 0 ? "significant" : "quiet";
+
+  /* =========================
      COUNTRIES AFFECTED
      - distinct countries among the events shown on the map; the country is
        derived by the backend from the source place name (USGS place, EONET
@@ -514,24 +546,30 @@ const DashboardPage = () => {
         </div>
       </section>
 
+      <HeadlineStrip text={headline} tone={headlineTone} signedIn={signedIn} />
+
       {/* KPI cards */}
       <section className="dashboard-kpis" aria-label="Key figures">
         <div className="kpi-card">
           <span className="kpi-label">Disasters</span>
           <span className="kpi-value">{kpi(totalDisasters)}</span>
-          <span className="kpi-footnote">{unavailableSource === "nasa" ? "USGS only" : unavailableSource === "usgs" ? "NASA only" : "NASA + USGS"}</span>
+          <span className="kpi-footnote">
+            {feedStatus === "error" ? "Feed offline" : unavailableSource === "nasa" ? "USGS only" : unavailableSource === "usgs" ? "NASA only" : "NASA + USGS"}
+          </span>
         </div>
 
         <div className="kpi-card">
           <span className="kpi-label">Significant events</span>
           <span className="kpi-value kpi-value-warning">{kpi(significantEvents)}</span>
-          <span className="kpi-footnote">High or medium severity</span>
+          <span className="kpi-footnote">
+            {feedStatus === "error" ? "Feed offline" : hasData && significantEvents === 0 ? "None right now (high or medium severity)" : "High or medium severity"}
+          </span>
         </div>
 
         <div className="kpi-card">
           <span className="kpi-label">Countries affected</span>
           <span className="kpi-value">{kpi(countriesAffected)}</span>
-          <span className="kpi-footnote">From source place names</span>
+          <span className="kpi-footnote">{feedStatus === "error" ? "Feed offline" : "From source place names"}</span>
         </div>
       </section>
 
@@ -542,8 +580,24 @@ const DashboardPage = () => {
           <div className="panel-header">
             <h2>Map view</h2>
             <span className="panel-caption">
-              Showing {mapDisasters.length} marker{mapDisasters.length === 1 ? "" : "s"} • Earthquakes: {mapMarkers.earthquakesShown}
-              {mapMarkers.earthquakesTotal > mapMarkers.earthquakesShown ? ` of ${mapMarkers.earthquakesTotal} (latest ${MAP_EARTHQUAKE_CAP})` : ""}.
+              {feedStatus === "loading" ? (
+                "Loading markers…"
+              ) : feedStatus === "error" ? (
+                "No markers while the feed is offline."
+              ) : mapDisasters.length === 0 ? (
+                disasters.length === 0 ? "No events to plot right now." : "No events to plot for this filter or search."
+              ) : (
+                <>
+                  Showing {mapDisasters.length} marker{mapDisasters.length === 1 ? "" : "s"} • Earthquakes: {mapMarkers.earthquakesShown}
+                  {mapMarkers.earthquakesTotal > mapMarkers.earthquakesShown ? ` of ${mapMarkers.earthquakesTotal} (latest ${MAP_EARTHQUAKE_CAP})` : ""}.
+                </>
+              )}
+              {hasData && feedUpdatedAt && (
+                <span className="panel-caption-updated">
+                  {" "}
+                  {feedStale ? "Last successful update" : "Updated"} {dataAge}
+                </span>
+              )}
             </span>
           </div>
 
@@ -551,6 +605,7 @@ const DashboardPage = () => {
           <MapView
             key={activeFilter}
             disasters={mapDisasters}
+            pulseIds={pulsing}
             highlightId={selectedDisaster?.id ?? null}
             onSelect={(id) => {
               const hit = disasters.find((d) => d.id === id);
@@ -593,13 +648,21 @@ const DashboardPage = () => {
                 <span className="legend-cluster-caption">Clusters use the event colours; mixed clusters are split</span>
               </div>
             </div>
+            {pulsing.size > 0 && (
+              <div className="legend-pill">
+                <span className="legend-pulse" aria-hidden="true" />
+                <span>Pulsing: newest event and recent significant ones (24 h)</span>
+              </div>
+            )}
           </div>
         </section>
 
         {/* LIST PANEL */}
-        <section className="list-panel">
+        <section className="list-panel" id="disaster-feed" aria-labelledby="disaster-feed-title">
           <div className="panel-header">
-            <h2>Disaster feed</h2>
+            <h2 id="disaster-feed-title" tabIndex={-1} data-skip-fallback>
+              Disaster feed
+            </h2>
             <span className="panel-caption">
               Showing {LIST_PAGE_SIZE} per page • Total filtered: {filteredDisasters.length}
             </span>
@@ -767,7 +830,23 @@ const DashboardPage = () => {
 
           {feedStatus === "ready" && filteredDisasters.length === 0 && (
             <div className="feed-state muted">
-              {disasters.length === 0 ? "No events reported by NASA EONET or USGS in the last 7 days." : "No events match the current filter or search."}
+              {disasters.length === 0 ? (
+                <p className="feed-state-quiet">No events reported by NASA EONET or USGS in the last 7 days. The feed refreshes every few minutes.</p>
+              ) : (
+                <>
+                  <p className="feed-state-quiet">No events match the current filter or search.</p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setSearch("");
+                      applyFilter("all");
+                    }}
+                  >
+                    Show all events
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -810,7 +889,9 @@ const DashboardPage = () => {
             </div>
 
             {feedStatus !== "ready" && <p className="muted timeline-empty">{feedStatus === "loading" ? "Loading…" : "Unavailable while the feed is offline."}</p>}
-            {feedStatus === "ready" && todayEvents.length === 0 && <p className="muted timeline-empty">No events to show.</p>}
+            {feedStatus === "ready" && todayEvents.length === 0 && (
+              <p className="muted timeline-empty">{disasters.length === 0 ? "Nothing reported yet in this feed window." : "No events for this filter or search."}</p>
+            )}
             <ul className="timeline-list">
               {todayEvents.map((ev, idx) => (
                 <li key={idx} className="timeline-item">

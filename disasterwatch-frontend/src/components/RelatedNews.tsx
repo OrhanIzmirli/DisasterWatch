@@ -9,23 +9,30 @@ type Props = {
 
 /** Up to `max` articles linked to one feed event, for the event detail drawer. */
 const RelatedNews = ({ eventId, max = 3 }: Props) => {
-  const [items, setItems] = useState<NewsItem[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  // The answer is stored with the event it belongs to; anything else (a newer
+  // event selected, nothing back yet) reads as "loading", so state is only set
+  // from the request's callbacks, never synchronously inside the effect.
+  const requestKey = `${eventId}:${max}`;
+  const [result, setResult] = useState<{ key: string; items: NewsItem[] | null; failed: boolean } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    setItems(null);
-    setFailed(false);
     getDisasterNews({ eventId, limit: max }, controller.signal)
-      .then((data) => setItems(data.items.slice(0, max)))
+      .then((data) => {
+        if (!controller.signal.aborted) setResult({ key: requestKey, items: data.items.slice(0, max), failed: false });
+      })
       .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
+        if (!controller.signal.aborted) setResult({ key: requestKey, items: null, failed: true });
       });
     return () => controller.abort();
-  }, [eventId, max]);
+  }, [eventId, max, requestKey]);
+
+  const current = result && result.key === requestKey ? result : null;
+  const failed = current?.failed ?? false;
+  const items = current ? current.items : null;
 
   if (failed) return <p className="edd-sub">News service unavailable.</p>;
-  if (items === null) return <p className="edd-sub">Looking for coverage…</p>;
+  if (!current || items === null) return <p className="edd-sub">Looking for coverage…</p>;
   if (items.length === 0) return <p className="edd-sub">No linked coverage in the last 72 hours.</p>;
 
   return (

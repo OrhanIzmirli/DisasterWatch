@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getDisasterNews, NewsError, PROVIDER_LABELS, type NewsItem, type NewsType } from "../services/newsService";
+import { getDisasterNews, NewsError, type NewsItem, type NewsType } from "../services/newsService";
 import { relativeTime } from "../utils/formatDate";
-import { cleanTitle } from "../utils/eventText";
+import { eventTagText, providerText } from "../utils/newsText";
 
 type Props = {
   isOpen: boolean;
@@ -11,6 +11,10 @@ type Props = {
 
 type Filter = "all" | NewsType;
 
+type LoadResult =
+  | { key: string; ok: true; items: NewsItem[]; updatedAt: string | null; stale: boolean }
+  | { key: string; ok: false; error: string };
+
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "earthquake", label: "Earthquakes" },
@@ -18,27 +22,6 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "wildfire", label: "Wildfires" },
   { key: "storm", label: "Storms" },
 ];
-
-const TYPE_LABELS: Record<NewsType, string> = {
-  earthquake: "Earthquake",
-  flood: "Flood",
-  wildfire: "Wildfire",
-  storm: "Storm",
-};
-
-const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-/** "via GDELT" / "via The Guardian"; unknown provider (old cache) shows nothing. */
-export function providerText(item: NewsItem) {
-  return item.provider && PROVIDER_LABELS[item.provider] ? `via ${PROVIDER_LABELS[item.provider]}` : null;
-}
-
-export function eventTagText(item: NewsItem) {
-  const e = item.relatedEvent;
-  if (!e) return null;
-  // the location is the event's clean title; older cached payloads may still carry the raw source id
-  return `${TYPE_LABELS[e.type] ?? capitalise(e.type)} · ${cleanTitle(e.location)} · ${e.severity === "unrated" ? "Not rated" : capitalise(e.severity)}`;
-}
 
 function Skeleton() {
   return (
@@ -57,38 +40,41 @@ function Skeleton() {
 export default function NewsPanel({ isOpen, onClose }: Props) {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>("all");
-  const [status, setStatus] = useState<"idle" | "loading" | "error" | "ready">("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [items, setItems] = useState<NewsItem[]>([]);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [stale, setStale] = useState(false);
-
-  const load = useCallback(
-    async (f: Filter, signal?: AbortSignal) => {
-      setStatus("loading");
-      setError(null);
-      try {
-        const data = await getDisasterNews({ type: f === "all" ? null : f }, signal);
-        if (signal?.aborted) return;
-        setItems(data.items);
-        setUpdatedAt(data.updatedAt);
-        setStale(data.stale);
-        setStatus("ready");
-      } catch (e) {
-        if (signal?.aborted) return;
-        setError(e instanceof NewsError ? e.message : "Could not reach the news service.");
-        setStatus("error");
-      }
-    },
-    []
-  );
+  // Every request is identified by filter + attempt; the panel shows "loading"
+  // until the answer for the current request has arrived, so state is only set
+  // from the request's callbacks (never synchronously inside the effect).
+  const [attempt, setAttempt] = useState(0);
+  const [result, setResult] = useState<LoadResult | null>(null);
+  // A fresh load each time the panel opens (state adjusted during render, not in an effect)
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) setAttempt((a) => a + 1);
+  }
+  const requestKey = `${filter}#${attempt}`;
 
   useEffect(() => {
     if (!isOpen) return;
     const controller = new AbortController();
-    load(filter, controller.signal);
+    getDisasterNews({ type: filter === "all" ? null : filter }, controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setResult({ key: requestKey, ok: true, items: data.items, updatedAt: data.updatedAt, stale: data.stale });
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setResult({ key: requestKey, ok: false, error: e instanceof NewsError ? e.message : "Could not reach the news service." });
+      });
     return () => controller.abort();
-  }, [isOpen, filter, load]);
+  }, [isOpen, filter, requestKey]);
+
+  const current = result && result.key === requestKey ? result : null;
+  const status: "loading" | "error" | "ready" = !current ? "loading" : current.ok ? "ready" : "error";
+  const items = current?.ok ? current.items : [];
+  const updatedAt = current?.ok ? current.updatedAt : null;
+  const stale = current?.ok ? current.stale : false;
+  const error = current && !current.ok ? current.error : null;
+  const retry = () => setAttempt((a) => a + 1);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -114,8 +100,8 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
   return (
     <>
       <div className="news-overlay" onClick={onClose} />
-      <aside className="news-panel" role="dialog" aria-modal="true" aria-label="Latest news">
-        <header className="news-header">
+      <div className="news-panel" role="dialog" aria-modal="true" aria-label="Latest news">
+        <div className="news-header">
           <div>
             <h2>Latest news</h2>
             {status === "ready" && updatedText && (
@@ -127,7 +113,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
           <button className="news-close-btn" onClick={onClose} aria-label="Close">
             ✕
           </button>
-        </header>
+        </div>
 
         <div className="news-filters" role="tablist" aria-label="Filter news by hazard">
           {FILTERS.map((f) => (
@@ -150,7 +136,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
           {status === "error" && (
             <div className="news-state">
               <div className="form-error">{error}</div>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => load(filter)}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={retry}>
                 Try again
               </button>
             </div>
@@ -176,7 +162,12 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
 
           {status === "ready" && items.length === 0 && (
             <div className="news-state muted">
-              {filter === "all" ? "No news available right now." : `No ${FILTERS.find((f) => f.key === filter)?.label.toLowerCase()} news in the last 72 hours.`}
+              <p>
+                {filter === "all"
+                  ? "No disaster coverage from GDELT or The Guardian in the last 72 hours."
+                  : `No ${FILTERS.find((f) => f.key === filter)?.label.toLowerCase()} coverage from GDELT or The Guardian in the last 72 hours.`}
+              </p>
+              <p className="news-state-hint">The sources are checked again each time you open this panel.</p>
             </div>
           )}
 
@@ -220,7 +211,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
             </ul>
           )}
         </div>
-      </aside>
+      </div>
     </>
   );
 }
