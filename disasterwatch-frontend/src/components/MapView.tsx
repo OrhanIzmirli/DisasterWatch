@@ -75,13 +75,18 @@ type MapViewProps = {
   highlightId?: number | null;
   /** Called with the disaster id when a marker is clicked. */
   onSelect?: (id: number) => void;
+  /** Markers that get a subtle pulse ring (empty with prefers-reduced-motion; see utils/liveness). */
+  pulseIds?: ReadonlySet<number>;
 };
 
 type MapInnerProps = {
   disasters: MapDisaster[];
   highlightId?: number | null;
   onSelect?: (id: number) => void;
+  pulseIds?: ReadonlySet<number>;
 };
+
+const NO_PULSE: ReadonlySet<number> = new Set();
 
 const TYPE_LABELS: Record<DisasterType, string> = {
   earthquake: "Earthquake",
@@ -136,7 +141,7 @@ const getRadiusBySeverity = (severity: Severity) => {
  * highlighted event is never part of the index: it is always drawn on its
  * own, on top, so a selection can never vanish inside a cluster.
  */
-const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
+const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseIds = NO_PULSE }) => {
   const map = useMap();
   const maxZoom = Number.isFinite(map.getMaxZoom()) ? map.getMaxZoom() : 10;
 
@@ -190,15 +195,18 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
   // Coloured by event TYPE: one solid marker colour, or a ring split
   // proportionally to the type counts (conic-gradient) with the count on a
   // dark disc in the centre so the number stays readable on every colour.
-  const clusterIcon = (count: number, props: ClusterProps) => {
+  // A cluster that holds a pulsing event pulses too (its ring is drawn by CSS, off with reduced motion).
+  const clusterPulses = (clusterId: number) =>
+    pulseIds.size > 0 && clusterLeaves(viewIndex, clusterId).some((leaf) => pulseIds.has(leaf.pointId));
+  const clusterIcon = (count: number, props: ClusterProps, pulse = false) => {
     const r = clusterRadius(count);
     const background = clusterBackground(props);
-    const key = `${background}-${r}-${count}`;
+    const key = `${background}-${r}-${count}${pulse ? "-pulse" : ""}`;
     let icon = iconCache.current.get(key);
     if (!icon) {
       const d = r * 2;
       icon = L.divIcon({
-        html: `<div class="map-cluster" style="width:${d}px;height:${d}px;background:${background}"><span class="map-cluster-count">${count}</span></div>`,
+        html: `<div class="map-cluster${pulse ? " map-cluster-pulse" : ""}" style="width:${d}px;height:${d}px;background:${background}"><span class="map-cluster-count">${count}</span></div>`,
         className: "map-cluster-icon",
         iconSize: [d, d],
         iconAnchor: [r, r],
@@ -306,6 +314,21 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
   }, [map]);
 
   // ---- rendering ----
+  // Pulse ring: a separate, non-interactive circle under a pulsing marker,
+  // animated by CSS (.map-pulse-ring), so the marker itself never moves.
+  const renderPulse = (d: MapDisaster, position: [number, number], extraKey = "") =>
+    pulseIds.has(d.id) ? (
+      <CircleMarker
+        key={`pulse-${d.id}${extraKey}`}
+        center={position}
+        radius={getRadiusBySeverity(d.severity)}
+        interactive={false}
+        className="map-pulse-ring"
+        pathOptions={{ color: getColorByType(d.type), weight: 2, opacity: 0.9, fill: false }}
+        eventHandlers={{ add: (e) => (e.target as L.Path).getElement()?.setAttribute("aria-hidden", "true") }}
+      />
+    ) : null;
+
   const renderPoint = (d: MapDisaster, position: [number, number], isHighlight: boolean, extraKey = "") => {
     const radius = getRadiusBySeverity(d.severity) + (isHighlight ? 3 : 0);
     const markerClass =
@@ -381,14 +404,14 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
       {features.map((f) => {
         if (f.kind === "point") {
           const d = byId.get(f.pointId);
-          return d ? renderPoint(d, [d.lat, d.lng], false) : null;
+          return d ? [renderPulse(d, [d.lat, d.lng]), renderPoint(d, [d.lat, d.lng], false)] : null;
         }
         if (spider && spider.clusterId === f.clusterId) return null; // replaced by the spider below
         return (
           <Marker
             key={`c${f.clusterId}`}
             position={[f.lat, f.lng]}
-            icon={clusterIcon(f.count, f.props)}
+            icon={clusterIcon(f.count, f.props, clusterPulses(f.clusterId))}
             keyboard={true}
             alt={clusterTooltip(f.count, f.props)}
             eventHandlers={{
@@ -426,6 +449,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
         return (
           <Fragment key={`s${leaf.pointId}`}>
             <Polyline positions={[spider!.center, at]} pathOptions={{ color: "#F6E8D9", weight: 1, opacity: 0.6, dashArray: "3 3" }} interactive={false} />
+            {renderPulse(d, [at.lat, at.lng], "-spider")}
             {renderPoint(d, [at.lat, at.lng], false, "-spider")}
           </Fragment>
         );
@@ -437,7 +461,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect }) => {
   );
 };
 
-const MapView: FC<MapViewProps> = ({ disasters, highlightId, onSelect }) => {
+const MapView: FC<MapViewProps> = ({ disasters, highlightId, onSelect, pulseIds }) => {
   const center: [number, number] = [30, 10];
   const zoom = 2.3;
 
@@ -467,7 +491,7 @@ const MapView: FC<MapViewProps> = ({ disasters, highlightId, onSelect }) => {
         url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
       />
 
-      <MapInner disasters={disasters} highlightId={highlightId} onSelect={onSelect} />
+      <MapInner disasters={disasters} highlightId={highlightId} onSelect={onSelect} pulseIds={pulseIds} />
     </MapContainer>
   );
 };

@@ -19,6 +19,7 @@ import NewsPanel from "./components/NewsPanel";
 import StatusBar from "./components/StatusBar";
 import NotificationBell from "./components/NotificationBell";
 import NotFoundPage from "./pages/NotFoundPage";
+import SkipLink from "./components/SkipLink";
 
 export type AuthUser = {
   email: string;
@@ -81,6 +82,7 @@ function shortEmail(email: string, max = 22) {
 
 export default function App() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [isNewsOpen, setIsNewsOpen] = useState(false);
 
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -137,6 +139,8 @@ export default function App() {
 
   return (
     <div className="app-root">
+      {/* first Tab stop on the dashboard: past the header and every map marker, straight to the feed */}
+      {pathname === "/" && <SkipLink />}
       <header className="app-header">
         <div className="logo">
           <div className="logo-mark">DW</div>
@@ -201,7 +205,7 @@ export default function App() {
 
       <div className="page-content">
         <Routes>
-          <Route path="/" element={<DashboardPage />} />
+          <Route path="/" element={<DashboardPage signedIn={Boolean(user)} />} />
 
           <Route
             path="/alerts"

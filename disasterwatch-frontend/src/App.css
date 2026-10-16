@@ -3400,3 +3400,190 @@ button.disaster-row {
 .news-toggle-btn:hover {
   background: #00263a;
 }
+
+/* =========================
+   ENGAGEMENT (feature/engagement)
+   ========================= */
+
+/* Skip link: first Tab stop on the dashboard, visible only while focused */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: 0.75rem;
+  z-index: 1100; /* above the sticky header (1000) */
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  background: #003049;
+  color: var(--dw-cream);
+  border: 2px solid var(--dw-cream);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus {
+  transform: none;
+  outline: 3px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+
+/* Skip target fallback (feed heading) when the feed has no rows yet */
+#disaster-feed-title:focus {
+  outline: none;
+}
+#disaster-feed-title:focus-visible {
+  outline: 3px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+
+/* Headline strip: one sentence from the real feed + the alerts call-to-action */
+.headline-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  margin: 0 1.5rem 1rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 0.9rem;
+  background: var(--dw-card);
+  border: 1px solid var(--dw-border);
+  border-left: 4px solid var(--dw-border);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+.headline-significant {
+  border-left-color: #f59e0b;
+}
+.headline-quiet {
+  border-left-color: #34d399;
+}
+.headline-offline {
+  border-left-color: #9ca3af;
+}
+
+.headline-text {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--dw-text);
+  max-width: 60rem;
+}
+.headline-loading .headline-text,
+.headline-offline .headline-text {
+  font-weight: 500;
+  color: var(--dw-text-muted);
+}
+
+.headline-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  max-width: 22rem;
+}
+.headline-cta-btn {
+  font-size: 0.9rem;
+  padding: 0.6rem 1.2rem;
+}
+.headline-cta-hint {
+  font-size: 0.75rem;
+  color: var(--dw-text-muted);
+  text-align: right;
+  line-height: 1.35;
+}
+
+@media (max-width: 900px) {
+  .headline-strip {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .headline-cta {
+    align-items: stretch;
+    max-width: none;
+  }
+  .headline-cta-hint {
+    text-align: left;
+  }
+}
+
+/* Quiet (non-error) empty states on the cream feed panel */
+.feed-state-quiet {
+  margin: 0;
+  color: #374151;
+  font-weight: 500;
+}
+
+.news-state-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+/* Map caption: data age from the backend */
+.panel-caption-updated {
+  white-space: nowrap;
+}
+
+/* Map liveness: a ring under the newest / recent significant markers, and on
+   clusters that contain one. Subtle (one ring, 2.6 s), never on the marker
+   itself, and switched off entirely with prefers-reduced-motion (the
+   dashboard also stops passing pulse ids, so nothing is even rendered). */
+.map-pulse-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: dw-pulse-ring 2.6s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes dw-pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.map-cluster-pulse {
+  position: relative;
+}
+.map-cluster-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid #f6e8d9;
+  pointer-events: none;
+  animation: dw-pulse-cluster 2.6s ease-out infinite;
+}
+@keyframes dw-pulse-cluster {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  70%,
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+/* Legend sample for the pulse (static ring, no animation) */
+.legend-pulse {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #c1121f;
+  box-shadow: 0 0 0 3px rgba(193, 18, 31, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-pulse-ring,
+  .map-cluster-pulse::after {
+    animation: none;
+    display: none;
+  }
+}
