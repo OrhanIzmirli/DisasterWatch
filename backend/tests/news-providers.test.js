@@ -283,3 +283,29 @@ describe("provider list", () => {
     expect(createNewsProviders({ env: { GUARDIAN_API_KEY: "k" }, gdelt, log: quiet }).map((p) => p.name)).toEqual(["gdelt", "guardian"]);
   });
 });
+
+describe("GDELT settings measured on 2026-10-16 (slow answers, frequent 429)", () => {
+  it("waits 30 s for an answer and caps its backoff below the 15-minute refresh", async () => {
+    const { DEFAULT_TIMEOUT_MS, GDELT_MAX_BACKOFF_MS } = await import("../src/services/gdelt.js");
+    expect(DEFAULT_TIMEOUT_MS).toBe(Number(process.env.GDELT_TIMEOUT_MS) || 30000);
+    expect(GDELT_MAX_BACKOFF_MS).toBeLessThan(15 * 60_000 * 0.75); // even with +25 % jitter
+    const client = createGdeltClient();
+    for (let i = 0; i < 10; i++) client.backoff.failure();
+    expect(client.backoff.retryInMs()).toBeLessThanOrEqual(GDELT_MAX_BACKOFF_MS * 1.25);
+  });
+
+  it("spends each refresh on one broad request: no group searches, 75 records, kept 72 h", async () => {
+    const FEED = [{ id: 1, type: "earthquake", severity: "high", timeMinutesAgo: 60, location: "53 km S of Kushiro, Japan", details: { cleanTitle: "M 6.1 - 53 km S of Kushiro, Japan" } }];
+    const searchArticles = vi.fn(async () => [{ title: "Quake rattles Hokkaido", url: "https://a.jp/1", seendate: "20261013T100000Z" }]);
+    const gdelt = createGdeltProvider({ client: { searchArticles } });
+    expect(gdelt.maxGroupSearches).toBe(0);
+    expect(gdelt.retentionMs).toBe(72 * 3600_000);
+    const { createNewsService } = await import("../src/services/news.service.js");
+    const { createMemoryNewsStore } = await import("../src/services/newsStore.js");
+    const svc = createNewsService({ providers: [gdelt], store: createMemoryNewsStore(), loadEvents: async () => FEED, now: () => new Date("2026-10-13T12:00:00Z"), log: quiet });
+    await svc.refresh();
+    expect(searchArticles).toHaveBeenCalledTimes(1);
+    expect(searchArticles.mock.calls[0][0].maxRecords).toBe(75);
+    expect(svc.getNews().items.map((a) => a.title)).toEqual(["Quake rattles Hokkaido"]);
+  });
+});

@@ -1,0 +1,47 @@
+{
+  "source": "Synthetic stand-ins for the cases seen on the live news panel on 2026-10-16. Headlines are paraphrased and URLs are example.com; no third-party article text. The real before/after lists are kept only in the git-ignored report.",
+  "items": [
+    {
+      "title": "A perfect storm: how a strong El Niño is hurting coastal fishing fleets",
+      "url": "https://news.example.com/news/2026/oct/15/perfect-storm-el-nino-fishing-fleets",
+      "domain": "news.example.com",
+      "publishedAt": "2026-10-15T04:00:00.000Z",
+      "provider": "guardian"
+    },
+    {
+      "title": "Hurricane and tropical storm leave five dead along Mexico's Pacific coast",
+      "url": "https://news.example.com/world/2026/oct/13/mexico-hurricane-tropical-storm-five-dead",
+      "domain": "news.example.com",
+      "publishedAt": "2026-10-13T04:30:00.000Z",
+      "provider": "guardian"
+    },
+    {
+      "title": "Wildfire linked to El Niño destroys hundreds of homes in Indonesia",
+      "url": "https://news.example.com/world/2026/oct/13/indonesia-wildfire-homes-destroyed",
+      "domain": "news.example.com",
+      "publishedAt": "2026-10-13T16:30:00.000Z",
+      "provider": "guardian"
+    },
+    {
+      "title": "Firms that raced into AI are now scaling back",
+      "url": "https://news.example.com/technology/2026/oct/13/firms-scale-back-ai",
+      "domain": "news.example.com",
+      "publishedAt": "2026-10-13T15:00:00.000Z",
+      "provider": "guardian"
+    },
+    {
+      "title": "Summer camp flood leads to criminal inquiry and calls for safety rules",
+      "url": "https://news.example.com/us/2026/oct/16/summer-camp-flood-inquiry",
+      "domain": "news.example.com",
+      "publishedAt": "2026-10-16T09:00:00.000Z",
+      "provider": "gdelt"
+    },
+    {
+      "title": "Documentary about a wildfire warning airs tonight",
+      "url": "https://news.example.com/uk/2026/oct/16/wildfire-documentary-tonight",
+      "domain": "news.example.com",
+      "publishedAt": "2026-10-16T10:00:00.000Z",
+      "provider": "gdelt"
+    }
+  ]
+}

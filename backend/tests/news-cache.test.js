@@ -18,7 +18,7 @@ function provider(name, { group = async () => [], general = async () => [], refr
 const gdeltOk = () =>
   provider("gdelt", {
     group: async () => [article("Nepal floods: rivers burst banks", "https://b.np/2", "gdelt")],
-    general: async () => [article("Floods in review", "https://c.com/3", "gdelt")],
+    general: async () => [article("Floods hit Bangladesh lowlands", "https://c.com/3", "gdelt")],
   });
 const failing = (name) => provider(name, { group: async () => { throw new Error("down"); }, general: async () => { throw new Error("down"); } });
 
@@ -64,7 +64,7 @@ describe("NewsCache persistence", () => {
     const a = createNewsService({ providers: [gdeltOk()], store, loadEvents: async () => EVENTS, now: () => T0, log: quiet });
     await a.refresh();
     const b = createNewsService({
-      providers: [provider("gdelt", { general: async () => [article("Only this storm", "https://d.com/4", "gdelt")] })],
+      providers: [provider("gdelt", { general: async () => [article("Storm kills two as rivers rise", "https://d.com/4", "gdelt")] })],
       store,
       loadEvents: async () => EVENTS,
       now: () => new Date(T0.getTime() + 15 * 60_000),

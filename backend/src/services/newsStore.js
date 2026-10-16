@@ -21,7 +21,8 @@ function toRow(item, position, fetchedAt) {
     provider: item.provider,
     relatedEvent: item.relatedEvent ?? undefined,
     position,
-    fetchedAt,
+    // each provider keeps the time of its own fetch (merged cache)
+    fetchedAt: item.fetchedAt ? new Date(item.fetchedAt) : fetchedAt,
     expiresAt: item.expiresAt ? new Date(item.expiresAt) : null,
   };
 }
@@ -35,6 +36,7 @@ function fromRow(row) {
     image: row.image,
     provider: row.provider,
     relatedEvent: row.relatedEvent ?? null,
+    fetchedAt: row.fetchedAt ? row.fetchedAt.toISOString() : null,
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
   };
 }
@@ -49,7 +51,8 @@ export function createPrismaNewsStore(db = prisma) {
       await this.purgeExpired(now);
       const rows = await db.newsCache.findMany({ orderBy: { position: "asc" } });
       if (rows.length === 0) return null;
-      return { items: rows.map(fromRow), fetchedAt: rows[0].fetchedAt.toISOString() };
+      const latest = rows.reduce((m, r) => (r.fetchedAt > m ? r.fetchedAt : m), rows[0].fetchedAt);
+      return { items: rows.map(fromRow), fetchedAt: latest.toISOString() };
     },
     async save(items, fetchedAt) {
       const at = new Date(fetchedAt);

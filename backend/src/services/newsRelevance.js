@@ -1,0 +1,172 @@
+/**
+ * Is this article disaster/hazard news? Applied to EVERY article from every
+ * provider (group and general searches) before it reaches the cache.
+ *
+ * Conservative by design: dropping a borderline article is preferred to
+ * showing an irrelevant one. The check reads the headline, the standfirst
+ * when the provider sends one (The Guardian; never cached), and the URL path
+ * (section). Rules, in order:
+ *
+ *  1. Non-news sections and formats are dropped (sport, business,
+ *     technology, culture, opinion, lifestyle, interactives, ...): a hazard
+ *     word there is almost always a metaphor, a review or a feature.
+ *     Headlines of reviews, listings and features ("documentary",
+ *     "screened tonight", "review", ...) are dropped as well.
+ *  2. Idioms and names are removed from the text before matching
+ *     ("perfect storm", "storm of criticism", "flood of", "spread like
+ *     wildfire", "political earthquake", "Carolina Hurricanes", ...).
+ *  3. A STRONG hazard term in the headline keeps the article
+ *     (earthquake, tsunami, wildfire, bushfire, hurricane, typhoon,
+ *     cyclone, tornado, landslide, flooding, eruption, ...).
+ *  4. A WEAK term (storm, flood, tremor, deluge, heavy rain, ...) in the headline
+ *     keeps it only together with an impact or weather word in the headline
+ *     or standfirst (killed, dead, evacuated, homes, damage, rain, winds,
+ *     landfall, warning, magnitude, ...).
+ *  5. A STRONG term only in the standfirst keeps it only when the headline
+ *     carries an impact word ("Thousands flee as river rises" + "Flash
+ *     flood warnings issued").
+ *  Anything else is dropped.
+ *
+ *   isDisasterNews(article) -> { keep: boolean, reason: string }
+ */
+
+/** URL path segments of sections / formats that are not disaster reporting. */
+const EXCLUDED_SECTIONS = new Set([
+  "sport", "sports", "football", "soccer", "cricket", "tennis", "rugby", "rugby-union", "rugby-league", "golf", "formulaone", "f1", "nba", "nfl", "nhl", "mlb", "wnba",
+  "business", "money", "markets", "finance", "technology", "tech",
+  "culture", "film", "films", "movies", "music", "books", "tv-and-radio", "tv", "stage", "artanddesign", "games", "gaming", "entertainment", "celebrity", "arts",
+  "lifeandstyle", "lifestyle", "fashion", "food", "travel", "wellness",
+  "commentisfree", "opinion", "opinions", "editorial", "letters", "obituaries",
+  "crosswords", "puzzles", "ng-interactive", "interactive", "gallery", "video", "podcasts", "live", "liveblog",
+]);
+
+/** Removed before matching: figures of speech and names that contain a hazard word. */
+const IDIOMS = [
+  /\bperfect storm\b/g,
+  /\bstorms? of (criticism|protest|protests|controversy|outrage|anger|abuse|tweets|posts|applause|questions|complaints)\b/g,
+  /\b(fire|brain|media|political|social[- ]media|twitter|shit)storms?\b/g,
+  /\bweather(ed|ing|s)? (the|a|this) storm\b/g,
+  /\bby storm\b/g,
+  /\bstorm in a (tea ?cup|teapot)\b/g,
+  /\bstorm(s|ed|ing)? (out|off|the|into|onto|to (power|victory|the top))\b/g,
+  /\bdesert storm\b/g,
+  /\bstormzy\b/g,
+  /\b(political|electoral|seismic shift|youth) ?quakes?\b/g,
+  /\b(political|electoral|financial|market|diplomatic|cultural) earthquakes?\b/g,
+  /\bfloods? of (applications|money|cash|investment|imports|complaints|tears|calls|emails|refugees|migrants|orders|bids|content|requests|interest)\b/g,
+  /\bfloodgates\b/g,
+  /\bflooded (with|by) (calls|messages|complaints|applications|orders|requests|offers)\b/g,
+  /\bflood(ing|ed)? the (market|zone)\b/g,
+  /\b(spread|spreading|spreads) like wildfire\b/g,
+  /\blike (a )?wildfire\b/g,
+  /\b(carolina|miami) hurricanes\b/g,
+  /\bseattle storm\b/g,
+  /\b(iowa state )?cyclones (beat|win|lose|fall|rally)\b/g,
+  /\b(eurofighter )?typhoon (jets?|fighters?|aircraft|squadron)\b/g,
+  /\beurofighter\b/g,
+  /\bstorm (shadow|missiles?)\b/g,
+];
+
+/** Unambiguous hazard terms. */
+const STRONG = [
+  "earthquake", "earthquakes", "quake", "quakes", "aftershock", "aftershocks", "tsunami", "tsunamis",
+  "wildfire", "wildfires", "bushfire", "bushfires", "forest fire", "forest fires", "brush fire", "brush fires", "brushfire", "brushfires", "grassfire", "grassfires",
+  "hurricane", "hurricanes", "cyclone", "cyclones", "typhoon", "typhoons", "super typhoon", "tropical storm", "tropical storms", "tornado", "tornadoes", "landfall",
+  "flooding", "floods", "flash flood", "flash floods", "floodwater", "floodwaters",
+  "flood watch", "flood warning", "flood warnings", "storm warning", "storm warnings", "storm watch", "storm surge", "severe storm", "severe storms",
+  "landslide", "landslides", "mudslide", "mudslides",
+  "volcano", "volcanoes", "volcanic eruption", "eruption", "erupts", "erupted",
+  "natural disaster", "natural disasters",
+];
+
+/** Hazard words that are also everyday words: need impact context. */
+// Plain "fire"/"blaze" and "evacuation" are deliberately absent: a building fire or a gas-leak evacuation is not hazard news.
+const WEAK = ["storm", "storms", "flood", "flooded", "tremor", "tremors", "deluge", "inundated", "monsoon", "heavy rain", "torrential rain"];
+
+/** Impact / weather context that turns a weak term into hazard news. */
+const IMPACT = [
+  "kill", "kills", "killed", "killing", "dead", "death", "deaths", "die", "dies", "died", "toll", "missing", "injured", "injuries", "casualties", "victims", "survivors", "bodies",
+  "evacuate", "evacuated", "evacuation", "evacuations", "evacuees", "flee", "flees", "fled", "rescue", "rescued", "rescuers", "stranded", "trapped", "displaced", "homeless",
+  "homes", "houses", "buildings", "destroyed", "destroys", "razes", "razed", "damage", "damaged", "damages", "devastated", "devastation", "collapsed", "swept away", "submerged",
+  "power cut", "power cuts", "outage", "outages", "blackout", "blackouts",
+  "rain", "rains", "rainfall", "winds", "wind", "gusts", "landfall", "surge", "storm surge", "warning", "warnings", "alert", "alerts", "red alert", "magnitude", "epicentre", "epicenter",
+  "emergency", "state of emergency", "relief", "aid", "disaster", "hectares", "acres", "firefighters", "batters", "battered", "lashes", "lashed", "pounds", "pounded",
+];
+
+/** Headline words of reviews, listings and features: a hazard word there is usually a title, not news. */
+const FEATURE_MARKERS = /\b(documentary|review|reviewed|screened|screening|premiere|episode|box set|tv tonight|what to watch|album|novel|exhibition|podcast|recipe|quiz|crossword|obituary)\b/;
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/** Whole-word / whole-phrase match on lower-cased text. */
+function has(text, term) {
+  let from = 0;
+  for (;;) {
+    const i = text.indexOf(term, from);
+    if (i === -1) return false;
+    const before = i === 0 ? "" : text[i - 1];
+    const after = text[i + term.length] ?? "";
+    if (!WORD_CHAR.test(before) && !WORD_CHAR.test(after)) return true;
+    from = i + 1;
+  }
+}
+
+const first = (text, terms) => terms.find((t) => has(text, t)) ?? null;
+
+function normalise(s) {
+  let t = String(s ?? "")
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .replace(/\s+/g, " ");
+  for (const re of IDIOMS) t = t.replace(re, " ");
+  return t;
+}
+
+/** Path segments of the article URL, lower-cased ("" segments dropped). */
+function pathSegments(url) {
+  try {
+    return new URL(url).pathname.toLowerCase().split("/").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** First excluded section/format in the URL path, else null. Only the leading segments name a section. */
+export function excludedSection(url) {
+  const segs = pathSegments(url).slice(0, 3);
+  return segs.find((s) => EXCLUDED_SECTIONS.has(s)) ?? null;
+}
+
+export function isDisasterNews(article) {
+  const section = excludedSection(article?.url);
+  if (section) return { keep: false, reason: `section "${section}"` };
+
+  const headline = normalise(article?.title);
+  const standfirst = normalise(article?.summary);
+
+  const feature = headline.match(FEATURE_MARKERS);
+  if (feature) return { keep: false, reason: `feature/listing ("${feature[1]}")` };
+
+  const strongHead = first(headline, STRONG);
+  if (strongHead) return { keep: true, reason: `headline names "${strongHead}"` };
+
+  const weakHead = first(headline, WEAK);
+  if (weakHead) {
+    // the weak phrase itself never counts as its own context ("heavy rain" is not impact for "heavy rain")
+    const without = (text) => text.split(weakHead).join(" ");
+    const impact = first(without(headline), IMPACT) ?? first(without(standfirst), IMPACT);
+    if (impact) return { keep: true, reason: `headline "${weakHead}" with impact "${impact}"` };
+    const strongStand = first(standfirst, STRONG);
+    if (strongStand) return { keep: true, reason: `headline "${weakHead}", standfirst names "${strongStand}"` };
+    return { keep: false, reason: `"${weakHead}" without disaster context` };
+  }
+
+  const strongStand = first(standfirst, STRONG);
+  if (strongStand) {
+    const impact = first(headline, IMPACT);
+    if (impact) return { keep: true, reason: `standfirst names "${strongStand}", headline impact "${impact}"` };
+    return { keep: false, reason: `hazard "${strongStand}" only in the standfirst` };
+  }
+
+  return { keep: false, reason: "no hazard term in the headline" };
+}

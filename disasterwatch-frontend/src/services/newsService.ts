@@ -32,9 +32,10 @@ export type NewsResponse = {
   count: number;
   updatedAt: string | null;
   stale: boolean;
-  /** Label of the provider that produced the current cache ("GDELT" | "The Guardian"). */
+  /** Labels of the providers in the current cache: "GDELT", "The Guardian" or "GDELT + The Guardian". */
   source?: string;
-  provider?: NewsProvider | null;
+  /** "gdelt", "guardian" or "gdelt+guardian" (merged cache). */
+  provider?: string | null;
 };
 
 export class NewsError extends Error {

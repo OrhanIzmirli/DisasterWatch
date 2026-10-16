@@ -5,7 +5,7 @@
  * and answers rate-limit violations with HTTP 429 and a plain-text body
  * (not JSON). Everything here is defensive:
  *  - one request at a time, spaced >= MIN_GAP_MS apart (global throttle);
- *  - AbortController timeout (default 8 s);
+ *  - AbortController timeout (default 30 s: real answers take 15-20 s);
  *  - non-JSON or non-2xx responses throw a typed GdeltError;
  *  - after a failure (429 above all) the client backs off exponentially
  *    with jitter (src/services/backoff.js): calls made while the backoff
@@ -17,7 +17,11 @@ import { createBackoffGate } from "./backoff.js";
 
 export const GDELT_ENDPOINT = "https://api.gdeltproject.org/api/v2/doc/doc";
 export const MIN_GAP_MS = 5000;
-export const DEFAULT_TIMEOUT_MS = Number(process.env.GDELT_TIMEOUT_MS) || 8000;
+// Measured 2026-10-16: successful DOC API answers take 15-20 s (429s come back in ~10 s), so the
+// old 8 s timeout aborted every answer that would have succeeded.
+export const DEFAULT_TIMEOUT_MS = Number(process.env.GDELT_TIMEOUT_MS) || 30000;
+/** Backoff cap below the 15-minute refresh interval, so a closed gate never skips a whole refresh. */
+export const GDELT_MAX_BACKOFF_MS = 10 * 60_000;
 
 export class GdeltError extends Error {
   constructor(message, kind, status = null) {
@@ -104,7 +108,7 @@ export function createGdeltClient({
   fetchImpl = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   throttle = createThrottle(),
-  backoff = createBackoffGate({ name: "GDELT" }),
+  backoff = createBackoffGate({ name: "GDELT", maxMs: GDELT_MAX_BACKOFF_MS }),
 } = {}) {
   return {
     async searchArticles(options) {

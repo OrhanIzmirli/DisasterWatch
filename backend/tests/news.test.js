@@ -160,7 +160,7 @@ describe("createThrottle", () => {
   });
 });
 
-describe("news service: combined searches, failover, persistence and stale behaviour", () => {
+describe("news service: combined searches, merged providers, persistence and stale behaviour", () => {
   const EVENTS = [
     { id: 1, type: "earthquake", severity: "high", timeMinutesAgo: 60, location: "53 km S of Kushiro, Japan", lat: 42.5, lng: 144.4, details: { cleanTitle: "M 6.1 - 53 km S of Kushiro, Japan", occurredAt: "2026-10-13T09:00:00.000Z" } },
     { id: 2, type: "flood", severity: "medium", timeMinutesAgo: 600, location: "Flood in Nepal 1104225", lat: 27.9, lng: 85.3, details: { cleanTitle: "Flood in Nepal", occurredAt: "2026-10-13T00:00:00.000Z" } },
@@ -187,7 +187,7 @@ describe("news service: combined searches, failover, persistence and stale behav
         if (g.type === "flood") return [article("Nepal floods", "https://b.np/2", { provider: "gdelt" })];
         return [];
       },
-      general: async () => [article("Earthquakes of 2026 in review", "https://c.com/3", { provider: "gdelt" }), article("Quake near Kushiro", "https://a.jp/1", { provider: "gdelt" })],
+      general: async () => [article("Earthquake swarm continues off Honshu", "https://c.com/3", { provider: "gdelt" }), article("Quake near Kushiro", "https://a.jp/1", { provider: "gdelt" })],
     });
   const failing = (name, message = "rate limit") =>
     fakeProvider(name, {
@@ -246,7 +246,7 @@ describe("news service: combined searches, failover, persistence and stale behav
     expect(guardian.searchGroup.mock.calls.length + guardian.searchGeneral.mock.calls.length).toBe(4);
   });
 
-  it("falls back to the next provider when the primary yields nothing, and switches to its 30-minute interval", async () => {
+  it("serves The Guardian when GDELT fails, without waiting for GDELT (merged, not failover)", async () => {
     const gdelt = failing("gdelt");
     const guardian = fakeProvider("guardian", {
       group: async (g) => (g.type === "flood" ? [article("Nepal monsoon floods", "https://www.theguardian.com/world/nepal-floods", { provider: "guardian" })] : []),
@@ -263,23 +263,62 @@ describe("news service: combined searches, failover, persistence and stale behav
     expect(res.stale).toBe(false);
     expect(res.items).toHaveLength(1);
     expect(res.items[0].relatedEvent?.id).toBe(2);
-    expect(svc.nextIntervalMs()).toBe(30 * 60_000);
-    expect(gdelt.searchGeneral).toHaveBeenCalledTimes(1);
+    // the loop ticks at the shortest provider interval; each provider only runs when its own interval has passed
+    expect(svc.nextIntervalMs()).toBe(15 * 60_000);
     // persisted with the licence expiry
     expect(store.saved.items[0].expiresAt).toBe("2026-10-15T10:00:00.000Z");
+    // /health tells why GDELT contributed nothing
+    expect(svc.status().providers.gdelt).toMatchObject({ articles: 0, lastErrorKind: "rate-limit", lastSuccessAt: null });
+    expect(svc.status().providers.guardian).toMatchObject({ articles: 1, lastError: null });
   });
 
-  it("does not call the fallback when the primary partially succeeded", async () => {
+  it("merges GDELT and Guardian articles, and keeps a provider's previous articles when it fails later", async () => {
+    let gdeltDown = false;
     const gdelt = fakeProvider("gdelt", {
-      group: async () => { throw new GdeltError("timed out", "timeout"); },
-      general: async () => [article("Flood watch", "https://x.com/1", { provider: "gdelt" })],
+      general: async () => {
+        if (gdeltDown) throw new GdeltError("rate limit", "rate-limit", 429);
+        return [article("Flood watch issued for Nepal valleys", "https://x.com/1", { provider: "gdelt", publishedAt: "2026-10-13T08:00:00.000Z" })];
+      },
     });
-    const guardian = fakeProvider("guardian");
+    const guardian = fakeProvider("guardian", {
+      general: async () => [article("Earthquake shakes Hokkaido", "https://www.theguardian.com/world/2", { provider: "guardian", publishedAt: "2026-10-13T09:00:00.000Z" })],
+      refreshIntervalMs: 30 * 60_000,
+      retentionMs: 24 * 3600_000,
+    });
     const svc = createNewsService({ providers: [gdelt, guardian], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
     await svc.refresh();
-    expect(svc.getNews().items).toHaveLength(1);
-    expect(guardian.searchGroup).not.toHaveBeenCalled();
-    expect(guardian.searchGeneral).not.toHaveBeenCalled();
+    let res = svc.getNews();
+    expect(res.provider).toBe("gdelt+guardian");
+    expect(res.source).toBe("GDELT + The Guardian");
+    expect(res.items.map((a) => a.provider).sort()).toEqual(["gdelt", "guardian"]);
+
+    gdeltDown = true;
+    await svc.refresh();
+    res = svc.getNews();
+    expect(res.items.map((a) => a.url).sort()).toEqual(["https://www.theguardian.com/world/2", "https://x.com/1"]);
+    expect(res.stale).toBe(false); // The Guardian refreshed
+    expect(svc.status().providers.gdelt.lastErrorKind).toBe("rate-limit");
+    expect(svc.status().providers.gdelt.articles).toBe(1);
+  });
+
+  it("in the background loop runs each provider only when its own interval has passed", async () => {
+    let t = T0;
+    const gdelt = fakeProvider("gdelt", { general: async () => [article("Quake near Kushiro", "https://a.jp/1", { provider: "gdelt" })] });
+    const guardian = fakeProvider("guardian", {
+      general: async () => [article("Nepal floods", "https://www.theguardian.com/world/3", { provider: "guardian" })],
+      refreshIntervalMs: 30 * 60_000,
+      retentionMs: 24 * 3600_000,
+    });
+    const svc = createNewsService({ providers: [gdelt, guardian], store: createMemoryNewsStore(), loadEvents: async () => EVENTS, now: () => t, log: quiet });
+    await svc.refresh({ onlyDue: true });
+    t = new Date(T0.getTime() + 15 * 60_000);
+    await svc.refresh({ onlyDue: true });
+    expect(gdelt.searchGeneral).toHaveBeenCalledTimes(2);
+    expect(guardian.searchGeneral).toHaveBeenCalledTimes(1);
+    t = new Date(T0.getTime() + 30 * 60_000);
+    await svc.refresh({ onlyDue: true });
+    expect(gdelt.searchGeneral).toHaveBeenCalledTimes(3);
+    expect(guardian.searchGeneral).toHaveBeenCalledTimes(2);
   });
 
   it("serves the last good cache with stale: true when every provider fails, and recovers", async () => {
