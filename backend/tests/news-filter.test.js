@@ -9,18 +9,19 @@ const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, 
 const quiet = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const keep = (title, extra = {}) => isDisasterNews({ title, url: "https://news.example.com/world/2026/oct/16/story", ...extra }).keep;
 
-describe("relevance filter on today's live panel (production, 2026-10-16)", () => {
-  it("drops the AI technology story and the 'perfect storm' fishing feature, keeps the disaster reports", () => {
-    const { items } = fixture("news-live-2026-10-16.json");
+describe("relevance filter on the cases seen on the live panel (synthetic sample, 2026-10-16)", () => {
+  it("drops the idiom, the technology story, the borderline follow-up and the TV listing; keeps the disaster reports", () => {
+    const { items } = fixture("news-panel-sample.json");
     const shown = items.filter((a) => isDisasterNews(a).keep).map((a) => a.title);
     expect(shown).toEqual([
-      "Hurricane Simon and Tropical Storm Rachel kill five people on Mexico’s Pacific coast",
-      "Indonesia wildfire fuelled by El Niño razes almost 300 homes ",
+      "Hurricane and tropical storm leave five dead along Mexico's Pacific coast",
+      "Wildfire linked to El Niño destroys hundreds of homes in Indonesia",
     ]);
-    const ai = items.find((a) => a.title.startsWith("Companies rushed in on AI"));
-    expect(isDisasterNews(ai)).toEqual({ keep: false, reason: 'section "technology"' });
-    const fishing = items.find((a) => a.title.startsWith("A perfect storm"));
-    expect(isDisasterNews(fishing).keep).toBe(false);
+    const reason = (prefix) => isDisasterNews(items.find((a) => a.title.startsWith(prefix))).reason;
+    expect(reason("Firms that raced into AI")).toBe('section "technology"');
+    expect(reason("A perfect storm")).toBe("no hazard term in the headline");
+    expect(reason("Summer camp flood")).toBe('"flood" without disaster context');
+    expect(reason("Documentary about a wildfire")).toBe('feature/listing ("documentary")');
   });
 
   it("keeps only the disaster stories of the 2026-10-14 Guardian sample", () => {
@@ -82,7 +83,7 @@ describe("hazard terms", () => {
 describe("idioms, names and non-news sections", () => {
   it("ignores figures of speech and names that contain a hazard word", () => {
     for (const t of [
-      "A perfect storm: how El Niño is devastating the fishing industry",
+      "A perfect storm: why the fishing season went so badly",
       "Minister faces storm of criticism over visa plan",
       "Firestorm over the new stadium deal",
       "Brainstorming session for the new budget",
@@ -99,38 +100,38 @@ describe("idioms, names and non-news sections", () => {
   });
 
   it("drops non-news sections and formats, even with a hazard word", () => {
-    expect(excludedSection("https://www.theguardian.com/sport/2026/oct/16/hurricanes-win")).toBe("sport");
-    expect(excludedSection("https://www.theguardian.com/world/2026/oct/16/quake")).toBeNull();
-    expect(isDisasterNews({ title: "Insurers count the cost of Hurricane Simon", url: "https://www.theguardian.com/business/2026/oct/16/insurers" }).keep).toBe(false);
-    expect(isDisasterNews({ title: "The floods were a warning we ignored", url: "https://www.theguardian.com/commentisfree/2026/oct/16/floods" }).keep).toBe(false);
-    expect(isDisasterNews({ title: "Inside an abandoned Thai theme park, empty since the flooding", url: "https://www.theguardian.com/world/ng-interactive/2026/oct/14/park" }).keep).toBe(false);
+    expect(excludedSection("https://news.example.com/sport/2026/oct/16/hurricanes-win")).toBe("sport");
+    expect(excludedSection("https://news.example.com/world/2026/oct/16/quake")).toBeNull();
+    expect(isDisasterNews({ title: "Insurers count the cost of Hurricane Simon", url: "https://news.example.com/business/2026/oct/16/insurers" }).keep).toBe(false);
+    expect(isDisasterNews({ title: "The floods were a warning we ignored", url: "https://news.example.com/commentisfree/2026/oct/16/floods" }).keep).toBe(false);
+    expect(isDisasterNews({ title: "Inside an abandoned Thai theme park, empty since the flooding", url: "https://news.example.com/world/ng-interactive/2026/oct/14/park" }).keep).toBe(false);
   });
 
   it("drops GDELT body-text matches whose headline names no hazard", () => {
-    expect(keep("India and Myanmar sign MoUs on five quick impact projects")).toBe(false);
+    expect(keep("Two governments sign agreements on small development projects")).toBe(false);
   });
 
-  it("drops reviews and TV listings whose title contains a hazard word (GDELT, 2026-10-16)", () => {
-    expect(keep("BBC documentary Wildfire - A Warning From the Midland screened tonight")).toBe(false);
+  it("drops reviews and TV listings whose title contains a hazard word (GDELT shapes)", () => {
+    expect(keep("Wildfire drama screened tonight on national TV")).toBe(false);
     expect(keep("Twister review: a tornado of a sequel")).toBe(false);
-    // the real GDELT stories of the same day stay
-    expect(keep("El Nino rains flood South America , sending residents fleeing and cattle swimming")).toBe(true);
-    expect(keep("Guam faces third powerful typhoon in months as Champi approaches")).toBe(true);
-    expect(keep("Malibu wildfire rages , triggering evacuations in Southern California")).toBe(true);
+    // hazard reports in GDELT's headline style (stray spaces before punctuation) stay
+    expect(keep("Heavy rains flood river towns , residents flee to higher ground")).toBe(true);
+    expect(keep("Island braces for a third typhoon in two months")).toBe(true);
+    expect(keep("Coastal wildfire spreads , forcing evacuations")).toBe(true);
   });
 });
 
 describe("the service filters every search, not only the general one", () => {
   it("drops an off-topic article returned by a group search (it used to pass unchecked)", async () => {
-    const mk = (title, url) => ({ title, url, domain: "theguardian.com", publishedAt: "2026-10-16T08:00:00.000Z", image: null, provider: "guardian" });
+    const mk = (title, url) => ({ title, url, domain: "news.example.com", publishedAt: "2026-10-16T08:00:00.000Z", image: null, provider: "guardian" });
     const provider = {
       name: "guardian",
       label: "The Guardian",
       refreshIntervalMs: 1,
       retentionMs: null,
       searchGroup: async () => [
-        mk("Companies rushed in on AI. Now some are pulling back", "https://www.theguardian.com/technology/2026/oct/13/ai-companies-rushed-workers-fallout"),
-        mk("Hurricane Simon kills five in Mexico", "https://www.theguardian.com/world/2026/oct/13/simon"),
+        mk("Firms that raced into AI are now scaling back", "https://news.example.com/technology/2026/oct/13/firms-scale-back-ai"),
+        mk("Hurricane Simon kills five in Mexico", "https://news.example.com/world/2026/oct/13/simon"),
       ],
       searchGeneral: async () => [],
     };
