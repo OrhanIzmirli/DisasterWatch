@@ -100,8 +100,8 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
   return (
     <>
       <div className="news-overlay" onClick={onClose} />
-      <aside className="news-panel" role="dialog" aria-modal="true" aria-label="Latest news">
-        <header className="news-header">
+      <div className="news-panel" role="dialog" aria-modal="true" aria-label="Latest news">
+        <div className="news-header">
           <div>
             <h2>Latest news</h2>
             {status === "ready" && updatedText && (
@@ -113,7 +113,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
           <button className="news-close-btn" onClick={onClose} aria-label="Close">
             ✕
           </button>
-        </header>
+        </div>
 
         <div className="news-filters" role="tablist" aria-label="Filter news by hazard">
           {FILTERS.map((f) => (
@@ -211,7 +211,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
             </ul>
           )}
         </div>
-      </aside>
+      </div>
     </>
   );
 }
