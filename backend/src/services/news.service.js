@@ -8,24 +8,32 @@
  *    refresh costs at most 4 provider requests; articles are linked to their
  *    event on our side (src/services/newsLinking.js), which powers
  *    "Show on map" in the news panel;
- *  - every provider runs (src/services/newsProviders: GDELT, plus The
- *    Guardian when GUARDIAN_API_KEY is set) and the panel shows their
- *    articles merged. Each provider keeps its own last good share: one that
- *    fails (429, timeout, backoff) keeps serving what it fetched before
- *    until that expires. Each provider runs at its own interval (GDELT
- *    15 min, Guardian 30 min);
+ *  - every provider runs (src/services/newsProviders: GDELT, GDACS media
+ *    news, plus The Guardian when GUARDIAN_API_KEY is set) and the panel
+ *    shows their articles merged. Each provider keeps its own last good
+ *    share: one that fails (429, timeout, backoff) keeps serving what it
+ *    fetched before until that expires. Each provider runs at its own
+ *    interval (GDELT 15 min, Guardian and GDACS 30 min). GDACS does not
+ *    search: it lists the media articles of each feed event that links to
+ *    a GDACS report, so its articles arrive linked to their event;
+ *  - every article is placed for the region filter (src/services/newsLocation.js:
+ *    linked event -> Guardian tags -> GDACS event country), or left
+ *    unlocated (listed only under "All regions");
  *  - every article must pass the disaster-news relevance rules
  *    (src/services/newsRelevance.js), whatever search returned it;
  *  - every successful refresh is written to the NewsCache table and loaded
  *    back on start-up, so a restart serves the previous articles at once;
  *  - Guardian articles expire 24 h after they were fetched (licence);
- *  - when a refresh fails, the previous cache is served with stale: true;
+ *  - stale: true when every provider that still contributes articles failed
+ *    its last attempt (or the whole refresh failed), so a fresh Guardian
+ *    share is not reported stale just because GDELT was rate-limited;
  *    when there is no cache at all, getNews() throws NewsUnavailableError.
  *
  * Everything external is injectable for tests.
  */
 import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, MAX_EVENT_QUERIES } from "./newsLinking.js";
 import { isDisasterNews } from "./newsRelevance.js";
+import { withLocation } from "./newsLocation.js";
 import { createNewsProviders } from "./newsProviders/index.js";
 import { fetchNasaEventsRated } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
@@ -40,6 +48,7 @@ export const GROUP_LIMIT = 25;
 export const MAX_REQUESTS_PER_REFRESH = MAX_EVENT_QUERIES + 1;
 const EVENT_WINDOW_MS = 24 * 3600 * 1000;
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2, unrated: 3 };
+const PROVIDER_LABELS = { gdelt: "GDELT", guardian: "The Guardian", gdacs: "GDACS" };
 
 export class NewsUnavailableError extends Error {
   constructor(message) {
@@ -82,6 +91,7 @@ function relatedEventOf(ev) {
     location: eventLabel(ev),
     lat: ev.lat,
     lng: ev.lng,
+    country: ev.country ?? null,
   };
 }
 
@@ -166,6 +176,29 @@ async function runPlan(provider, plan, top, log) {
   return { items, failures, attempted: requests, lastFailure, lastFailureKind, dropped, linkedCount: items.filter((a) => a.relatedEvent).length };
 }
 
+/**
+ * Runs a per-event provider (GDACS media news) over the feed events. Its
+ * articles come already linked to their event; the relevance rules still
+ * apply. Same result shape as runPlan.
+ */
+async function runEvents(provider, events, log) {
+  const dropped = [];
+  const out = await provider.searchEvents(events);
+  if (out.failures) log.warn(`[news] ${provider.label}: ${out.failures} of ${out.attempted} event lookups failed (last: ${out.lastFailure})`);
+  const relevant = relevantOnly(out.articles, provider, "event media", log, dropped);
+  const items = dedupeArticles(relevant.map((a) => attachEvent(a, a.event)));
+  return {
+    items,
+    // nothing to ask is not a failure; every lookup failing is
+    failures: out.attempted > 0 && out.failures === out.attempted ? out.failures : 0,
+    attempted: out.attempted,
+    lastFailure: out.lastFailure,
+    lastFailureKind: out.lastFailureKind,
+    dropped,
+    linkedCount: items.filter((a) => a.relatedEvent).length,
+  };
+}
+
 export function createNewsService({
   providers = null,
   store = null,
@@ -175,7 +208,7 @@ export function createNewsService({
   topEvents = TOP_EVENTS,
 } = {}) {
   let cache = null; // { items, updatedAt, provider }
-  let lastRefreshFailed = false;
+  let lastRefreshFailed = false; // the whole pass failed (feed unreadable, unexpected error)
   let refreshedOnce = false; // a refresh attempt completed in this process
   let lastError = null;
   let refreshing = null;
@@ -184,7 +217,7 @@ export function createNewsService({
   /**
    * Per provider: its last good articles (kept until it succeeds again or they
    * expire) and what happened on its last attempt, for /health.
-   *   name -> { items, fetchedAt, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, lastCount, dropped }
+   *   name -> { items, fetchedAt, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, lastCount, dropped, failedLast }
    */
   const states = new Map();
 
@@ -207,7 +240,7 @@ export function createNewsService({
 
   function stateOf(name) {
     if (!states.has(name)) {
-      states.set(name, { items: [], fetchedAt: null, lastAttemptAt: null, lastSuccessAt: null, lastError: null, lastErrorKind: null, lastCount: 0, dropped: 0 });
+      states.set(name, { items: [], fetchedAt: null, lastAttemptAt: null, lastSuccessAt: null, lastError: null, lastErrorKind: null, lastCount: 0, dropped: 0, failedLast: false });
     }
     return states.get(name);
   }
@@ -296,13 +329,14 @@ export function createNewsService({
           const s = stateOf(provider.name);
           s.lastAttemptAt = startedAt.toISOString();
           const groups = Number.isInteger(provider.maxGroupSearches) ? plan.slice(0, provider.maxGroupSearches) : plan;
-          const result = await runPlan(provider, groups, top, log);
+          const result = provider.searchEvents ? await runEvents(provider, events, log) : await runPlan(provider, groups, top, log);
           outcomes.push({ provider, ...result });
           s.lastCount = result.items.length;
           s.dropped = result.dropped.length;
           if (result.items.length > 0) {
             const expiresAt = provider.retentionMs ? new Date(startedAt.getTime() + provider.retentionMs).toISOString() : null;
-            s.items = result.items.map((a) => ({ ...a, expiresAt, fetchedAt: startedAt.toISOString() }));
+            s.items = result.items.map((a) => ({ ...withLocation(a), expiresAt, fetchedAt: startedAt.toISOString() }));
+            s.failedLast = false;
             s.fetchedAt = startedAt.toISOString();
             s.lastSuccessAt = startedAt.toISOString();
             s.lastError = result.failures ? result.lastFailure : null;
@@ -310,6 +344,7 @@ export function createNewsService({
           } else {
             s.lastError = result.failures ? result.lastFailure : "no articles";
             s.lastErrorKind = result.failures ? result.lastFailureKind : "empty";
+            s.failedLast = true; // kept its previous share: that share is now older than this attempt
             log.warn(`[news] ${provider.label} produced no articles (${result.failures}/${result.attempted} searches failed); keeping its previous ${s.items.length} article(s)`);
           }
         }
@@ -317,12 +352,13 @@ export function createNewsService({
         const succeeded = outcomes.filter((o) => o.items.length > 0);
         rebuildCache(startedAt);
 
+        lastRefreshFailed = false;
         if (!succeeded.length) {
           if (!outcomes.length) return cache; // nothing was due
           const detail = outcomes
             .map((o) => `${o.provider.label}: ${o.failures === o.attempted ? `all ${o.attempted} searches failed (last: ${o.lastFailure})` : "no articles"}`)
             .join("; ");
-          throw new Error(detail);
+          throw Object.assign(new Error(detail), { providersRan: true });
         }
 
         lastRefreshFailed = false;
@@ -338,7 +374,8 @@ export function createNewsService({
         }
         return cache;
       } catch (err) {
-        lastRefreshFailed = true;
+        // a pass where providers ran but none produced anything is reflected per provider (failedLast)
+        if (!err?.providersRan) lastRefreshFailed = true;
         lastError = err?.message || String(err);
         log.error(`[news] refresh failed: ${lastError}${cache ? " (serving stale cache)" : " (no cache yet)"}`);
         return null;
@@ -350,19 +387,27 @@ export function createNewsService({
     return refreshing;
   }
 
-  /** Stale: the last refresh failed, or nothing has been refreshed yet and the restored cache is older than one interval. */
+  /**
+   * Stale: the whole last refresh failed, or every provider that still
+   * contributes articles failed its last attempt, or nothing has been
+   * refreshed yet and the restored cache is older than one interval.
+   */
   function isStale(at) {
     if (!cache) return false;
     if (lastRefreshFailed) return true;
+    const contributing = [...states.values()].filter((s) => liveItems(s.items, at).length > 0);
+    if (refreshedOnce && contributing.length > 0 && contributing.every((s) => s.failedLast)) return true;
     if (!refreshedOnce) return at.getTime() - new Date(cache.updatedAt).getTime() > nextIntervalMs();
     return false;
   }
 
   /**
-   * Cached news. Filters: type (relatedEvent.type) and eventId
-   * (relatedEvent.id). Throws NewsUnavailableError when nothing is cached.
+   * Cached news. Filters: type (relatedEvent.type), eventId
+   * (relatedEvent.id) and region (location.regions; unlocated articles never
+   * match a region, they are listed only without one). Throws
+   * NewsUnavailableError when nothing is cached.
    */
-  function getNews({ type = null, eventId = null, limit = 50 } = {}) {
+  function getNews({ type = null, eventId = null, region = null, limit = 50 } = {}) {
     const at = now();
     const live = cache ? liveItems(cache.items, at) : [];
     if (!cache || live.length === 0) {
@@ -371,6 +416,7 @@ export function createNewsService({
     let items = live;
     if (type) items = items.filter((a) => a.relatedEvent?.type === type);
     if (eventId !== null && eventId !== undefined) items = items.filter((a) => a.relatedEvent?.id === eventId);
+    if (region) items = items.filter((a) => a.location?.regions?.includes(region));
     const names = cache.provider ? cache.provider.split("+") : [];
     return {
       items: items.slice(0, limit).map(({ expiresAt, fetchedAt, ...a }) => a),
@@ -378,7 +424,7 @@ export function createNewsService({
       stale: isStale(at),
       lastError,
       provider: cache.provider,
-      source: names.map((n) => providerByName(n)?.label ?? (n === "guardian" ? "The Guardian" : "GDELT")).join(" + "),
+      source: names.map((n) => providerByName(n)?.label ?? PROVIDER_LABELS[n] ?? n).join(" + "),
     };
   }
 
@@ -405,6 +451,7 @@ export function createNewsService({
             p.name,
             {
               articles: s ? liveItems(s.items, at).length : 0,
+              located: s ? liveItems(s.items, at).filter((a) => a.location).length : 0,
               lastAttemptAt: s?.lastAttemptAt ?? null,
               lastSuccessAt: s?.lastSuccessAt ?? null,
               lastError: s?.lastError ?? null,

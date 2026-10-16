@@ -18,11 +18,16 @@
  *  - no images (the developer key has no image rights): image is null;
  *  - retentionMs = 24 h: the service drops Guardian rows after that;
  *  - the news panel shows the "Powered by The Guardian" logo next to them.
+ *
+ * Keyword tags are requested (show-tags=keyword) only to place the article
+ * for the region filter: they are turned into country/region codes
+ * (src/services/newsLocation.js) and not kept.
  */
 import { createThrottle } from "../gdelt.js";
 import { createBackoffGate } from "../backoff.js";
 import { GENERAL_TERMS, placeTokens } from "../newsLinking.js";
 import { ProviderError } from "./errors.js";
+import { guardianTagPlace } from "../newsLocation.js";
 
 export const GUARDIAN_ENDPOINT = "https://content.guardianapis.com/search";
 export const GUARDIAN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
@@ -63,6 +68,7 @@ export function buildGuardianUrl({ q, apiKey, pageSize = 20, fromDate, now = new
     "query-fields": GUARDIAN_QUERY_FIELDS,
     type: "article",
     "show-fields": "trailText",
+    "show-tags": "keyword",
     "order-by": "newest",
     "from-date": from,
     "page-size": String(pageSize),
@@ -114,7 +120,8 @@ function stripHtml(s) {
  * supplied; no image. Returns null for anything that is not a regular
  * article (type liveblog/gallery/interactive, "– as it happened" titles,
  * /live/ urls). `summary` (the standfirst, plain text) only serves the
- * relevance check and is never cached.
+ * relevance check and is never cached. `tagPlace` (countries/regions from
+ * the keyword tags) only serves the location and is never cached either.
  */
 export function normalizeGuardianResult(r) {
   const url = typeof r?.webUrl === "string" ? r.webUrl : "";
@@ -131,6 +138,7 @@ export function normalizeGuardianResult(r) {
     image: null,
     provider: "guardian",
     summary: stripHtml(r.fields?.trailText) || null,
+    tagPlace: guardianTagPlace(r.tags),
   };
 }
 

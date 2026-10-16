@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getDisasterNews, NewsError, type NewsItem, type NewsType } from "../services/newsService";
+import { getDisasterNews, NewsError, REGION_LABELS, type NewsItem, type NewsRegion, type NewsType } from "../services/newsService";
 import { relativeTime } from "../utils/formatDate";
-import { eventTagText, providerText } from "../utils/newsText";
+import { eventTagText, locationText, providerText } from "../utils/newsText";
 
 type Props = {
   isOpen: boolean;
@@ -10,6 +10,7 @@ type Props = {
 };
 
 type Filter = "all" | NewsType;
+type RegionFilter = "all" | NewsRegion;
 
 type LoadResult =
   | { key: string; ok: true; items: NewsItem[]; updatedAt: string | null; stale: boolean }
@@ -21,6 +22,12 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "flood", label: "Floods" },
   { key: "wildfire", label: "Wildfires" },
   { key: "storm", label: "Storms" },
+];
+
+// Manual choice for now (no geolocation). Articles without a known location are listed only under "All regions".
+const REGION_FILTERS: { key: RegionFilter; label: string }[] = [
+  { key: "all", label: "All regions" },
+  ...(Object.keys(REGION_LABELS) as NewsRegion[]).map((key) => ({ key, label: REGION_LABELS[key] })),
 ];
 
 function Skeleton() {
@@ -40,6 +47,7 @@ function Skeleton() {
 export default function NewsPanel({ isOpen, onClose }: Props) {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>("all");
+  const [region, setRegion] = useState<RegionFilter>("all");
   // Every request is identified by filter + attempt; the panel shows "loading"
   // until the answer for the current request has arrived, so state is only set
   // from the request's callbacks (never synchronously inside the effect).
@@ -51,12 +59,12 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
     setWasOpen(isOpen);
     if (isOpen) setAttempt((a) => a + 1);
   }
-  const requestKey = `${filter}#${attempt}`;
+  const requestKey = `${filter}|${region}#${attempt}`;
 
   useEffect(() => {
     if (!isOpen) return;
     const controller = new AbortController();
-    getDisasterNews({ type: filter === "all" ? null : filter }, controller.signal)
+    getDisasterNews({ type: filter === "all" ? null : filter, region: region === "all" ? null : region }, controller.signal)
       .then((data) => {
         if (controller.signal.aborted) return;
         setResult({ key: requestKey, ok: true, items: data.items, updatedAt: data.updatedAt, stale: data.stale });
@@ -66,7 +74,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
         setResult({ key: requestKey, ok: false, error: e instanceof NewsError ? e.message : "Could not reach the news service." });
       });
     return () => controller.abort();
-  }, [isOpen, filter, requestKey]);
+  }, [isOpen, filter, region, requestKey]);
 
   const current = result && result.key === requestKey ? result : null;
   const status: "loading" | "error" | "ready" = !current ? "loading" : current.ok ? "ready" : "error";
@@ -130,6 +138,23 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
           ))}
         </div>
 
+        <div className="news-filters news-filters-region" role="group" aria-label="Filter news by region">
+          {REGION_FILTERS.map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              aria-pressed={region === r.key}
+              className={region === r.key ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+              onClick={() => setRegion(r.key)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        {region !== "all" && (
+          <p className="news-region-note">Articles without a known location are listed only under All regions.</p>
+        )}
+
         <div className="news-content">
           {status === "loading" && <Skeleton />}
 
@@ -163,9 +188,9 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
           {status === "ready" && items.length === 0 && (
             <div className="news-state muted">
               <p>
-                {filter === "all"
-                  ? "No disaster coverage from GDELT or The Guardian in the last 72 hours."
-                  : `No ${FILTERS.find((f) => f.key === filter)?.label.toLowerCase()} coverage from GDELT or The Guardian in the last 72 hours.`}
+                {`No ${filter === "all" ? "disaster" : FILTERS.find((f) => f.key === filter)?.label.toLowerCase()} coverage${
+                  region === "all" ? "" : ` located in ${REGION_LABELS[region]}`
+                } in the last 72 hours.`}
               </p>
               <p className="news-state-hint">The sources are checked again each time you open this panel.</p>
             </div>
@@ -176,6 +201,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
               {items.map((a) => {
                 const tag = eventTagText(a);
                 const via = providerText(a);
+                const place = locationText(a);
                 return (
                   <li key={a.url} className={a.provider ? `news-card news-card-${a.provider}` : "news-card"}>
                     {a.image && a.provider !== "guardian" && (
@@ -192,6 +218,12 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
                           {a.title}
                         </a>
                       </h3>
+                      {place && (
+                        <p className="news-card-location">
+                          <span className="sr-only">Location: </span>
+                          {place}
+                        </p>
+                      )}
                       {a.relatedEvent && tag && (
                         <div className="news-card-event">
                           <span className={`news-event-tag news-event-tag-${a.relatedEvent.severity}`}>{tag}</span>

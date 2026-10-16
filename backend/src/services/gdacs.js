@@ -15,6 +15,9 @@
  *  - fetches in parallel with a bounded concurrency and a short timeout, and
  *    never throws: an unreachable GDACS yields `null` and the severity rules
  *    fall back to the EONET measurement;
+ *  - also keeps where GDACS places the event (affected countries as ISO
+ *    3166-1 alpha-2 codes, and its point), read from the same answer, for
+ *    the news panel's region filter (getPlace);
  *  - is injectable (fetch, clock, timeouts) for tests.
  */
 
@@ -57,6 +60,21 @@ export function parseGdacsLevel(payload) {
   };
 }
 
+/** Normalises the API payload to { countries: ["LY"], lat, lng } (where GDACS places the event); countries may be empty. */
+export function parseGdacsPlace(payload) {
+  const p = payload?.properties ?? payload ?? {};
+  const countries = [];
+  for (const c of Array.isArray(p.affectedcountries) ? p.affectedcountries : []) {
+    const code = String(c?.iso2 ?? "").trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(code) && !countries.includes(code)) countries.push(code);
+  }
+  const coords = payload?.geometry?.type === "Point" && Array.isArray(payload.geometry.coordinates) ? payload.geometry.coordinates : null;
+  const lng = Number(coords?.[0]);
+  const lat = Number(coords?.[1]);
+  const located = coords && Number.isFinite(lat) && Number.isFinite(lng);
+  return { countries, lat: located ? lat : null, lng: located ? lng : null };
+}
+
 export function createGdacsClient({
   fetchImpl = (...args) => fetch(...args),
   timeoutMs = Number(process.env.GDACS_TIMEOUT_MS) || DEFAULT_GDACS_TIMEOUT_MS,
@@ -67,7 +85,7 @@ export function createGdacsClient({
   log = console,
   disabled = process.env.DISABLE_GDACS === "1",
 } = {}) {
-  const cache = new Map(); // key -> { value|null, expiresAt }
+  const cache = new Map(); // key -> { value|null, place|null, expiresAt }
   const inflight = new Map(); // key -> Promise
   const stats = { requests: 0, hits: 0, failures: 0, lastError: null, lastFetchAt: null };
 
@@ -78,7 +96,8 @@ export function createGdacsClient({
       const url = `${GDACS_API}?eventtype=${encodeURIComponent(ref.eventtype)}&eventid=${encodeURIComponent(ref.eventid)}`;
       const res = await fetchImpl(url, { signal: controller.signal, headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error(`GDACS ${res.status}`);
-      return parseGdacsLevel(await res.json());
+      const payload = await res.json();
+      return { value: parseGdacsLevel(payload), place: parseGdacsPlace(payload) };
     } finally {
       clearTimeout(timer);
     }
@@ -99,18 +118,18 @@ export function createGdacsClient({
       stats.requests++;
       stats.lastFetchAt = t;
       try {
-        const value = await request(ref);
-        cache.set(key, { value, expiresAt: now() + ttlMs });
+        const { value, place } = await request(ref);
+        cache.set(key, { value, place, expiresAt: now() + ttlMs });
         return value;
       } catch (err) {
         stats.failures++;
         stats.lastError = err?.name === "AbortError" ? `timeout after ${timeoutMs} ms` : err?.message || String(err);
         // serve the previous level while GDACS is down, otherwise remember the failure briefly
         if (hit) {
-          cache.set(key, { value: hit.value, expiresAt: now() + failureTtlMs });
+          cache.set(key, { value: hit.value, place: hit.place ?? null, expiresAt: now() + failureTtlMs });
           return hit.value;
         }
-        cache.set(key, { value: null, expiresAt: now() + failureTtlMs });
+        cache.set(key, { value: null, place: null, expiresAt: now() + failureTtlMs });
         return null;
       } finally {
         inflight.delete(key);
@@ -118,6 +137,13 @@ export function createGdacsClient({
     })();
     inflight.set(key, p);
     return p;
+  }
+
+  /** Where GDACS places one event ({ countries, lat, lng }), from the same cached answer as its level; null when unknown. Never throws. */
+  async function getPlace(ref) {
+    if (!ref || disabled) return null;
+    await getLevel(ref);
+    return cache.get(gdacsKey(ref))?.place ?? null;
   }
 
   /** Levels for many refs, `concurrency` at a time. Returns a Map key -> level|null. */
@@ -162,7 +188,7 @@ export function createGdacsClient({
     Object.assign(stats, { requests: 0, hits: 0, failures: 0, lastError: null, lastFetchAt: null });
   }
 
-  return { getLevel, getLevels, enrich, status, reset };
+  return { getLevel, getLevels, getPlace, enrich, status, reset };
 }
 
 /** Process-wide client shared by the feed, the ingestion job and the news job. */

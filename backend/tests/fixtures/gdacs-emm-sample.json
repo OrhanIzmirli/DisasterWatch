@@ -1,0 +1,37 @@
+{
+  "note": "Synthetic GDACS media-news (EMM) answer in the shape served by gdacsapi/api/emm/getemmnewsbykey on 2026-10-16. Headlines are invented paraphrases, links are example.com; GDACS sends no article text (the description is its fixed placeholder).",
+  "items": [
+    {
+      "emmid": "example-a-0001",
+      "pubdate": "2026-10-16T17:38:00",
+      "source": "example-news",
+      "link": "https://news.example.com/world/2026/10/16/city-floods-leave-four-dead",
+      "title": "City''s worst floods in decades leave four dead",
+      "description": "Article content is not available. Please refer to the linked source"
+    },
+    {
+      "emmid": "example-b-0002",
+      "pubdate": "2026-10-16T08:31:00",
+      "source": "example-daily",
+      "link": "https://daily.example.com/region/floods-trigger-landslides-damage-businesses",
+      "title": "Floods trigger dozens of landslides and damage hundreds of businesses",
+      "description": "Article content is not available. Please refer to the linked source"
+    },
+    {
+      "emmid": "example-c-0003",
+      "pubdate": "2026-10-15T18:47:00",
+      "source": "example-library",
+      "link": "https://library.example.com/2026/10/15/journal-lists-launch",
+      "title": "Research index launches curated journal lists",
+      "description": "Article content is not available. Please refer to the linked source"
+    },
+    {
+      "emmid": "example-d-0004",
+      "pubdate": "2026-10-15T03:26:00",
+      "source": "example-wire",
+      "link": "ftp://wire.example.com/not-a-web-link",
+      "title": "Teenager dies as heavy rain floods the capital",
+      "description": "Article content is not available. Please refer to the linked source"
+    }
+  ]
+}

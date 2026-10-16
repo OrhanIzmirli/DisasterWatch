@@ -215,6 +215,7 @@ describe("The Guardian provider", () => {
       image: null,
       provider: "guardian",
       summary: null,
+      tagPlace: null,
     });
     expect(normalizeGuardianResult({ webTitle: "no url" })).toBeNull();
   });
@@ -275,12 +276,13 @@ describe("The Guardian provider", () => {
 });
 
 describe("provider list", () => {
-  it("is GDELT only without GUARDIAN_API_KEY, GDELT then The Guardian with it", () => {
+  it("is GDELT + GDACS without GUARDIAN_API_KEY, GDELT + The Guardian + GDACS with it, no GDACS with DISABLE_GDACS=1", () => {
     const gdelt = createGdeltProvider({ client: { searchArticles: async () => [] } });
-    expect(createNewsProviders({ env: {}, gdelt, log: quiet }).map((p) => p.name)).toEqual(["gdelt"]);
-    expect(createNewsProviders({ env: { GUARDIAN_API_KEY: "   " }, gdelt, log: quiet }).map((p) => p.name)).toEqual(["gdelt"]);
+    expect(createNewsProviders({ env: {}, gdelt, log: quiet }).map((p) => p.name)).toEqual(["gdelt", "gdacs"]);
+    expect(createNewsProviders({ env: { GUARDIAN_API_KEY: "   " }, gdelt, log: quiet }).map((p) => p.name)).toEqual(["gdelt", "gdacs"]);
     expect(quiet.log).toHaveBeenCalledWith(expect.stringMatching(/GUARDIAN_API_KEY not set/));
-    expect(createNewsProviders({ env: { GUARDIAN_API_KEY: "k" }, gdelt, log: quiet }).map((p) => p.name)).toEqual(["gdelt", "guardian"]);
+    expect(createNewsProviders({ env: { GUARDIAN_API_KEY: "k" }, gdelt, log: quiet }).map((p) => p.name)).toEqual(["gdelt", "guardian", "gdacs"]);
+    expect(createNewsProviders({ env: { GUARDIAN_API_KEY: "k", DISABLE_GDACS: "1" }, gdelt, log: quiet }).map((p) => p.name)).toEqual(["gdelt", "guardian"]);
   });
 });
 

@@ -212,7 +212,7 @@ describe("news service: combined searches, merged providers, persistence and sta
     expect(all.source).toBe("GDELT");
     expect(all.provider).toBe("gdelt");
     expect(all.items.map((a) => a.url)).toEqual(["https://a.jp/1", "https://b.np/2", "https://c.com/3"]);
-    expect(all.items[0].relatedEvent).toEqual({ id: 1, type: "earthquake", severity: "high", location: "M 6.1 - 53 km S of Kushiro, Japan", lat: 42.5, lng: 144.4 });
+    expect(all.items[0].relatedEvent).toEqual({ id: 1, type: "earthquake", severity: "high", location: "M 6.1 - 53 km S of Kushiro, Japan", lat: 42.5, lng: 144.4, country: null });
     expect(all.items[0].provider).toBe("gdelt");
     expect(all.items[2].relatedEvent).toBeNull();
     expect(all.items[0]).not.toHaveProperty("expiresAt");

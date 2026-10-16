@@ -27,6 +27,18 @@ describe("NewsCache persistence", () => {
     await resetDb();
   });
 
+  it("keeps each article's location (region filter) across a restart; unlocated stays null", async () => {
+    const store = createPrismaNewsStore(prisma);
+    const located = { ...article("Floods hit Bangladesh lowlands", "https://c.com/3", "gdacs"), location: { countries: ["BD"], regions: ["asia"], source: "gdacs" } };
+    const unlocated = { ...article("Floods and fires: the week in disasters", "https://d.com/4", "guardian"), location: null };
+    await store.save([located, unlocated], T0);
+    const back = await store.load(T0);
+    expect(back.items.map((a) => [a.url, a.location])).toEqual([
+      ["https://c.com/3", { countries: ["BD"], regions: ["asia"], source: "gdacs" }],
+      ["https://d.com/4", null],
+    ]);
+  });
+
   it("writes every successful refresh and serves it again after a restart", async () => {
     const svc = createNewsService({ providers: [gdeltOk()], store: createPrismaNewsStore(prisma), loadEvents: async () => EVENTS, now: () => T0, log: quiet });
     await svc.refresh();
