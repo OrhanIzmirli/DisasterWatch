@@ -55,10 +55,11 @@ export function createApp(options = {}) {
     res.send("DisasterWatch Backend is running");
   });
 
-  // Compact news-cache status for /health: which provider served it, when, and whether it is stale.
+  // Compact news-cache status for /health: which providers served it, when, whether it is stale,
+  // and per provider what happened on its last attempt (so a silent GDELT failure is visible).
   const newsStatus = () => {
     const s = newsService.status();
-    return { provider: s.provider, updatedAt: s.updatedAt, stale: s.stale, articles: s.articles };
+    return { provider: s.provider, updatedAt: s.updatedAt, stale: s.stale, articles: s.articles, providers: s.providers };
   };
 
   app.get("/health", async (req, res) => {

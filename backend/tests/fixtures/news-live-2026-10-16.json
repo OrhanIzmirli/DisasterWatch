@@ -1,0 +1,33 @@
+{
+  "source": "GET /api/news on production, 2026-10-16 (titles, links and dates only; no article text)",
+  "items": [
+    {
+      "title": "A perfect storm: how the super El Niño is devastating the fishing industry",
+      "url": "https://www.theguardian.com/news/2026/oct/15/a-perfect-storm-how-the-super-el-nino-is-devastating-the-fishing-industry",
+      "domain": "theguardian.com",
+      "publishedAt": "2026-10-15T04:00:20.000Z",
+      "provider": "guardian"
+    },
+    {
+      "title": "Hurricane Simon and Tropical Storm Rachel kill five people on Mexico’s Pacific coast",
+      "url": "https://www.theguardian.com/world/2026/oct/13/mexico-hurricane-simon-tropical-storm-rachel-kill-five-pacific-coast",
+      "domain": "theguardian.com",
+      "publishedAt": "2026-10-13T04:29:46.000Z",
+      "provider": "guardian"
+    },
+    {
+      "title": "Indonesia wildfire fuelled by El Niño razes almost 300 homes ",
+      "url": "https://www.theguardian.com/world/2026/oct/13/indonesia-wildfire-el-nino-razes-300-homes-bankga-belitung",
+      "domain": "theguardian.com",
+      "publishedAt": "2026-10-13T16:34:13.000Z",
+      "provider": "guardian"
+    },
+    {
+      "title": "Companies rushed in on AI. Now some are pulling back",
+      "url": "https://www.theguardian.com/technology/2026/oct/13/ai-companies-rushed-workers-fallout",
+      "domain": "theguardian.com",
+      "publishedAt": "2026-10-13T15:00:00.000Z",
+      "provider": "guardian"
+    }
+  ]
+}

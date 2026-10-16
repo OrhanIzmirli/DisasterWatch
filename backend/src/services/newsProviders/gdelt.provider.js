@@ -11,6 +11,18 @@ import { createGdeltClient } from "../gdelt.js";
 import { GENERAL_QUERY, normalizeArticle, placeTokens } from "../newsLinking.js";
 
 export const GDELT_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+/** Articles are searched over the last 72 h, so they are kept at most that long. */
+export const GDELT_RETENTION_MS = 72 * 60 * 60 * 1000;
+/**
+ * GDELT answers most requests with 429 whatever our own pace (measured
+ * 2026-10-16: 2 of 12 requests answered, 45-60 s apart, from a residential
+ * IP), and the first 429 closes the backoff gate for the rest of a refresh.
+ * So each refresh spends its one realistic chance on a single broad request:
+ * no per-type group searches, one general search with more records, linked
+ * to the feed events on our side.
+ */
+export const GDELT_GROUP_SEARCHES = 0;
+export const GDELT_GENERAL_RECORDS = 75;
 
 function orGroup(terms) {
   const quoted = terms.map((t) => (t.includes(" ") ? `"${t}"` : t));
@@ -37,14 +49,16 @@ export function createGdeltProvider({ client = createGdeltClient(), timespan = "
     name: "gdelt",
     label: "GDELT",
     refreshIntervalMs: GDELT_REFRESH_INTERVAL_MS,
-    /** GDELT content is not licence-limited; rows stay until the next successful refresh. */
-    retentionMs: null,
+    /** Not licence-limited; kept for the 72 h search window (or until GDELT succeeds again). */
+    retentionMs: GDELT_RETENTION_MS,
+    maxGroupSearches: GDELT_GROUP_SEARCHES,
     buildGroupQuery: buildGdeltGroupQuery,
     async searchGroup(group, { maxRecords = 25 } = {}) {
       return normalize(await client.searchArticles({ query: buildGdeltGroupQuery(group), timespan, maxRecords }));
     },
     async searchGeneral({ maxRecords = 15 } = {}) {
-      return normalize(await client.searchArticles({ query: `${GENERAL_QUERY} sourcelang:english`, timespan, maxRecords }));
+      const records = Math.max(maxRecords, GDELT_GENERAL_RECORDS);
+      return normalize(await client.searchArticles({ query: `${GENERAL_QUERY} sourcelang:english`, timespan, maxRecords: records }));
     },
   };
 }

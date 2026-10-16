@@ -8,10 +8,14 @@
  *    refresh costs at most 4 provider requests; articles are linked to their
  *    event on our side (src/services/newsLinking.js), which powers
  *    "Show on map" in the news panel;
- *  - providers are tried in order (src/services/newsProviders): GDELT first;
- *    when it yields nothing (429, timeouts, backoff) the same plan runs on
- *    The Guardian if GUARDIAN_API_KEY is set. The provider that served the
- *    cache sets the next refresh interval (GDELT 15 min, Guardian 30 min);
+ *  - every provider runs (src/services/newsProviders: GDELT, plus The
+ *    Guardian when GUARDIAN_API_KEY is set) and the panel shows their
+ *    articles merged. Each provider keeps its own last good share: one that
+ *    fails (429, timeout, backoff) keeps serving what it fetched before
+ *    until that expires. Each provider runs at its own interval (GDELT
+ *    15 min, Guardian 30 min);
+ *  - every article must pass the disaster-news relevance rules
+ *    (src/services/newsRelevance.js), whatever search returned it;
  *  - every successful refresh is written to the NewsCache table and loaded
  *    back on start-up, so a restart serves the previous articles at once;
  *  - Guardian articles expire 24 h after they were fetched (licence);
@@ -20,7 +24,8 @@
  *
  * Everything external is injectable for tests.
  */
-import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, mentionsDisaster, MAX_EVENT_QUERIES } from "./newsLinking.js";
+import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, MAX_EVENT_QUERIES } from "./newsLinking.js";
+import { isDisasterNews } from "./newsRelevance.js";
 import { createNewsProviders } from "./newsProviders/index.js";
 import { fetchNasaEventsRated } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
@@ -95,42 +100,59 @@ function attachEvent(article, ev) {
 }
 
 /**
+ * Keeps disaster/hazard news only (src/services/newsRelevance.js) and logs
+ * what was dropped and why, so the filter can be audited from the logs.
+ */
+function relevantOnly(articles, provider, what, log, dropped) {
+  const kept = [];
+  for (const a of articles) {
+    const verdict = isDisasterNews(a);
+    if (verdict.keep) kept.push(a);
+    else dropped.push({ title: a.title, url: a.url, provider: provider.name, search: what, reason: verdict.reason });
+  }
+  if (kept.length < articles.length) {
+    log.log(`[news] ${provider.label} ${what}: ${articles.length - kept.length} of ${articles.length} articles dropped as not disaster news`);
+  }
+  return kept;
+}
+
+/**
  * Runs the search plan on one provider. Never throws: returns what the
- * provider produced plus the failure count, so the caller can decide whether
- * to fall back. Request budget: plan.length + 1 <= MAX_REQUESTS_PER_REFRESH.
+ * provider produced plus the failure count and the last failure's kind.
+ * Request budget: plan.length + 1 <= MAX_REQUESTS_PER_REFRESH.
  */
 async function runPlan(provider, plan, top, log) {
   const linked = [];
   let general = [];
   let failures = 0;
   let lastFailure = null;
+  let lastFailureKind = null;
   let requests = 0;
+  const dropped = [];
 
   for (const group of plan) {
     requests += 1;
     try {
-      const articles = await provider.searchGroup(group, { maxRecords: GROUP_LIMIT });
+      const articles = relevantOnly(await provider.searchGroup(group, { maxRecords: GROUP_LIMIT }), provider, `${group.type} search`, log, dropped);
       const assigned = linkArticlesToEvents(articles, group.events, { single: group.events.length === 1 });
       for (const a of assigned) linked.push(attachEvent(a, a.event));
     } catch (err) {
       failures += 1;
       lastFailure = err?.message || String(err);
+      lastFailureKind = err?.kind ?? "error";
       log.warn(`[news] ${provider.label} ${group.type} search failed (${group.places.join(", ")}): ${lastFailure}`);
     }
   }
 
   requests += 1;
   try {
-    const articles = await provider.searchGeneral({ maxRecords: GENERAL_LIMIT });
-    // The provider matched the query somewhere in the article; the headline or standfirst must name a hazard.
-    const relevant = articles.filter(mentionsDisaster);
-    if (relevant.length < articles.length) {
-      log.log(`[news] ${provider.label} general search: ${articles.length - relevant.length} of ${articles.length} articles dropped (no hazard word in headline/standfirst)`);
-    }
+    // The provider matched the query somewhere in the article; the relevance rules decide what is disaster news.
+    const relevant = relevantOnly(await provider.searchGeneral({ maxRecords: GENERAL_LIMIT }), provider, "general search", log, dropped);
     general = linkArticlesToEvents(relevant, top, { requireHazard: true }).map((a) => attachEvent(a, a.event));
   } catch (err) {
     failures += 1;
     lastFailure = err?.message || String(err);
+    lastFailureKind = err?.kind ?? "error";
     log.warn(`[news] ${provider.label} general search failed: ${lastFailure}`);
   }
 
@@ -141,7 +163,7 @@ async function runPlan(provider, plan, top, log) {
     ...linked.filter((a) => !a.relatedEvent),
     ...general.filter((a) => !a.relatedEvent),
   ]);
-  return { items, failures, attempted: requests, lastFailure, linkedCount: items.filter((a) => a.relatedEvent).length };
+  return { items, failures, attempted: requests, lastFailure, lastFailureKind, dropped, linkedCount: items.filter((a) => a.relatedEvent).length };
 }
 
 export function createNewsService({
@@ -159,6 +181,12 @@ export function createNewsService({
   let refreshing = null;
   let providerList = providers;
   let storeImpl = store;
+  /**
+   * Per provider: its last good articles (kept until it succeeds again or they
+   * expire) and what happened on its last attempt, for /health.
+   *   name -> { items, fetchedAt, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, lastCount, dropped }
+   */
+  const states = new Map();
 
   async function getProviders() {
     if (!providerList) providerList = createNewsProviders({ log });
@@ -177,9 +205,46 @@ export function createNewsService({
     return (providerList ?? []).find((p) => p.name === name) ?? null;
   }
 
+  function stateOf(name) {
+    if (!states.has(name)) {
+      states.set(name, { items: [], fetchedAt: null, lastAttemptAt: null, lastSuccessAt: null, lastError: null, lastErrorKind: null, lastCount: 0, dropped: 0 });
+    }
+    return states.get(name);
+  }
+
   function liveItems(items, at) {
     const t = at.getTime();
     return items.filter((a) => !a.expiresAt || new Date(a.expiresAt).getTime() > t);
+  }
+
+  const publishedTime = (a) => (a.publishedAt ? new Date(a.publishedAt).getTime() : 0);
+
+  /**
+   * Every provider's last good articles in one list: articles linked to a feed
+   * event first, then the rest, newest first inside each part; duplicates
+   * across providers dropped (first kept).
+   */
+  function mergedItems(at) {
+    const all = [];
+    for (const [name, s] of states) {
+      if (!s.items.length) continue;
+      all.push(...liveItems(s.items, at).map((a) => ({ ...a, provider: a.provider ?? name })));
+    }
+    const byTime = (a, b) => publishedTime(b) - publishedTime(a);
+    return dedupeArticles([...all.filter((a) => a.relatedEvent).sort(byTime), ...all.filter((a) => !a.relatedEvent).sort(byTime)]);
+  }
+
+  function rebuildCache(at) {
+    const items = mergedItems(at);
+    if (!items.length) return null;
+    const names = [...states].filter(([, s]) => s.items.length && liveItems(s.items, at).length).map(([n]) => n);
+    const updatedAt = names
+      .map((n) => states.get(n).fetchedAt)
+      .filter(Boolean)
+      .sort()
+      .at(-1);
+    cache = { items, updatedAt, provider: names.join("+") };
+    return cache;
   }
 
   /** Loads the last persisted refresh (after a restart). Never throws. */
@@ -187,7 +252,12 @@ export function createNewsService({
     try {
       const saved = await (await getStore()).load(now());
       if (saved && saved.items.length) {
-        cache = { items: saved.items, updatedAt: saved.fetchedAt, provider: saved.items[0]?.provider ?? null };
+        for (const item of saved.items) {
+          const s = stateOf(item.provider ?? "unknown");
+          s.items.push(item);
+          s.fetchedAt = item.fetchedAt ?? saved.fetchedAt;
+        }
+        rebuildCache(now());
         log.log(`[news] restored ${saved.items.length} cached articles from the database (fetched ${saved.fetchedAt})`);
       }
     } catch (err) {
@@ -196,11 +266,22 @@ export function createNewsService({
     return cache;
   }
 
+  /** A provider is due when it has never been tried, or its own interval has passed since its last attempt. */
+  function isDue(provider, at) {
+    const last = states.get(provider.name)?.lastAttemptAt;
+    return !last || at.getTime() - new Date(last).getTime() >= provider.refreshIntervalMs - 5000;
+  }
+
   /**
-   * One refresh pass. Resolves to the new cache on success; on failure keeps
-   * the old cache (marked stale) and returns null.
+   * One refresh pass over every provider (or, with `onlyDue`, only those
+   * whose own interval has passed: the background loop uses that so The
+   * Guardian keeps its 30-minute budget while GDELT is tried every 15).
+   * Each provider that returns articles replaces its own share of the cache;
+   * one that fails keeps its previous share. Resolves to the cache, or null
+   * when no provider produced anything this time (the old cache is then
+   * served with stale: true).
    */
-  async function refresh() {
+  async function refresh({ onlyDue = false } = {}) {
     if (refreshing) return refreshing;
     refreshing = (async () => {
       const startedAt = now();
@@ -210,35 +291,48 @@ export function createNewsService({
         const plan = buildSearchPlan(top, { maxQueries: MAX_EVENT_QUERIES });
 
         const outcomes = [];
-        let served = null;
         for (const provider of await getProviders()) {
-          const result = await runPlan(provider, plan, top, log);
+          if (onlyDue && !isDue(provider, startedAt)) continue;
+          const s = stateOf(provider.name);
+          s.lastAttemptAt = startedAt.toISOString();
+          const groups = Number.isInteger(provider.maxGroupSearches) ? plan.slice(0, provider.maxGroupSearches) : plan;
+          const result = await runPlan(provider, groups, top, log);
           outcomes.push({ provider, ...result });
+          s.lastCount = result.items.length;
+          s.dropped = result.dropped.length;
           if (result.items.length > 0) {
-            served = { provider, ...result };
-            break;
+            const expiresAt = provider.retentionMs ? new Date(startedAt.getTime() + provider.retentionMs).toISOString() : null;
+            s.items = result.items.map((a) => ({ ...a, expiresAt, fetchedAt: startedAt.toISOString() }));
+            s.fetchedAt = startedAt.toISOString();
+            s.lastSuccessAt = startedAt.toISOString();
+            s.lastError = result.failures ? result.lastFailure : null;
+            s.lastErrorKind = result.failures ? result.lastFailureKind : null;
+          } else {
+            s.lastError = result.failures ? result.lastFailure : "no articles";
+            s.lastErrorKind = result.failures ? result.lastFailureKind : "empty";
+            log.warn(`[news] ${provider.label} produced no articles (${result.failures}/${result.attempted} searches failed); keeping its previous ${s.items.length} article(s)`);
           }
-          log.warn(`[news] ${provider.label} produced no articles (${result.failures}/${result.attempted} searches failed)${provider === providerList.at(-1) ? "" : ", trying the next provider"}`);
         }
 
-        // A refresh that produced nothing anywhere must not wipe a good cache.
-        if (!served) {
+        const succeeded = outcomes.filter((o) => o.items.length > 0);
+        rebuildCache(startedAt);
+
+        if (!succeeded.length) {
+          if (!outcomes.length) return cache; // nothing was due
           const detail = outcomes
             .map((o) => `${o.provider.label}: ${o.failures === o.attempted ? `all ${o.attempted} searches failed (last: ${o.lastFailure})` : "no articles"}`)
             .join("; ");
           throw new Error(detail);
         }
 
-        const expiresAt = served.provider.retentionMs ? new Date(startedAt.getTime() + served.provider.retentionMs).toISOString() : null;
-        const items = served.items.map((a) => ({ ...a, expiresAt }));
-        cache = { items, updatedAt: startedAt.toISOString(), provider: served.provider.name };
         lastRefreshFailed = false;
         lastError = null;
         log.log(
-          `[news] refreshed via ${served.provider.label}: ${items.length} articles (${served.linkedCount} linked to ${top.length} events, ${served.attempted} request(s), ${served.failures} failure(s))`
+          `[news] refreshed: ${succeeded.map((o) => `${o.provider.label} ${o.items.length} (${o.linkedCount} linked, ${o.dropped.length} dropped as off-topic)`).join(", ")}` +
+            `${outcomes.length > succeeded.length ? `; failed: ${outcomes.filter((o) => !o.items.length).map((o) => o.provider.label).join(", ")}` : ""}; serving ${cache.items.length} articles`
         );
         try {
-          await (await getStore()).save(items, startedAt);
+          await (await getStore()).save(cache.items, startedAt);
         } catch (err) {
           log.warn(`[news] could not persist the cache: ${err?.message || err}`);
         }
@@ -277,21 +371,21 @@ export function createNewsService({
     let items = live;
     if (type) items = items.filter((a) => a.relatedEvent?.type === type);
     if (eventId !== null && eventId !== undefined) items = items.filter((a) => a.relatedEvent?.id === eventId);
-    const provider = providerByName(cache.provider);
+    const names = cache.provider ? cache.provider.split("+") : [];
     return {
-      items: items.slice(0, limit).map(({ expiresAt, ...a }) => a),
+      items: items.slice(0, limit).map(({ expiresAt, fetchedAt, ...a }) => a),
       updatedAt: cache.updatedAt,
       stale: isStale(at),
       lastError,
       provider: cache.provider,
-      source: provider?.label ?? (cache.provider === "guardian" ? "The Guardian" : "GDELT"),
+      source: names.map((n) => providerByName(n)?.label ?? (n === "guardian" ? "The Guardian" : "GDELT")).join(" + "),
     };
   }
 
-  /** Interval until the next refresh: set by the provider that served the cache. */
+  /** Background loop interval: the shortest provider interval (each provider still only runs when it is due). */
   function nextIntervalMs() {
-    const p = providerByName(cache?.provider);
-    return p?.refreshIntervalMs ?? REFRESH_INTERVAL_MS;
+    const intervals = (providerList ?? []).map((p) => p.refreshIntervalMs).filter((n) => Number.isFinite(n) && n > 0);
+    return intervals.length ? Math.min(...intervals) : REFRESH_INTERVAL_MS;
   }
 
   function status() {
@@ -304,22 +398,39 @@ export function createNewsService({
       articles: cache ? liveItems(cache.items, at).length : 0,
       provider: cache?.provider ?? null,
       nextIntervalMs: nextIntervalMs(),
+      providers: Object.fromEntries(
+        (providerList ?? []).map((p) => {
+          const s = states.get(p.name);
+          return [
+            p.name,
+            {
+              articles: s ? liveItems(s.items, at).length : 0,
+              lastAttemptAt: s?.lastAttemptAt ?? null,
+              lastSuccessAt: s?.lastSuccessAt ?? null,
+              lastError: s?.lastError ?? null,
+              lastErrorKind: s?.lastErrorKind ?? null,
+              droppedOffTopic: s?.dropped ?? 0,
+            },
+          ];
+        })
+      ),
     };
   }
 
-  /** Restore from the database, refresh now, then keep refreshing at the serving provider's interval. Never throws. */
+  /** Restore from the database, refresh now, then keep refreshing (each provider at its own interval). Never throws. */
   function start() {
     let timer = null;
     let stopped = false;
     const schedule = () => {
       if (stopped) return;
       timer = setTimeout(async () => {
-        await refresh();
+        await refresh({ onlyDue: true });
         schedule();
       }, nextIntervalMs());
       timer.unref?.();
     };
     (async () => {
+      await getProviders();
       await restore();
       await refresh();
       schedule();
