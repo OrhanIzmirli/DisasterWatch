@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import "./App.css";
 import {
   NavLink,
@@ -10,16 +10,18 @@ import {
 } from "react-router-dom";
 
 import DashboardPage from "./pages/DashboardPage";
-import AlertsPage from "./pages/AlertsPage";
-import AdminPage from "./pages/AdminPage";
-import AccountPage from "./pages/AccountPage";
-import SignInPage from "./pages/SignInPage";
-import SignUpPage from "./pages/SignUpPage";
 import NewsPanel from "./components/NewsPanel";
 import StatusBar from "./components/StatusBar";
 import NotificationBell from "./components/NotificationBell";
 import NotFoundPage from "./pages/NotFoundPage";
 import SkipLink from "./components/SkipLink";
+
+// Pages other than the dashboard load on demand (smaller first download).
+const AlertsPage = lazy(() => import("./pages/AlertsPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const AccountPage = lazy(() => import("./pages/AccountPage"));
+const SignInPage = lazy(() => import("./pages/SignInPage"));
+const SignUpPage = lazy(() => import("./pages/SignUpPage"));
 
 export type AuthUser = {
   email: string;
@@ -204,37 +206,39 @@ export default function App() {
       <StatusBar />
 
       <div className="page-content">
-        <Routes>
-          <Route path="/" element={<DashboardPage signedIn={Boolean(user)} />} />
+        <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+          <Routes>
+            <Route path="/" element={<DashboardPage signedIn={Boolean(user)} />} />
 
-          <Route
-            path="/alerts"
-            element={<AlertsPage user={user} authLoading={authLoading} />}
-          />
+            <Route
+              path="/alerts"
+              element={<AlertsPage user={user} authLoading={authLoading} />}
+            />
 
-          <Route
-            path="/admin"
-            element={
-              <AdminRoute user={user} authLoading={authLoading}>
-                <AdminPage user={user} />
-              </AdminRoute>
-            }
-          />
+            <Route
+              path="/admin"
+              element={
+                <AdminRoute user={user} authLoading={authLoading}>
+                  <AdminPage user={user} />
+                </AdminRoute>
+              }
+            />
 
-          <Route
-            path="/account"
-            element={
-              <ProtectedRoute user={user} authLoading={authLoading}>
-                <AccountPage user={user} onSignOut={signOut} />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/account"
+              element={
+                <ProtectedRoute user={user} authLoading={authLoading}>
+                  <AccountPage user={user} onSignOut={signOut} />
+                </ProtectedRoute>
+              }
+            />
 
-          <Route path="/signin" element={<SignInPage onSignedIn={onSignedIn} />} />
-          <Route path="/signup" element={<SignUpPage onSignedIn={onSignedIn} />} />
+            <Route path="/signin" element={<SignInPage onSignedIn={onSignedIn} />} />
+            <Route path="/signup" element={<SignUpPage onSignedIn={onSignedIn} />} />
 
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Suspense>
       </div>
 
       <NewsPanel isOpen={isNewsOpen} onClose={() => setIsNewsOpen(false)} />

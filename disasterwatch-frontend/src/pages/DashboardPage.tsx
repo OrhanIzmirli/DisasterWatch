@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import FeedRow from "../components/FeedRow";
 import { kpiFromCounts, kpiFromItems, readCounts, type FeedCounts } from "../utils/kpi";
-import MapView from "../components/MapView";
 import RelatedNews from "../components/RelatedNews";
 import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
 import { relativeTime } from "../utils/formatDate";
@@ -12,6 +12,10 @@ import HeadlineStrip from "../components/HeadlineStrip";
 import { headlineText } from "../utils/headline";
 import { pulseIds } from "../utils/liveness";
 import { usePrefersReducedMotion } from "../utils/usePrefersReducedMotion";
+import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
+
+// Leaflet and the map code load on demand, only when a map is on screen.
+const MapView = lazy(() => import("../components/MapChunk"));
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low" | "unrated";
@@ -168,6 +172,17 @@ const LIST_PAGE_SIZE = 50;
 const MAP_MAX_MARKERS = 300;
 const MAP_EARTHQUAKE_CAP = 15;
 
+/** Phone layout: map or feed, one at a time; the choice is kept for the browser session. */
+type PhoneView = "map" | "feed";
+const VIEW_KEY = "dw.dashboardView";
+const readView = (): PhoneView => {
+  try {
+    return sessionStorage.getItem(VIEW_KEY) === "feed" ? "feed" : "map";
+  } catch {
+    return "map";
+  }
+};
+
 type DashboardProps = {
   /** Only changes the wording under the alerts call-to-action. */
   signedIn?: boolean;
@@ -205,19 +220,61 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
   // parameter is removed so a refresh does not re-select it.
   const [searchParams, setSearchParams] = useSearchParams();
   const mapPanelRef = useRef<HTMLElement | null>(null);
+
+  // Phones show the map or the feed, not both stacked (desktop and tablets are unchanged).
+  const isPhone = useMediaQuery(PHONE_QUERY);
+  const [phoneView, setPhoneViewState] = useState<PhoneView>(readView);
+  const setPhoneView = useCallback((view: PhoneView) => {
+    setPhoneViewState(view);
+    try {
+      sessionStorage.setItem(VIEW_KEY, view);
+    } catch {
+      /* private mode: the choice just isn't remembered */
+    }
+  }, []);
+  const showMap = !isPhone || phoneView === "map";
+  // The feed stays mounted (hidden) in the phone Map view so the skip link always has its target.
+  const showFeed = !isPhone || phoneView === "feed";
+
+  // The skip link targets the feed: on a phone in the Map view, switch to the Feed first
+  // (synchronously, so the link can focus the first row right after).
+  useEffect(() => {
+    const onSkip = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === "disaster-feed" && isPhone) flushSync(() => setPhoneView("feed"));
+    };
+    window.addEventListener("dw:skip-to", onSkip);
+    return () => window.removeEventListener("dw:skip-to", onSkip);
+  }, [isPhone, setPhoneView]);
+
   useEffect(() => {
     const raw = searchParams.get("event");
     if (!raw) return;
     const id = Number(raw);
     const hit = disasters.find((d) => d.id === id);
     if (!hit) return; // feed not loaded yet (or unknown id): keep waiting
+    if (isPhone) setPhoneView("map");
     setSelectedDisaster(hit);
     // On narrow layouts the map sits below the KPI cards: bring it into view so the flyTo is seen.
-    mapPanelRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (!isPhone) mapPanelRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     const next = new URLSearchParams(searchParams);
     next.delete("event");
     setSearchParams(next, { replace: true });
-  }, [searchParams, disasters, setSearchParams]);
+  }, [searchParams, disasters, setSearchParams, isPhone, setPhoneView]);
+
+  // Phone: the event opens as a bottom sheet over the lower half of the screen; the map is
+  // scrolled to the top of the viewport so the selected marker stays visible above the sheet.
+  const selectedId = selectedDisaster?.id ?? null;
+  useEffect(() => {
+    if (selectedId === null || !isPhone || phoneView !== "map") return;
+    // next frame: the lazily loaded map (or its placeholder) is in the DOM by then
+    const frame = requestAnimationFrame(() => {
+      const map = mapPanelRef.current?.querySelector<HTMLElement>(".map-leaflet-container") ?? mapPanelRef.current;
+      if (!map) return;
+      const header = document.querySelector<HTMLElement>(".app-header")?.offsetHeight ?? 0; // sticky
+      window.scrollTo({ top: map.getBoundingClientRect().top + window.scrollY - header - 8 });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedId, isPhone, phoneView]);
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -574,91 +631,106 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
       </section>
 
       {/* Main grid (map + list) */}
-      <main className="app-main">
+      <main className={isPhone ? `app-main app-main-phone${selectedDisaster ? " app-main-sheet-open" : ""}` : "app-main"}>
+        {isPhone && (
+          <div className="view-toggle" role="group" aria-label="Show map or feed">
+            <button type="button" aria-pressed={phoneView === "map"} onClick={() => setPhoneView("map")}>
+              Map
+            </button>
+            <button type="button" aria-pressed={phoneView === "feed"} onClick={() => setPhoneView("feed")}>
+              Feed
+            </button>
+          </div>
+        )}
+
         {/* MAP PANEL */}
-        <section className="map-panel" ref={mapPanelRef}>
-          <div className="panel-header">
-            <h2>Map view</h2>
-            <span className="panel-caption">
-              {feedStatus === "loading" ? (
-                "Loading markers…"
-              ) : feedStatus === "error" ? (
-                "No markers while the feed is offline."
-              ) : mapDisasters.length === 0 ? (
-                disasters.length === 0 ? "No events to plot right now." : "No events to plot for this filter or search."
-              ) : (
-                <>
-                  Showing {mapDisasters.length} marker{mapDisasters.length === 1 ? "" : "s"} • Earthquakes: {mapMarkers.earthquakesShown}
-                  {mapMarkers.earthquakesTotal > mapMarkers.earthquakesShown ? ` of ${mapMarkers.earthquakesTotal} (latest ${MAP_EARTHQUAKE_CAP})` : ""}.
-                </>
-              )}
-              {hasData && feedUpdatedAt && (
-                <span className="panel-caption-updated">
-                  {" "}
-                  {feedStale ? "Last successful update" : "Updated"} {dataAge}
-                </span>
-              )}
-            </span>
-          </div>
-
-          {/* Reset to work around Leaflet marker cache issues */}
-          <MapView
-            key={activeFilter}
-            disasters={mapDisasters}
-            pulseIds={pulsing}
-            highlightId={selectedDisaster?.id ?? null}
-            onSelect={(id) => {
-              const hit = disasters.find((d) => d.id === id);
-              if (hit) setSelectedDisaster(hit);
-            }}
-          />
-
-          {/* HORIZONTAL LEGEND */}
-          <div className="map-legend">
-            <span className="legend-title">Legend</span>
-            <div className="legend-pills">
-              <div className="legend-pill">
-                <span className="legend-dot legend-dot-earthquake" />
-                <span>Earthquake</span>
-              </div>
-              <div className="legend-pill">
-                <span className="legend-dot legend-dot-flood" />
-                <span>Flood</span>
-              </div>
-              <div className="legend-pill">
-                <span className="legend-dot legend-dot-wildfire" />
-                <span>Wildfire</span>
-              </div>
-              <div className="legend-pill">
-                <span className="legend-dot legend-dot-storm" />
-                <span>Storm</span>
-              </div>
+        {showMap && (
+          <section className="map-panel" ref={mapPanelRef}>
+            <div className="panel-header">
+              <h2>Map view</h2>
+              <span className="panel-caption">
+                {feedStatus === "loading" ? (
+                  "Loading markers…"
+                ) : feedStatus === "error" ? (
+                  "No markers while the feed is offline."
+                ) : mapDisasters.length === 0 ? (
+                  disasters.length === 0 ? "No events to plot right now." : "No events to plot for this filter or search."
+                ) : (
+                  <>
+                    Showing {mapDisasters.length} marker{mapDisasters.length === 1 ? "" : "s"} • Earthquakes: {mapMarkers.earthquakesShown}
+                    {mapMarkers.earthquakesTotal > mapMarkers.earthquakesShown ? ` of ${mapMarkers.earthquakesTotal} (latest ${MAP_EARTHQUAKE_CAP})` : ""}.
+                  </>
+                )}
+                {hasData && feedUpdatedAt && (
+                  <span className="panel-caption-updated">
+                    {" "}
+                    {feedStale ? "Last successful update" : "Updated"} {dataAge}
+                  </span>
+                )}
+              </span>
             </div>
-            {/* clusters take the event colours: one colour for a single type, a split ring for a mix */}
-            <span className="legend-divider" aria-hidden="true" />
-            <span className="legend-title legend-title-sub">Clusters</span>
-            <div className="legend-pills legend-clusters">
-              <div className="legend-pill">
-                <span className="legend-cluster legend-cluster-single" aria-hidden="true">
-                  <span className="legend-cluster-count">3</span>
-                </span>
-                <span className="legend-cluster legend-cluster-split" aria-hidden="true">
-                  <span className="legend-cluster-count">7</span>
-                </span>
-                <span className="legend-cluster-caption">Clusters use the event colours; mixed clusters are split</span>
+
+            {/* Reset to work around Leaflet marker cache issues */}
+            <Suspense fallback={<div className="map-leaflet-container map-loading" aria-hidden="true" />}>
+              <MapView
+                key={activeFilter}
+                disasters={mapDisasters}
+                pulseIds={pulsing}
+                highlightId={selectedDisaster?.id ?? null}
+                onSelect={(id) => {
+                  const hit = disasters.find((d) => d.id === id);
+                  if (hit) setSelectedDisaster(hit);
+                }}
+              />
+            </Suspense>
+
+            {/* HORIZONTAL LEGEND */}
+            <div className="map-legend">
+              <span className="legend-title">Legend</span>
+              <div className="legend-pills">
+                <div className="legend-pill">
+                  <span className="legend-dot legend-dot-earthquake" />
+                  <span>Earthquake</span>
+                </div>
+                <div className="legend-pill">
+                  <span className="legend-dot legend-dot-flood" />
+                  <span>Flood</span>
+                </div>
+                <div className="legend-pill">
+                  <span className="legend-dot legend-dot-wildfire" />
+                  <span>Wildfire</span>
+                </div>
+                <div className="legend-pill">
+                  <span className="legend-dot legend-dot-storm" />
+                  <span>Storm</span>
+                </div>
               </div>
+              {/* clusters take the event colours: one colour for a single type, a split ring for a mix */}
+              <span className="legend-divider" aria-hidden="true" />
+              <span className="legend-title legend-title-sub">Clusters</span>
+              <div className="legend-pills legend-clusters">
+                <div className="legend-pill">
+                  <span className="legend-cluster legend-cluster-single" aria-hidden="true">
+                    <span className="legend-cluster-count">3</span>
+                  </span>
+                  <span className="legend-cluster legend-cluster-split" aria-hidden="true">
+                    <span className="legend-cluster-count">7</span>
+                  </span>
+                  <span className="legend-cluster-caption">Clusters use the event colours; mixed clusters are split</span>
+                </div>
+              </div>
+              {pulsing.size > 0 && (
+                <div className="legend-pill">
+                  <span className="legend-pulse" aria-hidden="true" />
+                  <span>Pulsing: newest event and recent significant ones (24 h)</span>
+                </div>
+              )}
             </div>
-            {pulsing.size > 0 && (
-              <div className="legend-pill">
-                <span className="legend-pulse" aria-hidden="true" />
-                <span>Pulsing: newest event and recent significant ones (24 h)</span>
-              </div>
-            )}
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* LIST PANEL */}
-        <section className="list-panel" id="disaster-feed" aria-labelledby="disaster-feed-title">
+        <section className="list-panel" id="disaster-feed" aria-labelledby="disaster-feed-title" hidden={!showFeed}>
           <div className="panel-header">
             <h2 id="disaster-feed-title" tabIndex={-1} data-skip-fallback>
               Disaster feed
@@ -751,7 +823,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
           </div>
 
           {/* Pagination controls */}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+          <div className="feed-pager" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
             <button
               type="button"
               className="filter-chip"
@@ -851,7 +923,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
           )}
 
           {/* Scrollable list container */}
-          <div ref={listRef} style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}>
+          <div ref={listRef} className="feed-scroll" style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}>
             <ul className="disaster-list">
               {pagedDisasters.map((item) => (
                 <FeedRow
