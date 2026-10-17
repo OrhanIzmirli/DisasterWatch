@@ -20,7 +20,9 @@
  *    linked event -> Guardian tags -> GDACS event country), or left
  *    unlocated (listed only under "All regions");
  *  - every article must pass the disaster-news relevance rules
- *    (src/services/newsRelevance.js), whatever search returned it;
+ *    (src/services/newsRelevance.js), whatever search returned it; the
+ *    rules and the location check run again on the cached articles each
+ *    time the cache is rebuilt (also after a restore from the database);
  *  - every successful refresh is written to the NewsCache table and loaded
  *    back on start-up, so a restart serves the previous articles at once;
  *  - Guardian articles expire 24 h after they were fetched (licence);
@@ -33,7 +35,7 @@
  */
 import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, MAX_EVENT_QUERIES } from "./newsLinking.js";
 import { isDisasterNews } from "./newsRelevance.js";
-import { withLocation } from "./newsLocation.js";
+import { withLocation, confirmLocation } from "./newsLocation.js";
 import { createNewsProviders } from "./newsProviders/index.js";
 import { fetchNasaEventsRated } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
@@ -267,7 +269,30 @@ export function createNewsService({
     return dedupeArticles([...all.filter((a) => a.relatedEvent).sort(byTime), ...all.filter((a) => !a.relatedEvent).sort(byTime)]);
   }
 
+  /**
+   * Current rules on cached articles: the relevance filter and the location
+   * check run again, so a rule change takes effect on the articles restored
+   * from the database instead of after they expire. The standfirst is never
+   * cached, so a Guardian article that was kept on its standfirst is only
+   * dropped by an explicit marker (section, feature, sports, retrospective).
+   */
+  function recheck(items, name) {
+    const kept = [];
+    for (const a of items) {
+      const verdict = isDisasterNews(a, { now: now() });
+      if (!verdict.keep && (verdict.marker || (a.provider ?? name) !== "guardian")) continue;
+      const location = confirmLocation({ ...a, provider: a.provider ?? name }, a.location ?? null);
+      kept.push(location === a.location ? a : { ...a, location });
+    }
+    return kept;
+  }
+
   function rebuildCache(at) {
+    for (const [name, s] of states) {
+      const before = s.items.length;
+      s.items = recheck(s.items, name);
+      if (s.items.length < before) log.log(`[news] ${PROVIDER_LABELS[name] ?? name}: ${before - s.items.length} cached article(s) dropped by the current relevance rules`);
+    }
     const items = mergedItems(at);
     if (!items.length) return null;
     const names = [...states].filter(([, s]) => s.items.length && liveItems(s.items, at).length).map(([n]) => n);

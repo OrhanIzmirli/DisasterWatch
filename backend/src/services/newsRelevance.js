@@ -15,7 +15,9 @@
  *     are sports listings ("vs.", "live stream", "how to watch"), product
  *     announcements ("tracker", "launches an app") and retrospectives set
  *     after a past storm ("years after", "anniversary", "... after Hurricane
- *     Helene" with no impact word in the headline).
+ *     Helene" with no impact word in the headline). Historical pieces (a past
+ *     4-digit year, "N years ago", "World Series") and sports-team uses of a
+ *     hazard word (a league or sport word and no impact word) go too.
  *  2. Idioms and names are removed from the text before matching
  *     ("perfect storm", "storm of criticism", "flood of", "spread like
  *     wildfire", "political earthquake", "Carolina Hurricanes", ...).
@@ -109,7 +111,13 @@ const PRODUCT_MARKERS =
   /\btrackers?\b|\b(launch|launches|launched|unveils|unveiled|rolls out|rolled out|debuts|introduces)\b(?: [\p{L}\p{N}'-]+){0,4} (app|apps|tool|tools|map|maps|dashboard|platform|feature|website|chatbot|product|sensor|sensors)\b/u;
 
 /** Retrospectives: the headline looks back at a past disaster. */
-const RETRO_MARKERS = /\b(anniversary|(years?|decades?|months?) (after|since|on from)|years on|remember(ing|s)?|looking back|lessons (from|of)|legacy of)\b/;
+const RETRO_MARKERS = /\b(anniversary|(years?|decades?|months?) (after|since|on from)|years on|(\d+|years|decades|centuries) ago|remember(ing|s)?|looking back|lessons (from|of)|legacy of|world series)\b/;
+
+/** A 4-digit year in the headline; a past one marks a historical piece ("the 1989 quake", "2025 floods"). Counts ("1900 homes") are not years. */
+const YEAR = /\b(1[89]\d\d|20\d\d)\b(?! ?(homes|houses|people|residents|families|buildings|hectares|acres|km|miles|feet|metres|meters|dead|killed|evacuated|firefighters|troops|visitors|tourists|students|workers|cases)\b)/;
+
+/** League and sport words: a hazard word next to them is usually a team name ("Hurricanes", "Storm", "Cyclones"). */
+const SPORT_WORDS = /\b(volleyball|football|soccer|basketball|baseball|hockey|cricket|rugby|netball|handball|league|champions league|premier league|super bowl|playoffs?|season opener|tournament|championships?)\b/;
 
 /** "... after Hurricane Helene": a named storm the headline looks back on (matched on the original casing). */
 const AFTER_NAMED_STORM = /\b(?:after|since|following) (?:Hurricane|Typhoon|Super Typhoon|Cyclone|Tropical Storm|Storm) ([A-Z][\p{L}'-]+)/u;
@@ -156,29 +164,39 @@ export function excludedSection(url) {
   return segs.find((s) => EXCLUDED_SECTIONS.has(s)) ?? null;
 }
 
-export function isDisasterNews(article) {
+/**
+ * `marker: true` on a drop means an explicit marker decided it (section,
+ * feature, sports, product, retrospective), not a missing hazard term.
+ */
+export function isDisasterNews(article, { now = new Date() } = {}) {
   const section = excludedSection(article?.url);
-  if (section) return { keep: false, reason: `section "${section}"` };
+  if (section) return { keep: false, marker: true, reason: `section "${section}"` };
 
   const headline = normalise(article?.title);
   const standfirst = normalise(article?.summary);
 
   const feature = headline.match(FEATURE_MARKERS);
-  if (feature) return { keep: false, reason: `feature/listing ("${feature[1]}")` };
+  if (feature) return { keep: false, marker: true, reason: `feature/listing ("${feature[1]}")` };
 
   const sports = headline.match(SPORTS_MARKERS);
-  if (sports) return { keep: false, reason: `sports listing ("${sports[1]}")` };
+  if (sports) return { keep: false, marker: true, reason: `sports listing ("${sports[1]}")` };
 
   const product = headline.match(PRODUCT_MARKERS);
-  if (product) return { keep: false, reason: `product announcement ("${product[0]}")` };
+  if (product) return { keep: false, marker: true, reason: `product announcement ("${product[0]}")` };
 
   const retro = headline.match(RETRO_MARKERS);
-  if (retro) return { keep: false, reason: `retrospective ("${retro[1]}")` };
+  if (retro) return { keep: false, marker: true, reason: `retrospective ("${retro[1]}")` };
+
+  const year = headline.match(YEAR);
+  if (year && Number(year[1]) < now.getUTCFullYear()) return { keep: false, marker: true, reason: `historical ("${year[1]}")` };
+
+  const sport = headline.match(SPORT_WORDS);
+  if (sport && !first(headline, IMPACT)) return { keep: false, marker: true, reason: `sports ("${sport[1]}", no impact in the headline)` };
 
   const after = String(article?.title ?? "").match(AFTER_NAMED_STORM);
   if (after && !NOT_A_NAME.has(after[1])) {
     const rest = normalise(String(article.title).replace(after[0], " "));
-    if (!first(rest, IMPACT) && !first(rest, STRONG)) return { keep: false, reason: `retrospective ("${after[0].toLowerCase()}", no impact in the headline)` };
+    if (!first(rest, IMPACT) && !first(rest, STRONG)) return { keep: false, marker: true, reason: `retrospective ("${after[0].toLowerCase()}", no impact in the headline)` };
   }
 
   const strongHead = first(headline, STRONG);

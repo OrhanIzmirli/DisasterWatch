@@ -17,7 +17,8 @@
  * Russia spans two: the event's longitude decides (>= 60° E is Asia); without
  * coordinates it counts for both.
  */
-import { countryFromToken } from "../utils/country.js";
+import { countryFromToken, countryAliases } from "../utils/country.js";
+import { CITY_COUNTRY } from "./newsCities.js";
 
 export const REGIONS = [
   { id: "africa", label: "Africa" },
@@ -152,8 +153,115 @@ export function resolveLocation(article) {
   return null;
 }
 
+/** Adjectives headlines use instead of the country name ("Nepali villages", "Turkish officials"). */
+const DEMONYMS = {
+  AF: ["afghan"], AR: ["argentine", "argentinian"], AU: ["australian"], BD: ["bangladeshi"], BR: ["brazilian"], CA: ["canadian"],
+  CL: ["chilean"], CN: ["chinese"], CO: ["colombian"], DE: ["german"], EC: ["ecuadorian"], EG: ["egyptian"], ES: ["spanish"],
+  ET: ["ethiopian"], FR: ["french"], GB: ["british"], GR: ["greek"], GT: ["guatemalan"], HT: ["haitian"], ID: ["indonesian"],
+  IN: ["indian"], IR: ["iranian"], IT: ["italian"], JP: ["japanese"], KE: ["kenyan"], KR: ["south korean"], LK: ["sri lankan"],
+  LY: ["libyan"], MA: ["moroccan"], MM: ["burmese"], MX: ["mexican"], MY: ["malaysian"], NG: ["nigerian"], NP: ["nepali", "nepalese"],
+  NZ: ["new zealand"], PE: ["peruvian"], PH: ["philippine", "filipino"], PK: ["pakistani"], PT: ["portuguese"], RU: ["russian"],
+  SO: ["somali"], TH: ["thai"], TR: ["turkish"], TW: ["taiwanese"], UA: ["ukrainian"], US: ["american"], VN: ["vietnamese"],
+  ZA: ["south african"],
+};
+
+const fold = (s) =>
+  String(s ?? "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[’‘]/g, "'");
+
+/** Lower-case, accent-free names a headline may use for each country code. */
+function buildCountryTerms() {
+  const terms = new Map();
+  const add = (code, term) => {
+    const t = fold(term).replace(/\s*\(.*?\)\s*/g, " ").trim();
+    if (!code || t.length < 3) return;
+    if (!terms.has(code)) terms.set(code, new Set());
+    terms.get(code).add(t);
+  };
+  for (const [name, code] of CODES) add(code, name);
+  for (const [alias, name] of countryAliases()) add(countryCode(name), alias);
+  for (const [code, words] of Object.entries(DEMONYMS)) for (const w of words) add(code, w);
+  return terms;
+}
+let COUNTRY_TERMS = null;
+
+const HAZARD_LABEL_WORDS = new Set(["flood", "floods", "wildfire", "wildfires", "forest", "fire", "fires", "storm", "tropical", "cyclone", "hurricane", "typhoon", "earthquake", "volcano", "drought", "in", "of", "near", "off", "the", "and", "region", "province", "state"]);
+
+/** Whole-word, accent-free match. */
+function mentions(text, term) {
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "u").test(text);
+}
+
+/** Headline plus the URL's last path segment (the story slug), folded. */
+function articleText(article) {
+  let slug = "";
+  try {
+    slug = new URL(article?.url).pathname.split("/").filter(Boolean).at(-1) ?? "";
+  } catch {
+    slug = "";
+  }
+  return fold(`${article?.title ?? ""} ${slug.replace(/[-_]+/g, " ").replace(/\.\w+$/, "")}`);
+}
+
+/**
+ * Does the article itself name this country (its name, an alias, a
+ * demonym) or a place word of its linked event's label ("Padang" in
+ * "Flood in Padang")?
+ */
+export function namesCountry(article, code) {
+  if (!COUNTRY_TERMS) COUNTRY_TERMS = buildCountryTerms();
+  const text = articleText(article);
+  if ([...(COUNTRY_TERMS.get(code) ?? [])].some((t) => mentions(text, t))) return true;
+  const label = article?.relatedEvent?.location;
+  if (label && countryCode(article.relatedEvent.country) === code) {
+    const places = fold(label)
+      .split(/[^\p{L}'-]+/u)
+      .filter((w) => w.length >= 4 && !HAZARD_LABEL_WORDS.has(w));
+    if (places.some((w) => mentions(text, w))) return true;
+  }
+  return false;
+}
+
+/** Countries of the unambiguous cities (src/services/newsCities.js) the headline or slug names. */
+function citiesNamed(article) {
+  let text = articleText(article);
+  const codes = new Set();
+  for (const [city, code] of CITY_COUNTRY) {
+    if (!mentions(text, city)) continue;
+    codes.add(code);
+    text = text.split(city).join(" "); // "new delhi" is not also "delhi"
+  }
+  return codes;
+}
+
+/**
+ * Honesty check on a resolved location. GDACS media lists are noisy (an
+ * Indonesian story can sit in the list of a fire in China), so a GDACS
+ * article keeps an inherited country (from its event or the GDACS report)
+ * only when its headline or slug names that country or an unambiguous city
+ * of it ("Istanbul" -> Türkiye); a city of another country contradicts it.
+ * Otherwise it is left unlocated. Other placements (Guardian tags, events linked by place-name
+ * match) are kept as they are. Applied when fetching and again when serving
+ * from the cache.
+ */
+export function confirmLocation(article, loc) {
+  if (!loc) return null;
+  if (article?.provider !== "gdacs" || loc.source === "guardian-tags") return loc;
+  const cityCountries = citiesNamed(article);
+  // a city of another country contradicts the inherited place
+  if ([...cityCountries].some((c) => !loc.countries.includes(c))) return null;
+  const countries = loc.countries.filter((c) => namesCountry(article, c) || cityCountries.has(c));
+  if (!countries.length) return null;
+  if (countries.length === loc.countries.length) return loc;
+  const lng = Number.isFinite(article?.relatedEvent?.lng) ? article.relatedEvent.lng : null;
+  return placed(countries, loc.source, lng);
+}
+
 /** The article with `location` set and the helper fields (tagPlace, gdacsPlace) removed. */
 export function withLocation(article) {
   const { tagPlace, gdacsPlace, ...rest } = article;
-  return { ...rest, location: resolveLocation(article) };
+  return { ...rest, location: confirmLocation(rest, resolveLocation(article)) };
 }

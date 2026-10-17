@@ -38,6 +38,11 @@ const ALIASES = new Map([
   ["dominican rep.", "Dominican Republic"], ["timor-leste", "Timor-Leste"], ["east timor", "Timor-Leste"],
 ]);
 
+/** [alias, country name] pairs ("turkey" -> "Türkiye"), for matching a country in free text. */
+export function countryAliases() {
+  return [...ALIASES];
+}
+
 /** English country names from the ISO 3166-1 alpha-2 space (built once). */
 function buildCountryNames() {
   const names = new Map(); // lower-case -> display name
