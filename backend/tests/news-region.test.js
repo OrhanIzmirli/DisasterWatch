@@ -127,7 +127,7 @@ describe("location priority: linked event -> Guardian tags -> GDACS event", () =
   const gdacsPlace = { countries: ["AU"], lat: -16.5, lng: 145.2 };
 
   it("takes the linked event's country first", () => {
-    expect(resolveLocation({ relatedEvent: { country: "Türkiye", lng: 28.9 }, tagPlace: tags, gdacsPlace })).toEqual({ countries: ["TR"], regions: ["middle-east"], source: "event" });
+    expect(resolveLocation({ relatedEvent: { country: "Türkiye", lng: 28.9 }, tagPlace: tags, gdacsPlace })).toEqual({ countries: ["TR"], regions: ["europe"], source: "event" });
   });
 
   it("falls back to the Guardian tags when the event has no country (or there is no event)", () => {
@@ -186,7 +186,7 @@ describe("country -> region table", () => {
 
   it("maps feed country names (Intl names and aliases) to codes and regions", () => {
     const cases = {
-      Türkiye: ["TR", "middle-east"],
+      Türkiye: ["TR", "europe"],
       Libya: ["LY", "africa"],
       Mexico: ["MX", "americas"],
       "United States": ["US", "americas"],
@@ -299,8 +299,8 @@ describe("the service: GDACS merged in, regions served, unlocated only under All
       expect(items.every((a) => a.location.regions.includes(id)), id).toBe(true);
     }
     expect(svc.getNews({ region: "americas" }).items.map((a) => a.url)).toEqual(["https://news.example.com/world/hurricane-landfall"]);
-    expect(svc.getNews({ region: "middle-east" }).items).toHaveLength(2);
-    expect(svc.getNews({ region: "europe" }).items).toEqual([]);
+    expect(svc.getNews({ region: "europe" }).items).toHaveLength(2); // Türkiye
+    expect(svc.getNews({ region: "middle-east" }).items).toEqual([]);
   });
 
   it("is not stale when only GDELT fails while others are fresh; stale once every contributor failed", async () => {

@@ -14,7 +14,7 @@ const LOCATED: NewsItem = {
   publishedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
   provider: "gdacs",
   relatedEvent: { id: 11, type: "flood", severity: "low", location: "Flood in Türkiye", lat: 41, lng: 28.9, country: "Türkiye" },
-  location: { countries: ["TR"], regions: ["middle-east"], source: "event" },
+  location: { countries: ["TR"], regions: ["europe"], source: "event" },
 };
 const UNLOCATED: NewsItem = {
   title: "Wildfires and floods: a week of natural disasters",
@@ -81,14 +81,14 @@ describe("news panel region filter", () => {
     expect(await screen.findByText(UNLOCATED.title)).toBeTruthy();
     expect(screen.getByText(LOCATED.title)).toBeTruthy();
 
-    await userEvent.click(screen.getByRole("button", { name: "Middle East" }));
+    await userEvent.click(screen.getByRole("button", { name: "Europe" }));
     expect(await screen.findByText(/listed only under All regions/)).toBeTruthy();
     expect(await screen.findByText(LOCATED.title)).toBeTruthy();
     expect(screen.queryByText(UNLOCATED.title)).toBeNull();
-    expect(calls.at(-1)).toContain("region=middle-east");
+    expect(calls.at(-1)).toContain("region=europe");
 
-    await userEvent.click(screen.getByRole("button", { name: "Europe" }));
-    expect(await screen.findByText("No disaster coverage located in Europe in the last 72 hours.")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Middle East" }));
+    expect(await screen.findByText("No disaster coverage located in Middle East in the last 72 hours.")).toBeTruthy();
   });
 
   it("names the country and region on located cards, nothing on unlocated ones", async () => {
@@ -96,7 +96,7 @@ describe("news panel region filter", () => {
     renderPanel();
     await screen.findByText(LOCATED.title);
     const cards = screen.getAllByRole("listitem");
-    expect(cards[0].textContent).toContain("Location: Türkiye · Middle East");
+    expect(cards[0].textContent).toContain("Location: Türkiye · Europe");
     expect(cards[0].textContent).toContain("via GDACS");
     expect(cards[1].textContent).not.toContain("Location:");
   });
@@ -104,7 +104,7 @@ describe("news panel region filter", () => {
 
 describe("locationText", () => {
   it("formats countries and regions, a region tag alone, or nothing", () => {
-    expect(locationText(LOCATED)).toBe("Türkiye · Middle East");
+    expect(locationText(LOCATED)).toBe("Türkiye · Europe");
     expect(locationText({ ...LOCATED, location: { countries: ["MX", "US"], regions: ["americas"], source: "guardian-tags" } })).toBe("Mexico, United States · Americas");
     expect(locationText({ ...LOCATED, location: { countries: [], regions: ["africa"], source: "guardian-tags" } })).toBe("Africa");
     expect(locationText(UNLOCATED)).toBeNull();
