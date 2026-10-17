@@ -2563,6 +2563,12 @@ body {
   color: var(--dw-text-muted);
 }
 
+/* honest note when the sources place the event differently (event detail only) */
+.edd-approx {
+  margin-top: 0.2rem;
+  color: #fcd34d;
+}
+
 /* USGS PAGER badge: the official alert colours are kept as-is; dark text on
    each of them is >= 11:1 */
 .edd-pager {

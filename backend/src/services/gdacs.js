@@ -161,9 +161,11 @@ export function createGdacsClient({
   }
 
   /**
-   * Attaches `event.gdacs = { level, score, text } | null` to every EONET
-   * event that links to GDACS (others are left untouched). Returns the same
-   * array. Never throws and never blocks longer than one timeout per batch.
+   * Attaches `event.gdacs = { level, score, text } | null` and
+   * `event.gdacsPlace = { countries, lat, lng } | null` (where GDACS places
+   * the event, from the same cached answer) to every EONET event that links
+   * to GDACS (others are left untouched). Returns the same array. Never
+   * throws and never blocks longer than one timeout per batch.
    */
   async function enrich(events) {
     const list = Array.isArray(events) ? events : [];
@@ -172,7 +174,9 @@ export function createGdacsClient({
     const before = stats.failures;
     const levels = await getLevels(refs);
     list.forEach((e, i) => {
-      if (refs[i]) e.gdacs = levels.get(gdacsKey(refs[i])) ?? null;
+      if (!refs[i]) return;
+      e.gdacs = levels.get(gdacsKey(refs[i])) ?? null;
+      e.gdacsPlace = cache.get(gdacsKey(refs[i]))?.place ?? null;
     });
     if (stats.failures > before) log.warn(`[gdacs] ${stats.failures - before} lookup(s) failed (${stats.lastError}); those events use the EONET measurement`);
     return list;
