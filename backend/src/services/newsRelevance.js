@@ -11,7 +11,11 @@
  *     technology, culture, opinion, lifestyle, interactives, ...): a hazard
  *     word there is almost always a metaphor, a review or a feature.
  *     Headlines of reviews, listings and features ("documentary",
- *     "screened tonight", "review", ...) are dropped as well.
+ *     "screened tonight", "review", "ballad", ...) are dropped as well, and so
+ *     are sports listings ("vs.", "live stream", "how to watch"), product
+ *     announcements ("tracker", "launches an app") and retrospectives set
+ *     after a past storm ("years after", "anniversary", "... after Hurricane
+ *     Helene" with no impact word in the headline).
  *  2. Idioms and names are removed from the text before matching
  *     ("perfect storm", "storm of criticism", "flood of", "spread like
  *     wildfire", "political earthquake", "Carolina Hurricanes", ...).
@@ -65,6 +69,7 @@ const IDIOMS = [
   /\b(eurofighter )?typhoon (jets?|fighters?|aircraft|squadron)\b/g,
   /\beurofighter\b/g,
   /\bstorm (shadow|missiles?)\b/g,
+  /\b(pretend|fake|simulated|mock|virtual|staged) (earthquakes?|quakes?|tsunamis?|hurricanes?|typhoons?|cyclones?|tornado(es)?|floods?|storms?|wildfires?)\b/g,
 ];
 
 /** Unambiguous hazard terms. */
@@ -94,7 +99,21 @@ const IMPACT = [
 ];
 
 /** Headline words of reviews, listings and features: a hazard word there is usually a title, not news. */
-const FEATURE_MARKERS = /\b(documentary|review|reviewed|screened|screening|premiere|episode|box set|tv tonight|what to watch|album|novel|exhibition|podcast|recipe|quiz|crossword|obituary)\b/;
+const FEATURE_MARKERS = /\b(documentary|review|reviewed|screened|screening|premiere|episode|box set|tv tonight|what to watch|album|song|songs|ballad|singing|rap|rapper|unreleased|lyrics|novel|exhibition|podcast|recipe|quiz|crossword|obituary|dark tourism)\b/;
+
+/** Sports fixtures and listings ("Hurricanes vs. Jets Time, TV & Live Stream"). */
+const SPORTS_MARKERS = /\b(vs|versus|live ?stream(ing)?|how to watch|where to watch|tv channel|kick-?off time|tip-?off time|box score|final score|playoffs?)\b/;
+
+/** Product and launch announcements ("ABC launches an updated wildfire tracker"). */
+const PRODUCT_MARKERS =
+  /\btrackers?\b|\b(launch|launches|launched|unveils|unveiled|rolls out|rolled out|debuts|introduces)\b(?: [\p{L}\p{N}'-]+){0,4} (app|apps|tool|tools|map|maps|dashboard|platform|feature|website|chatbot|product|sensor|sensors)\b/u;
+
+/** Retrospectives: the headline looks back at a past disaster. */
+const RETRO_MARKERS = /\b(anniversary|(years?|decades?|months?) (after|since|on from)|years on|remember(ing|s)?|looking back|lessons (from|of)|legacy of)\b/;
+
+/** "... after Hurricane Helene": a named storm the headline looks back on (matched on the original casing). */
+const AFTER_NAMED_STORM = /\b(?:after|since|following) (?:Hurricane|Typhoon|Super Typhoon|Cyclone|Tropical Storm|Storm) ([A-Z][\p{L}'-]+)/u;
+const NOT_A_NAME = new Set(["Hits", "Strikes", "Slams", "Makes", "Passes", "Season", "Damage", "Warning", "Warnings", "Watch", "Landfall", "Threat", "Batters", "Lashes"]);
 
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 
@@ -146,6 +165,21 @@ export function isDisasterNews(article) {
 
   const feature = headline.match(FEATURE_MARKERS);
   if (feature) return { keep: false, reason: `feature/listing ("${feature[1]}")` };
+
+  const sports = headline.match(SPORTS_MARKERS);
+  if (sports) return { keep: false, reason: `sports listing ("${sports[1]}")` };
+
+  const product = headline.match(PRODUCT_MARKERS);
+  if (product) return { keep: false, reason: `product announcement ("${product[0]}")` };
+
+  const retro = headline.match(RETRO_MARKERS);
+  if (retro) return { keep: false, reason: `retrospective ("${retro[1]}")` };
+
+  const after = String(article?.title ?? "").match(AFTER_NAMED_STORM);
+  if (after && !NOT_A_NAME.has(after[1])) {
+    const rest = normalise(String(article.title).replace(after[0], " "));
+    if (!first(rest, IMPACT) && !first(rest, STRONG)) return { keep: false, reason: `retrospective ("${after[0].toLowerCase()}", no impact in the headline)` };
+  }
 
   const strongHead = first(headline, STRONG);
   if (strongHead) return { keep: true, reason: `headline names "${strongHead}"` };

@@ -130,16 +130,18 @@ model NewsCache {
   domain       String
   image        String?
   publishedAt  DateTime?
-  /// "gdelt" | "guardian"
+  /// "gdelt" | "guardian" | "gdacs"
   provider     String
   relatedEvent Json?
+  /// { countries: ["MX"], regions: ["americas"], source: "event" | "guardian-tags" | "gdacs" }; null = unlocated.
+  location     Json?
   /// Order within the refresh (0 = first).
   position     Int
   /// When the refresh that produced the row ran; all rows of one refresh share it.
   fetchedAt    DateTime
   /// Guardian Open Platform terms: content may be held for at most 24 hours,
   /// so Guardian rows carry fetchedAt + 24 h and are deleted after that.
-  /// Null for GDELT rows.
+  /// GDELT and GDACS rows: fetchedAt + 72 h.
   expiresAt    DateTime?
 
   @@index([expiresAt])

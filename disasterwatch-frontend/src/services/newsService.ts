@@ -7,13 +7,39 @@ export type RelatedEvent = {
   location: string;
   lat: number;
   lng: number;
+  /** The feed event's country name, when the source place names one. */
+  country?: string | null;
 };
 
-export type NewsProvider = "gdelt" | "guardian";
+export type NewsProvider = "gdelt" | "guardian" | "gdacs";
 
 export const PROVIDER_LABELS: Record<NewsProvider, string> = {
   gdelt: "GDELT",
   guardian: "The Guardian",
+  gdacs: "GDACS",
+};
+
+export type NewsRegion = "africa" | "americas" | "asia" | "europe" | "middle-east" | "oceania";
+
+export const REGION_LABELS: Record<NewsRegion, string> = {
+  africa: "Africa",
+  americas: "Americas",
+  asia: "Asia",
+  europe: "Europe",
+  "middle-east": "Middle East",
+  oceania: "Oceania",
+};
+
+/**
+ * Where the article is about: from its linked feed event, else its Guardian
+ * tags, else its GDACS event. Null when none of them places it (the article
+ * is then listed only under "All regions").
+ */
+export type NewsLocation = {
+  /** ISO 3166-1 alpha-2 codes. */
+  countries: string[];
+  regions: NewsRegion[];
+  source: "event" | "guardian-tags" | "gdacs";
 };
 
 export type NewsItem = {
@@ -25,6 +51,7 @@ export type NewsItem = {
   /** Which news provider supplied the article (shown as "via …" on the card). */
   provider?: NewsProvider;
   relatedEvent?: RelatedEvent | null;
+  location?: NewsLocation | null;
 };
 
 export type NewsResponse = {
@@ -32,9 +59,9 @@ export type NewsResponse = {
   count: number;
   updatedAt: string | null;
   stale: boolean;
-  /** Labels of the providers in the current cache: "GDELT", "The Guardian" or "GDELT + The Guardian". */
+  /** Labels of the providers in the current cache, e.g. "The Guardian + GDACS". */
   source?: string;
-  /** "gdelt", "guardian" or "gdelt+guardian" (merged cache). */
+  /** Provider names joined with "+", e.g. "guardian+gdacs" (merged cache). */
   provider?: string | null;
 };
 
@@ -49,14 +76,16 @@ export class NewsError extends Error {
 
 /**
  * GET /api/news (served from the backend's cache). Optional filters:
- * type (hazard) and eventId (articles linked to one feed event).
+ * type (hazard), region (unlocated articles never match one) and eventId
+ * (articles linked to one feed event).
  */
 export async function getDisasterNews(
-  { type, eventId, limit }: { type?: NewsType | null; eventId?: number | null; limit?: number } = {},
+  { type, region, eventId, limit }: { type?: NewsType | null; region?: NewsRegion | null; eventId?: number | null; limit?: number } = {},
   signal?: AbortSignal
 ): Promise<NewsResponse> {
   const params = new URLSearchParams();
   if (type) params.set("type", type);
+  if (region) params.set("region", region);
   if (eventId !== undefined && eventId !== null) params.set("event", String(eventId));
   if (limit) params.set("limit", String(limit));
   const qs = params.toString();

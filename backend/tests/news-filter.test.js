@@ -121,6 +121,37 @@ describe("idioms, names and non-news sections", () => {
   });
 });
 
+describe("sports listings, product announcements, retrospectives (misses seen on production, paraphrased)", () => {
+  it("drops sports fixtures and stream listings", () => {
+    expect(isDisasterNews({ title: "Hurricanes vs. Rangers: start time, TV channel & live stream", url: "https://news.example.com/world/a" }).reason).toBe('sports listing ("vs")');
+    expect(keep("How to watch the Cyclones tonight")).toBe(false);
+    expect(keep("Storm vs Lynx live streaming details")).toBe(false);
+  });
+
+  it("drops product and launch announcements", () => {
+    expect(isDisasterNews({ title: "Broadcaster launches a refreshed wildfire tracker", url: "https://news.example.com/world/a" }).reason).toBe('product announcement ("tracker")');
+    expect(keep("Start-up unveils an earthquake early-warning app")).toBe(false);
+    expect(keep("Military launches rescue operation after earthquake")).toBe(true);
+  });
+
+  it("drops features set after a past storm, keeps current impact reports", () => {
+    expect(keep("Folk ballads at Ohio mounds after Hurricane Helene")).toBe(false);
+    expect(isDisasterNews({ title: "Ohio mounds draw visitors after Hurricane Helene", url: "https://news.example.com/world/a" }).reason).toBe(
+      'retrospective ("after hurricane helene", no impact in the headline)'
+    );
+    expect(keep("Two years after the Maui wildfire, the town rebuilds")).toBe(false);
+    expect(keep("Flood anniversary marked in the valley")).toBe(false);
+    expect(keep("Thousands homeless after Hurricane Melissa")).toBe(true);
+    expect(keep("Jamaica counts the dead after Hurricane Melissa")).toBe(true);
+    expect(keep("Hurricane Melissa makes landfall in Jamaica")).toBe(true);
+  });
+
+  it("drops songs and staged hazards", () => {
+    expect(keep("Rapper shares an unreleased verse about an earthquake")).toBe(false);
+    expect(keep("Visitors queue to try a pretend typhoon at a theme park")).toBe(false);
+  });
+});
+
 describe("the service filters every search, not only the general one", () => {
   it("drops an off-topic article returned by a group search (it used to pass unchecked)", async () => {
     const mk = (title, url) => ({ title, url, domain: "news.example.com", publishedAt: "2026-10-16T08:00:00.000Z", image: null, provider: "guardian" });
