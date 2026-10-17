@@ -18,6 +18,7 @@
  * coordinates it counts for both.
  */
 import { countryFromToken, countryAliases } from "../utils/country.js";
+import { CITY_COUNTRY } from "./newsCities.js";
 
 export const REGIONS = [
   { id: "africa", label: "Africa" },
@@ -224,19 +225,35 @@ export function namesCountry(article, code) {
   return false;
 }
 
+/** Countries of the unambiguous cities (src/services/newsCities.js) the headline or slug names. */
+function citiesNamed(article) {
+  let text = articleText(article);
+  const codes = new Set();
+  for (const [city, code] of CITY_COUNTRY) {
+    if (!mentions(text, city)) continue;
+    codes.add(code);
+    text = text.split(city).join(" "); // "new delhi" is not also "delhi"
+  }
+  return codes;
+}
+
 /**
  * Honesty check on a resolved location. GDACS media lists are noisy (an
  * Indonesian story can sit in the list of a fire in China), so a GDACS
  * article keeps an inherited country (from its event or the GDACS report)
- * only when its headline or slug names that country; otherwise it is left
- * unlocated. Other placements (Guardian tags, events linked by place-name
+ * only when its headline or slug names that country or an unambiguous city
+ * of it ("Istanbul" -> Türkiye); a city of another country contradicts it.
+ * Otherwise it is left unlocated. Other placements (Guardian tags, events linked by place-name
  * match) are kept as they are. Applied when fetching and again when serving
  * from the cache.
  */
 export function confirmLocation(article, loc) {
   if (!loc) return null;
   if (article?.provider !== "gdacs" || loc.source === "guardian-tags") return loc;
-  const countries = loc.countries.filter((c) => namesCountry(article, c));
+  const cityCountries = citiesNamed(article);
+  // a city of another country contradicts the inherited place
+  if ([...cityCountries].some((c) => !loc.countries.includes(c))) return null;
+  const countries = loc.countries.filter((c) => namesCountry(article, c) || cityCountries.has(c));
   if (!countries.length) return null;
   if (countries.length === loc.countries.length) return loc;
   const lng = Number.isFinite(article?.relatedEvent?.lng) ? article.relatedEvent.lng : null;

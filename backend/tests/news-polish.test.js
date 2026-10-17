@@ -36,6 +36,22 @@ describe("GDACS articles keep the event's country only when they name it", () =>
     expect(confirmLocation(gdacsArticle("Teenager dies as heavy rain floods the city", TURKIYE_FLOOD), located("TR", "europe"))).toBeNull();
   });
 
+  it("a city of the event's country confirms it", () => {
+    expect(confirmLocation(gdacsArticle("Worst floods in decades leave four dead in Istanbul", TURKIYE_FLOOD), located("TR", "europe"))).toEqual(located("TR", "europe"));
+    expect(confirmLocation(gdacsArticle("Floods leave four dead", TURKIYE_FLOOD, "https://news.example.com/world/ankara-floods-four-dead"), located("TR", "europe"))).not.toBeNull();
+  });
+
+  it("a city of another country contradicts it, even when the country is named", () => {
+    expect(confirmLocation(gdacsArticle("Smoke from forest fires reaches Jakarta", CHINA_FIRE), located("CN", "asia"))).toBeNull();
+    expect(confirmLocation(gdacsArticle("China sends firefighters as smoke chokes Kuala Lumpur", CHINA_FIRE), located("CN", "asia"))).toBeNull();
+  });
+
+  it("an ambiguous city (Tripoli: Libya and Lebanon) neither confirms nor contradicts", () => {
+    const LIBYA_FLOOD = { id: 41, type: "flood", severity: "low", location: "Flood in Libya", lat: 32.9, lng: 13.2, country: "Libya" };
+    expect(confirmLocation(gdacsArticle("Tripoli authorities open an inquiry into flood damage", LIBYA_FLOOD), located("LY", "africa"))).toBeNull();
+    expect(confirmLocation(gdacsArticle("Two die as rains flood Libya's capital Tripoli", LIBYA_FLOOD), located("LY", "africa"))).toEqual(located("LY", "africa"));
+  });
+
   it("applies the same check to the GDACS report's country (event without one)", () => {
     const a = { ...gdacsArticle("Bushfire threatens homes", { ...CHINA_FIRE, country: null }), gdacsPlace: { countries: ["AU"], lat: -16, lng: 145 } };
     expect(withLocation(a).location).toBeNull();
