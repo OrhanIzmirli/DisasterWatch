@@ -57,7 +57,7 @@ const openGate = { run: (fn) => fn() };
 describe("GDACS media news provider", () => {
   it("maps an EMM item to a link-out article: headline as sent (doubled apostrophes undone), UTC date, domain, no image, no text", () => {
     expect(normalizeEmmArticle(EMM[0])).toEqual({
-      title: "City's worst floods in decades leave four dead",
+      title: "Turkish city's worst floods in decades leave four dead",
       url: "https://news.example.com/world/2026/10/16/city-floods-leave-four-dead",
       domain: "news.example.com",
       publishedAt: "2026-10-16T17:38:00.000Z",
@@ -265,20 +265,23 @@ describe("the service: GDACS merged in, regions served, unlocated only under All
     const all = svc.getNews();
     const gd = all.items.filter((a) => a.provider === "gdacs");
     // the off-topic "journal lists" item is dropped by the relevance rules
-    expect(gd.map((a) => a.title)).toEqual(["City's worst floods in decades leave four dead", "Floods trigger dozens of landslides and damage hundreds of businesses"]);
-    expect(gd.every((a) => a.relatedEvent?.id === 11 && a.location?.source === "event" && a.location.countries[0] === "TR")).toBe(true);
+    expect(gd.map((a) => a.title)).toEqual(["Turkish city's worst floods in decades leave four dead", "Floods trigger dozens of landslides and damage hundreds of businesses"]);
+    expect(gd.every((a) => a.relatedEvent?.id === 11)).toBe(true);
+    // the event's country only where the headline names it; the neutral headline stays unlocated
+    expect(gd[0].location).toEqual({ countries: ["TR"], regions: ["europe"], source: "event" });
+    expect(gd[1].location).toBeNull();
     expect(gd[0]).not.toHaveProperty("gdacsPlace");
     expect(gd[0]).not.toHaveProperty("event");
     expect(all.source).toBe("The Guardian + GDACS");
 
     const st = svc.status().providers;
-    expect(st.gdacs).toMatchObject({ articles: 2, located: 2, lastErrorKind: null, droppedOffTopic: 1 });
+    expect(st.gdacs).toMatchObject({ articles: 2, located: 1, lastErrorKind: null, droppedOffTopic: 1 });
     expect(st.gdelt).toMatchObject({ articles: 0, lastErrorKind: "rate-limit" });
   });
 
   it("uses the GDACS event's country when the linked feed event has none", async () => {
     const { svc, gdacsFetch } = setup();
-    gdacsFetch.mockImplementation(async (url) => (url.includes("1032806") ? jsonRes([{ title: "Bushfire destroys homes near the coast", link: "https://news.example.com/au/bushfire-homes", pubdate: "2026-10-16T09:00:00" }]) : jsonRes([])));
+    gdacsFetch.mockImplementation(async (url) => (url.includes("1032806") ? jsonRes([{ title: "Bushfire destroys homes on the Australian coast", link: "https://news.example.com/au/bushfire-homes", pubdate: "2026-10-16T09:00:00" }]) : jsonRes([])));
     await svc.refresh();
     const a = svc.getNews().items.find((x) => x.provider === "gdacs");
     expect(a.relatedEvent).toMatchObject({ id: 12, country: null });
@@ -299,7 +302,7 @@ describe("the service: GDACS merged in, regions served, unlocated only under All
       expect(items.every((a) => a.location.regions.includes(id)), id).toBe(true);
     }
     expect(svc.getNews({ region: "americas" }).items.map((a) => a.url)).toEqual(["https://news.example.com/world/hurricane-landfall"]);
-    expect(svc.getNews({ region: "europe" }).items).toHaveLength(2); // Türkiye
+    expect(svc.getNews({ region: "europe" }).items).toHaveLength(1); // Türkiye, named in the headline
     expect(svc.getNews({ region: "middle-east" }).items).toEqual([]);
   });
 
