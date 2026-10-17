@@ -16,6 +16,8 @@ export default function SkipLink({ targetId = "disaster-feed", label = "Skip to 
       href={`#${targetId}`}
       className="skip-link"
       onClick={(e) => {
+        // lets a page reveal the target first (the phone dashboard shows the map or the feed, one at a time)
+        window.dispatchEvent(new CustomEvent("dw:skip-to", { detail: targetId }));
         const region = document.getElementById(targetId);
         if (!region) return; // let the browser follow the fragment
         e.preventDefault();

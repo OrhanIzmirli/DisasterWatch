@@ -3619,3 +3619,283 @@ button.disaster-row {
     display: none;
   }
 }
+
+/* =========================
+   PHONE LAYOUT (<= 480px)
+   Everything below applies to phones only; desktop and tablet widths are
+   untouched. The dashboard shows the map or the feed (Map | Feed toggle),
+   the event detail opens as a bottom sheet, gutters are 16px and every
+   control is at least 44px tall.
+========================= */
+
+/* the Map | Feed toggle is only rendered on phones */
+.view-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0 0 0.75rem;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(102, 155, 188, 0.6);
+  background: rgba(0, 21, 35, 0.8);
+}
+
+.view-toggle button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dw-cream);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.view-toggle button[aria-pressed="true"] {
+  background: #669bbc;
+  color: #001523;
+}
+
+.view-toggle button:focus-visible {
+  outline: 3px solid #ffb020;
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  /* 16px side gutters */
+  .app-header {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .dashboard-header {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .dashboard-title {
+    font-size: 1.25rem;
+  }
+
+  .headline-strip {
+    margin-left: 1rem;
+    margin-right: 1rem;
+  }
+
+  /* KPIs: one tight row of three */
+  .dashboard-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 0 1rem 0.75rem;
+  }
+
+  .kpi-card {
+    padding: 0.5rem 0.55rem;
+    gap: 0.1rem;
+    border-radius: 0.7rem;
+    box-shadow: none;
+  }
+
+  .kpi-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    line-height: 1.25;
+  }
+
+  .kpi-value {
+    font-size: 1.15rem;
+    line-height: 1.2;
+  }
+
+  .kpi-footnote {
+    display: none;
+  }
+
+  /* one panel at a time, full width */
+  .app-main-phone {
+    display: block;
+    padding: 0 1rem 1rem;
+  }
+
+  .map-panel,
+  .list-panel {
+    padding: 0.75rem;
+    border-radius: 0.9rem;
+  }
+
+  .list-panel[hidden] {
+    display: none;
+  }
+
+  /* room below the map while the bottom sheet is open, so the map can scroll up above it */
+  .app-main-sheet-open {
+    padding-bottom: 50vh;
+  }
+
+  /* the map gets ~45% of the screen; when an event opens it is scrolled to just under the
+     sticky header so it stays visible above the bottom sheet (DashboardPage) */
+  .map-leaflet-container,
+  .map-panel .leaflet-container {
+    height: 45vh !important;
+    min-height: 240px;
+  }
+
+  .map-legend {
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+  }
+
+  /* event detail: a bottom sheet over the lower part of the screen, the map stays visible above it */
+  .detail-overlay {
+    background: rgba(15, 23, 42, 0.2) !important;
+  }
+
+  .detail-drawer {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: 50vh;
+    border-left: 0;
+    border-top: 1px solid var(--dw-border);
+    border-radius: 1rem 1rem 0 0;
+    box-shadow: 0 -18px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  /* grab-handle look (decorative; the sheet closes with the X, a tap above it or Escape) */
+  .detail-drawer::before {
+    content: "";
+    display: block;
+    flex: none;
+    width: 40px;
+    height: 4px;
+    margin: 8px auto 0;
+    border-radius: 2px;
+    background: rgba(203, 213, 225, 0.5);
+  }
+
+  .detail-header {
+    padding: 0.5rem 1rem 0.6rem;
+  }
+
+  /* the sheet's body scrolls inside the sheet */
+  .detail-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .detail-close-btn,
+  .news-close-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* feed: tighter rows, the severity pill on one line */
+  .feed-scroll {
+    max-height: none !important;
+    overflow: visible !important;
+    padding-right: 0 !important;
+  }
+
+  .disaster-list {
+    gap: 0.35rem;
+  }
+
+  .disaster-row {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.4rem 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .disaster-row-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .disaster-row-top {
+    flex-wrap: wrap;
+    gap: 0.15rem 0.4rem;
+  }
+
+  .disaster-type-tag {
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+  }
+
+  .disaster-location {
+    font-size: 0.82rem;
+    line-height: 1.3;
+    text-align: left;
+  }
+
+  .disaster-meta {
+    font-size: 0.7rem;
+  }
+
+  .disaster-severity {
+    flex: none;
+    white-space: nowrap;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    padding: 0.15rem 0.45rem;
+  }
+
+  .timeline-hint {
+    display: none;
+  }
+
+  /* touch targets >= 44px; chips wrap */
+  .disaster-filters,
+  .disaster-tools,
+  .news-filters {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .disaster-tools {
+    width: 100%;
+  }
+
+  .disaster-search {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .filter-chip,
+  .disaster-search,
+  .disaster-sort,
+  .btn-sm,
+  .nav-btn,
+  .nav-user,
+  .news-toggle-btn,
+  .headline-cta-btn {
+    min-height: 44px;
+  }
+
+  .filter-chip,
+  .btn-sm {
+    min-width: 44px;
+    font-size: 0.8rem;
+  }
+
+  .nav-btn,
+  .news-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* news headlines are the card's link: a full 44px row */
+  .news-card-title a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  /* inputs at 16px so iOS does not zoom in on focus */
+  .disaster-search,
+  .disaster-sort {
+    font-size: 1rem;
+  }
+}
