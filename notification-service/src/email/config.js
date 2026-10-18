@@ -6,7 +6,7 @@
  *
  *   RESEND_API_KEY     Resend API key (secret)
  *   RESEND_FROM        sender, e.g. "DisasterWatch <onboarding@resend.dev>"
- *   APP_URL            public site URL used in links, e.g. https://example.onrender.com
+ *   APP_URL            public site URL used in links, e.g. https://dw.example.com
  *   EMAIL_DAILY_LIMIT  digests per rolling 24 h (default 90; Resend free plan: 100/day)
  */
 export const DEFAULT_DAILY_LIMIT = 90;

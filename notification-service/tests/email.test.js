@@ -77,9 +77,9 @@ describe("digest content", () => {
   });
 
   it("no images, no tracking pixel, no scripts; every value is escaped", () => {
-    const { html } = renderDigest({ notifications: [alert({ title: '<img src="https://evil.example/p.gif"><script>x()</script>', subscriptionLabel: "<b>Home</b>" })], appUrl: APP, unsubscribeUrl: "u" });
+    const { html } = renderDigest({ notifications: [alert({ title: '<img src="https://tracker.example.com/p.gif"><script>x()</script>', subscriptionLabel: "<b>Home</b>" })], appUrl: APP, unsubscribeUrl: "u" });
     expect(html).not.toMatch(/<img|<script|<iframe|<link|background=|url\(/i);
-    expect(html).toContain("&lt;img src=&quot;https://evil.example/p.gif&quot;&gt;");
+    expect(html).toContain("&lt;img src=&quot;https://tracker.example.com/p.gif&quot;&gt;");
     expect(html).toContain("&lt;b&gt;Home&lt;/b&gt;");
     expect(escapeHtml(`"'&<>`)).toBe("&quot;&#39;&amp;&lt;&gt;");
   });
