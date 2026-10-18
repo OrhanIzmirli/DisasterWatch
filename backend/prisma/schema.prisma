@@ -22,6 +22,15 @@ model User {
   tokenVersion  Int                 @default(0)
   subscriptions AlertSubscription[]
   notifications Notification[]
+  /// E-mail alerts are opt-in: off until the user turns them on (Alerts page).
+  emailAlertsEnabled    Boolean             @default(false)
+  /// When the user agreed to e-mail alerts; null while they are off. Only
+  /// notifications created after this moment are e-mailed.
+  emailAlertsConsentAt  DateTime?
+  /// Unguessable token of the one-click unsubscribe link (no sign-in needed);
+  /// created on the first opt-in and kept, so links in older e-mails keep working.
+  emailUnsubscribeToken String?             @unique
+  emailDeliveries       EmailDelivery[]
 }
 
 /// One row per administrative action, written in the same transaction as
@@ -79,6 +88,9 @@ model IngestedEvent {
   firstSeenAt DateTime  @default(now())
   /// Transactional outbox: null until the event has been published to Kafka.
   publishedAt DateTime?
+  /// "exact" | "approximate" (the map marker's location note); null for rows
+  /// recorded before the column existed. Read by the notification e-mails.
+  locationPrecision String?
 
   @@index([publishedAt, firstSeenAt])
 }
@@ -101,9 +113,54 @@ model Notification {
   occurredAt     DateTime
   createdAt      DateTime           @default(now())
   readAt         DateTime?
+  /// The e-mail digest this notification was put in (notification-service).
+  emailDeliveryId Int?
+  emailDelivery   EmailDelivery?     @relation(fields: [emailDeliveryId], references: [id], onDelete: SetNull)
+  /// Set only after the e-mail provider accepted the digest.
+  emailSentAt     DateTime?
+  /// Why no e-mail was sent: "daily-limit" | "send-failed" | "disabled".
+  emailSkipReason String?
 
   @@unique([userId, eventId])
   @@index([userId, readAt])
+  @@index([emailDeliveryId])
+  @@index([createdAt])
+}
+
+/// One e-mail digest to one user (notification-service). Created as
+/// "pending" before the send, so a failed send is retried with the same
+/// provider idempotency key and the daily limit is counted from here.
+model EmailDelivery {
+  id                Int            @id @default(autoincrement())
+  userId            Int
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "pending" | "sent" | "failed" | "cancelled"
+  status            String         @default("pending")
+  notificationCount Int
+  attempts          Int            @default(0)
+  createdAt         DateTime       @default(now())
+  lastAttemptAt     DateTime?
+  sentAt            DateTime?
+  /// Provider error, e-mail addresses masked.
+  lastError         String?
+  providerMessageId String?
+  notifications     Notification[]
+
+  @@index([status, createdAt])
+  @@index([sentAt])
+}
+
+/// Single row (id = 1) the notification-service writes on start and after
+/// every e-mail run, so the backend can tell the Alerts page whether e-mail
+/// is really configured. No addresses.
+model EmailChannelStatus {
+  id          Int       @id
+  configured  Boolean
+  dailyLimit  Int
+  updatedAt   DateTime
+  lastSentAt  DateTime?
+  lastError   String?
+  lastErrorAt DateTime?
 }
 
 model Disaster {

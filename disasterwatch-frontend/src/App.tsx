@@ -23,6 +23,7 @@ const AdminPage = lazy(() => import("./pages/AdminPage"));
 const AccountPage = lazy(() => import("./pages/AccountPage"));
 const SignInPage = lazy(() => import("./pages/SignInPage"));
 const SignUpPage = lazy(() => import("./pages/SignUpPage"));
+const UnsubscribePage = lazy(() => import("./pages/UnsubscribePage"));
 
 export type AuthUser = {
   email: string;
@@ -248,6 +249,7 @@ export default function App() {
 
             <Route path="/signin" element={<SignInPage onSignedIn={onSignedIn} />} />
             <Route path="/signup" element={<SignUpPage onSignedIn={onSignedIn} />} />
+            <Route path="/unsubscribe" element={<UnsubscribePage />} />
 
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

@@ -3,6 +3,9 @@ import { Kafka } from "kafkajs";
 import { TOPIC } from "./src/contract.js";
 import { createPool, loadActiveSubscriptions, insertNotifications } from "./src/db.js";
 import { createMessageHandler } from "./src/handler.js";
+import { readEmailConfig } from "./src/email/config.js";
+import { createResendSender } from "./src/email/resend.js";
+import { createEmailDispatcher, RETRY_INTERVAL_MS } from "./src/email/dispatcher.js";
 
 const broker =
   process.env.KAFKA_BROKER ||
@@ -76,6 +79,19 @@ const handleMessage = createMessageHandler({
   insertNotifications: (rows) => insertNotifications(pool, rows),
 });
 
+// ---- e-mail digests (opt-in per user; off unless RESEND_API_KEY, RESEND_FROM and APP_URL are set) ----
+const emailConfig = readEmailConfig();
+const emailDispatcher = createEmailDispatcher({
+  pool,
+  config: emailConfig,
+  sender: createResendSender({ apiKey: emailConfig.apiKey }),
+});
+console.log(
+  emailConfig.configured
+    ? `E-mail alerts configured (limit ${emailConfig.dailyLimit} per 24 h)`
+    : `E-mail alerts off: ${emailConfig.missing.join(", ")} not set`
+);
+
 // Minimal HTTP server so hosting platforms can health-check the service.
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -94,6 +110,8 @@ const server = http.createServer((req, res) => {
         lastProcessedAt: stats.lastProcessedAt,
         lastEventId: stats.lastEventId,
         lastError: stats.lastError,
+        // counts and times only, no addresses
+        email: emailDispatcher.status(),
         time: new Date().toISOString(),
       })
     );
@@ -120,6 +138,10 @@ async function start() {
     console.error("Database connection failed (will retry per message):", err?.message || err);
   }
 
+  // writes the e-mail status row and retries digests left pending by the previous run, then every few minutes
+  emailDispatcher.runOnce();
+  setInterval(() => emailDispatcher.runOnce(), RETRY_INTERVAL_MS).unref();
+
   await consumer.connect();
   await consumer.subscribe({ topic: TOPIC, fromBeginning: true });
   kafkaConnected = true;
@@ -144,6 +166,7 @@ async function start() {
         stats.lastProcessedAt = new Date().toISOString();
         stats.lastEventId = result.eventId;
         dbStatus = "connected";
+        if (result.inserted > 0) emailDispatcher.schedule();
       } catch (err) {
         // Database (or other infrastructure) failure: rethrow so KafkaJS
         // retries the message instead of silently dropping it.
@@ -163,6 +186,7 @@ start().catch((err) => {
 
 async function shutdown() {
   server.close();
+  emailDispatcher.stop();
   try {
     await consumer.disconnect();
   } catch {}

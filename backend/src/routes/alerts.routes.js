@@ -2,6 +2,7 @@ import express from "express";
 import { z } from "zod";
 import prisma from "../prisma.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
+import { emailChannelStatus, newUnsubscribeToken } from "../services/emailChannel.js";
 
 const router = express.Router();
 
@@ -46,6 +47,64 @@ function validationMessage(error) {
 
 // All alert routes require a signed-in user
 router.use(requireAuth);
+
+/* ===========================
+   E-mail alerts (opt-in, off by default)
+   GET /alerts/email  -> { enabled, consentAt, channel }
+   PUT /alerts/email  { enabled: true, consent: true } | { enabled: false }
+=========================== */
+const emailSettingsSchema = z.discriminatedUnion("enabled", [
+  // turning e-mail on needs the explicit consent the Alerts page asks for
+  z.object({ enabled: z.literal(true), consent: z.literal(true, { message: "Consent is required to turn on e-mail alerts" }) }),
+  z.object({ enabled: z.literal(false) }),
+]);
+
+async function emailSettings(userId) {
+  const [u, channel] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { emailAlertsEnabled: true, emailAlertsConsentAt: true } }),
+    emailChannelStatus({ prisma }),
+  ]);
+  // the channel without the provider error: that is for /health, not for every user
+  const { lastError, lastErrorAt, ...publicChannel } = channel;
+  return { enabled: Boolean(u?.emailAlertsEnabled), consentAt: u?.emailAlertsConsentAt?.toISOString() ?? null, channel: publicChannel };
+}
+
+router.get("/email", async (req, res) => {
+  try {
+    res.json(await emailSettings(req.user.id));
+  } catch (err) {
+    console.error("EMAIL SETTINGS ERROR:", err?.message || err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.put("/email", async (req, res) => {
+  const parsed = emailSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ message: validationMessage(parsed.error) });
+  }
+  try {
+    const current = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { emailAlertsEnabled: true, emailUnsubscribeToken: true },
+    });
+    if (parsed.data.enabled) {
+      if (!current.emailAlertsEnabled) {
+        await prisma.user.update({
+          where: { id: req.user.id },
+          // the token is kept across opt-ins, so unsubscribe links in older e-mails keep working
+          data: { emailAlertsEnabled: true, emailAlertsConsentAt: new Date(), emailUnsubscribeToken: current.emailUnsubscribeToken ?? newUnsubscribeToken() },
+        });
+      }
+    } else {
+      await prisma.user.update({ where: { id: req.user.id }, data: { emailAlertsEnabled: false, emailAlertsConsentAt: null } });
+    }
+    res.json(await emailSettings(req.user.id));
+  } catch (err) {
+    console.error("EMAIL SETTINGS UPDATE ERROR:", err?.message || err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 /* ===========================
    GET /alerts — my subscriptions

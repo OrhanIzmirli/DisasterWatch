@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import type { AuthUser } from "../App";
+import EmailAlerts from "../components/EmailAlerts";
+import { emailChannelText, useEmailSettings } from "../utils/emailSettings";
 
 type AlertType = "any" | "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "low" | "medium" | "high";
@@ -65,6 +67,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
 
   const [rowError, setRowError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const email = useEmailSettings(Boolean(user));
 
   const load = useCallback(async () => {
     setListLoading(true);
@@ -399,7 +402,9 @@ const AlertsPage = ({ user, authLoading }: Props) => {
           <h3>Delivery channels</h3>
           <ul>
             <li>In-app notifications: active</li>
+            <li>{emailChannelText(email.settings, email.failed)}</li>
           </ul>
+          {user && <EmailAlerts email={user.email} settings={email.settings} onChange={email.setSettings} />}
           {/* the free hosting sleeps between visits; a scheduled job wakes it once an hour (.github/workflows/wake.yml) */}
           <p className="channel-note">New events are checked about once an hour, so an alert can arrive up to an hour after the event is reported.</p>
         </article>

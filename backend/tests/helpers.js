@@ -13,7 +13,7 @@ export function createTestApp(options = {}) {
 /** Empties every table; ids restart from 1. */
 export async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "NewsCache", "AdminAuditLog", "Notification", "IngestedEvent", "AlertSubscription", "Disaster", "User" RESTART IDENTITY CASCADE'
+    'TRUNCATE TABLE "NewsCache", "AdminAuditLog", "EmailChannelStatus", "EmailDelivery", "Notification", "IngestedEvent", "AlertSubscription", "Disaster", "User" RESTART IDENTITY CASCADE'
   );
 }
 
