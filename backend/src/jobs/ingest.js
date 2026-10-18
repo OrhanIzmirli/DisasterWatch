@@ -239,12 +239,12 @@ export function createIngestRunner({ ingest = ingestOnce, now = () => Date.now()
       lastTrigger: last?.trigger ?? null,
       // which part failed ("run", "nasa", "usgs", "publish"), never the upstream message: /health is public
       lastErrorSources: last?.error ? ["run"] : last?.stats?.errors?.length ? last.stats.errors.map((e) => String(e).split(":")[0]) : [],
-      lastStats: last?.stats ? { fetched: last.stats.fetched, inserted: last.stats.inserted, published: last.stats.published, pending: last.stats.pending } : null,
+      lastStats: last?.stats ? { fetched: last.stats.fetched, inserted: last.stats.inserted, eonetFallback: last.stats.eonetFallback ?? 0, published: last.stats.published, pending: last.stats.pending } : null,
       lastWakeAt: iso(lastWake?.at),
       lastWakeOutcome: lastWake?.outcome ?? null,
       // events recorded with the EONET point because GDACS was unreachable (they keep it: insert-once);
       // the event ids are in the log line "[ingest] ... recorded with the EONET point"
-      eonetFallbackRecorded: { total: eonetFallbackTotal, since: iso(startedAt), lastRun: last?.stats?.eonetFallback ?? null },
+      eonetFallbackRecorded: { total: eonetFallbackTotal, since: iso(startedAt) },
     };
   }
 

@@ -120,7 +120,7 @@ export function createGdacsClient({
     try {
       const url = `${GDACS_API}?eventtype=${encodeURIComponent(ref.eventtype)}&eventid=${encodeURIComponent(ref.eventid)}`;
       const res = await fetchImpl(url, { signal: controller.signal, headers: { Accept: "application/json" } });
-      if (!res.ok) throw new Error(`GDACS ${res.status}`);
+      if (!res.ok) throw Object.assign(new Error(`GDACS ${res.status}`), { status: res.status });
       const payload = await res.json();
       return { value: parseGdacsLevel(payload), place: parseGdacsPlace(payload) };
     } finally {
@@ -149,13 +149,15 @@ export function createGdacsClient({
       } catch (err) {
         stats.failures++;
         stats.lastError = err?.name === "AbortError" ? `timeout after ${timeoutMs} ms` : err?.message || String(err);
-        // serve the previous level while GDACS is down, otherwise remember the failure briefly
-        if (hit) {
+        // serve the previous answer while GDACS is down, otherwise remember the failure briefly
+        if (hit && !hit.unreachable) {
           cache.set(key, { value: hit.value, place: hit.place ?? null, expiresAt: now() + failureTtlMs });
           return hit.value;
         }
-        // `unreachable`: nothing known about this event because GDACS could not be asked (not "GDACS has no point")
-        cache.set(key, { value: null, place: null, unreachable: true, expiresAt: now() + failureTtlMs });
+        // `unreachable`: nothing known about this event because GDACS could not be asked (not "GDACS has no point");
+        // a 4xx is an answer (GDACS does not know the event), and a repeated failure keeps the mark
+        const answered = err?.status >= 400 && err?.status < 500;
+        cache.set(key, { value: null, place: null, unreachable: !answered, expiresAt: now() + failureTtlMs });
         return null;
       } finally {
         inflight.delete(key);

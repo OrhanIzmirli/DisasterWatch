@@ -255,6 +255,29 @@ describe("events recorded with the EONET point because GDACS was unreachable (co
     expect(ev).not.toHaveProperty("gdacsUnreachable");
   });
 
+  it("a long outage keeps the mark: a second failure after the failure entry expired is still unreachable", async () => {
+    let t = 0;
+    const fetchImpl = vi.fn(async () => { throw new Error("ECONNRESET"); });
+    const client = createGdacsClient({ fetchImpl, now: () => t, failureTtlMs: 1000, log: quiet, disabled: false });
+    const ev = flood(9);
+    await client.enrich([ev]);
+    t = 1001;
+    await client.enrich([ev]);
+    t = 2002;
+    await client.enrich([ev]);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(ev).toMatchObject({ gdacsPlace: null, gdacsUnreachable: true });
+  });
+
+  it("a 4xx is an answer (GDACS does not know the event), not an unreachable GDACS; a 5xx is", async () => {
+    const ev404 = flood(10);
+    await createGdacsClient({ fetchImpl: vi.fn(async () => ({ ok: false, status: 404 })), log: quiet, disabled: false }).enrich([ev404]);
+    expect(ev404).not.toHaveProperty("gdacsUnreachable");
+    const ev503 = flood(11);
+    await createGdacsClient({ fetchImpl: vi.fn(async () => ({ ok: false, status: 503 })), log: quiet, disabled: false }).enrich([ev503]);
+    expect(ev503).toMatchObject({ gdacsUnreachable: true });
+  });
+
   it("a stale cached answer served while GDACS is down is not a fallback", async () => {
     let t = 0;
     const fetchImpl = vi.fn().mockResolvedValueOnce(gdacsAnswer).mockRejectedValue(new Error("ECONNRESET"));
@@ -289,11 +312,11 @@ describe("events recorded with the EONET point because GDACS was unreachable (co
 
     await runner.run("timer");
     expect(runner.status().lastStats).toMatchObject({ inserted: 2 });
-    expect(runner.status().eonetFallbackRecorded).toMatchObject({ total: 1, lastRun: 1 });
+    expect(runner.status()).toMatchObject({ eonetFallbackRecorded: { total: 1 }, lastStats: { eonetFallback: 1 } });
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("nasa:EONET_6"));
 
     await runner.run("timer"); // already recorded: not counted again
-    expect(runner.status().eonetFallbackRecorded).toMatchObject({ total: 1, lastRun: 0 });
+    expect(runner.status()).toMatchObject({ eonetFallbackRecorded: { total: 1 }, lastStats: { eonetFallback: 0 } });
     const row = await prisma.ingestedEvent.findUnique({ where: { eventId: "nasa:EONET_6" } });
     expect(row).toMatchObject({ lat: 37.8, lng: 33 });
   });
@@ -302,6 +325,6 @@ describe("events recorded with the EONET point because GDACS was unreachable (co
     const runner = createIngestRunner({ ingest: async () => ({ ...STATS, eonetFallback: 2 }), now: () => 1, log: quiet });
     const res = await request(appWith({ secret: SECRET, runner })).post("/internal/ingest").set("Authorization", `Bearer ${SECRET}`);
     expect(res.body.stats).toMatchObject({ eonetFallback: 2 });
-    expect(runner.status().eonetFallbackRecorded).toMatchObject({ total: 2, lastRun: 2 });
+    expect(runner.status()).toMatchObject({ eonetFallbackRecorded: { total: 2 }, lastStats: { eonetFallback: 2 } });
   });
 });
