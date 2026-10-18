@@ -8,9 +8,11 @@
  *    (its event list covers basins EONET lists late or not at all).
  *
  * Both lists come from the sources themselves, so they survive a restart:
- * after one the first refresh simply asks again. Each answer is cached for an
- * hour; when a source cannot be reached its last answer is used for up to 6
- * hours. When one source is unknown the other alone decides; when both are
+ * after one the first refresh simply asks again. EONET's answer is cached for
+ * an hour (its open storms also reach the rule fresh through the feed on every
+ * refresh); GDACS's for 15 minutes, one news refresh, so a cyclone GDACS has
+ * just started is known by the next refresh. When a source cannot be reached
+ * its last answer is used for up to 6 hours. When one source is unknown the other alone decides; when both are
  * unknown names() resolves to null and the rule is skipped rather than guessed.
  *
  *   createStormContext({ fetchEvents, fetchCyclones, now, log }).names() -> Promise<Set<string> | null>
@@ -21,6 +23,7 @@ import { stormNamesIn } from "./newsRelevance.js";
 
 export const RECENTLY_CLOSED_MS = 14 * 24 * 3600 * 1000;
 export const STORM_CACHE_MS = 60 * 60 * 1000;
+export const CYCLONE_CACHE_MS = 15 * 60 * 1000;
 export const STORM_STALE_MAX_MS = 6 * 60 * 60 * 1000;
 
 const isStorm = (event) => (event?.categories ?? []).some((c) => c?.id === "severeStorms");
@@ -67,10 +70,10 @@ export function createStormContext({
   log = console,
 } = {}) {
   /** One source with its own cache: its names, or null when unknown. */
-  function source(label, load) {
+  function source(label, load, cacheMs) {
     let cached = null; // { names, at }
     return async (at) => {
-      if (cached && at.getTime() - cached.at.getTime() < STORM_CACHE_MS) return cached.names;
+      if (cached && at.getTime() - cached.at.getTime() < cacheMs) return cached.names;
       try {
         cached = { names: await load(at), at };
         return cached.names;
@@ -85,8 +88,8 @@ export function createStormContext({
     };
   }
 
-  const eonet = source("EONET", (at) => eonetStormNames(fetchEvents, at));
-  const gdacs = source("GDACS", (at) => gdacsCycloneNames(fetchCyclones, at));
+  const eonet = source("EONET", (at) => eonetStormNames(fetchEvents, at), STORM_CACHE_MS);
+  const gdacs = source("GDACS", (at) => gdacsCycloneNames(fetchCyclones, at), CYCLONE_CACHE_MS);
 
   async function names() {
     const at = now();

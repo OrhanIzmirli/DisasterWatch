@@ -27,6 +27,16 @@ import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
 import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
 import { withSubtitles } from "../utils/eventSubtitle.js";
 
+/** "nasa:<EONET id>" -> earliest geometry date (an EONET event's start; its occurredAt is the latest observation). */
+function startDates(nasa) {
+  const starts = new Map();
+  for (const ev of Array.isArray(nasa) ? nasa : []) {
+    const dates = (Array.isArray(ev?.geometry) ? ev.geometry : []).map((g) => new Date(g?.date)).filter((d) => !Number.isNaN(d.getTime()));
+    if (ev?.id && dates.length) starts.set(`nasa:${ev.id}`, new Date(Math.min(...dates)).toISOString());
+  }
+  return (e) => starts.get(e?.details?.eventId);
+}
+
 /** Server-side cache lifetime per source; not configurable by callers. */
 export const FEED_CACHE_MS = 5 * 60 * 1000;
 /** A source that just failed is not retried before this much time has passed. */
@@ -158,7 +168,7 @@ export function createFeedService({
       title: sanitizeText(e.title),
     }));
     // same-titled events (14 x "Wildfire in Australia") get a telling-apart subtitle; the title stays as is
-    const items = withSubtitles(page, [...nasaAll, ...quakesAll]);
+    const items = withSubtitles(page, [...nasaAll, ...quakesAll], { startOf: startDates(nasa) });
     return { items, counts: countEvents([...nasaAll, ...quakesAll]) };
   }
 

@@ -305,7 +305,8 @@ export function createNewsService({
     const at = now();
     for (const cached of items) {
       // rows cached before the URL-date rule still carry GDELT's seen date
-      const a = (cached.provider ?? name) === "gdelt" ? withUrlDate({ ...cached, provider: "gdelt" }, at) : cached;
+      const base = cached.provider ? cached : { ...cached, provider: name };
+      const a = base.provider === "gdelt" ? withUrlDate(base, at) : base;
       const verdict = tooOld(a, at) ?? isDisasterNews(a, { now: at, storms });
       if (!verdict.keep && (verdict.marker || (a.provider ?? name) !== "guardian")) continue;
       const location = confirmLocation({ ...a, provider: a.provider ?? name }, a.location ?? null);

@@ -4,7 +4,7 @@ import { urlDate, withUrlDate } from "../src/services/newsLinking.js";
 import { createGdeltProvider } from "../src/services/newsProviders/gdelt.provider.js";
 import { createNewsService } from "../src/services/news.service.js";
 import { createMemoryNewsStore } from "../src/services/newsStore.js";
-import { createStormContext, currentStormNames, currentCycloneNames, STORM_CACHE_MS } from "../src/services/stormContext.js";
+import { createStormContext, currentStormNames, currentCycloneNames, STORM_CACHE_MS, CYCLONE_CACHE_MS } from "../src/services/stormContext.js";
 import { createGdacsClient, parseTropicalCyclones } from "../src/services/gdacs.js";
 import { createFeedService } from "../src/services/feed.service.js";
 import { eventSubtitle, withSubtitles } from "../src/utils/eventSubtitle.js";
@@ -117,6 +117,11 @@ describe("(b) 'after / since / following Hurricane X' in any casing", () => {
     expect(verdict("Insurers brace Following Hurricane Season forecast of strong winds").keep).toBe(true);
   });
 
+  it("checks every 'after/since/following' match, not only the first", () => {
+    // first match "after storm cleanup" is no name; the second one is the retrospective
+    expect(verdict("Library reopens after storm cleanup, following Hurricane Helene").keep).toBe(false);
+  });
+
   it("a lower-case word after 'after storm' is not a name (no regression on current reports)", () => {
     // the committed draft read "brings" as a storm name and dropped this as a retrospective
     expect(verdict("Schools close after storm brings snow and power cuts").keep).toBe(true);
@@ -165,6 +170,21 @@ describe("(c) headlines about storms that are not current", () => {
     expect(verdict("Hurricane Melissa-hit towns wait for aid", { storms: current }).keep).toBe(true);
     expect(verdict("Typhoon Choi-wan lashes the coast", { storms: current }).keep).toBe(true);
     expect(stormNamesIn("HURRICANE MELISSA NEARS COAST")).toEqual(["melissa"]);
+  });
+
+  it("Title Case headlines are left alone (the word after the class word may be a verb, not a name)", () => {
+    expect(verdict("Hurricane Expected To Strengthen Before Landfall", { storms }).keep).toBe(true);
+    expect(verdict("Tropical Storm Forecasters Warn Of Flooding Along Coast", { storms }).keep).toBe(true);
+  });
+
+  it("a storm acting now is kept under a name the lists do not know (local PAGASA name)", () => {
+    expect(verdict("Super Typhoon Nando batters northern Luzon", { storms }).keep).toBe(true);
+    expect(verdict("Evacuations ordered as Cyclone Montha nears the coast", { storms }).keep).toBe(true);
+  });
+
+  it("an action word elsewhere in the headline does not save a past-storm piece", () => {
+    expect(verdict("FSC intensifies scrutiny of outstanding Hurricane Melissa claims", { storms }).keep).toBe(false);
+    expect(verdict("Boxing club displaced by Hurricane Ida now trains kids for free", { storms }).keep).toBe(false);
   });
 
   it("keeps a headline that names a current storm next to a past one", () => {
@@ -292,6 +312,19 @@ describe("(c) GDACS tropical cyclones as a second storm source", () => {
     expect(verdict("FSC scrutinises outstanding Hurricane Melissa claims", { storms }).keep).toBe(false);
   });
 
+  it("GDACS is asked again after 15 minutes (a cyclone it just started is known by the next refresh), EONET after an hour", async () => {
+    let t = NOW.getTime();
+    const fetchEvents = vi.fn(async () => [eonetStorm("Hurricane Trudy")]);
+    const fetchCyclones = vi.fn(async () => []);
+    const ctx = createStormContext({ fetchEvents, fetchCyclones, now: () => new Date(t), log: quiet });
+    await ctx.names();
+    fetchCyclones.mockResolvedValue([{ name: "wati", current: true, endedAt: null }]);
+    t += CYCLONE_CACHE_MS;
+    expect([...(await ctx.names())].sort()).toEqual(["trudy", "wati"]);
+    expect(fetchCyclones).toHaveBeenCalledTimes(2);
+    expect(fetchEvents).toHaveBeenCalledTimes(1);
+  });
+
   it("one source failing: the other decides", async () => {
     const onlyGdacs = createStormContext({ fetchEvents: async () => { throw new Error("EONET 503"); }, fetchCyclones: async () => [{ name: "wati", current: true, endedAt: null }], now: () => NOW, log: quiet });
     expect([...(await onlyGdacs.names())]).toEqual(["wati"]);
@@ -345,6 +378,17 @@ describe("(B) subtitle for same-titled feed events", () => {
   it("counts repeats over the whole window, not just the returned page", () => {
     const all = [fire(1, -18.2, 131.6, 7652, "2026-10-14T00:00:00Z"), fire(2, -16.5, 142.5, 7043, "2026-10-14T00:00:00Z")];
     expect(withSubtitles(all.slice(0, 1), all)[0].subtitle).toBe("≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct");
+  });
+
+  it("'since' is the event's first observation, not its latest (EONET occurredAt is the latest)", async () => {
+    const storm = (id, lng) => ({ id, title: "Wildfire in Australia", categories: [{ id: "wildfires", title: "Wildfires" }], sources: [], geometry: [
+      { date: new Date(Date.now() - 5 * DAY).toISOString(), type: "Point", coordinates: [lng, -18.2] },
+      { date: new Date(Date.now() - 3600_000).toISOString(), type: "Point", coordinates: [lng, -18.2] },
+    ] });
+    const svc = createFeedService({ fetchNasa: async () => [storm("EONET_1", 131.6), storm("EONET_2", 142.5)], fetchUsgs: async () => [], log: quiet });
+    const { items } = await svc.getFeed();
+    const first = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(Date.now() - 5 * DAY));
+    expect(items.every((e) => e.subtitle.endsWith(`since ${first}`))).toBe(true);
   });
 
   it("the public feed carries it as its own field", async () => {

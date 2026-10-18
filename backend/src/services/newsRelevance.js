@@ -127,7 +127,37 @@ const SPORT_WORDS = /\b(volleyball|football|soccer|basketball|baseball|hockey|cr
  * The lead-in and class words match in any casing; the name must still start with a capital in the
  * headline (checked on the match), so "after storm brings snow" is not read as a name.
  */
-const AFTER_NAMED_STORM = /\b(?:after|since|following) (?:hurricane|typhoon|super typhoon|cyclone|tropical storm|storm) ([\p{L}][\p{L}'’-]*)/iu;
+const AFTER_NAMED_STORM = /\b(?:after|since|following) (?:hurricane|typhoon|super typhoon|cyclone|tropical storm|storm) ([\p{L}][\p{L}'’-]*)/giu;
+
+/**
+ * Words that report a storm acting now ("batters", "makes landfall",
+ * "strengthens", "warning"), right after its name: a headline with one is
+ * current news even when it calls the storm by a name the storm lists do not
+ * know (a local name such as PAGASA's). The past-storm rule leaves such
+ * headlines alone.
+ */
+const CURRENT_ACTION =
+  /\b(batters?|battered|battering|lash(es|ed|ing)?|pound(s|ed|ing)?|slams?|slammed|hits|strikes|landfall|nears|approach(es|ing)|heads? (for|toward|towards)|intensif(y|ies|ied|ying)|strengthens?|strengthening|weakens?|weakening|threatens?|threatening|forms?|formed|forming|upgraded|downgraded|warnings?|watch(es)?|alerts?|evacuat(e|es|ed|ing|ion|ions)|forecast|track|path|live)\b/;
+
+/** A storm acting now: an action word within the three words after a named storm ("Super Typhoon Nando batters Luzon"). */
+function stormActsNow(title) {
+  const text = String(title ?? "");
+  for (const m of text.matchAll(NAMED_STORM)) {
+    const next = text.slice(m.index + m[0].length).toLowerCase().split(/\s+/).filter(Boolean).slice(0, 3).join(" ");
+    if (CURRENT_ACTION.test(next)) return true;
+  }
+  return false;
+}
+
+/**
+ * Title Case headlines ("Hurricane Expected To Strengthen") capitalise every
+ * word, so the word after a storm class word cannot be told from a name: more
+ * than half of the longer words after the first are capitalised.
+ */
+function isTitleCase(title) {
+  const words = String(title ?? "").split(/\s+/).slice(1).filter((w) => /^\p{L}{4,}/u.test(w));
+  return words.length >= 3 && words.filter((w) => /^\p{Lu}/u.test(w)).length / words.length > 0.5;
+}
 
 /**
  * "Hurricane Melissa", "Super Typhoon Champi", "Tropical Cyclone 01P": the
@@ -239,15 +269,17 @@ export function isDisasterNews(article, { now = new Date(), storms = null } = {}
   const sport = headline.match(SPORT_WORDS);
   if (sport && !first(headline, IMPACT)) return { keep: false, marker: true, reason: `sports ("${sport[1]}", no impact in the headline)` };
 
-  const after = String(article?.title ?? "").match(AFTER_NAMED_STORM);
-  if (after && asStormName(after[1])) {
+  // every "after/since/following <class> X" counts, not just the first ("after storm hits, a year after Hurricane Helene")
+  for (const after of String(article?.title ?? "").matchAll(AFTER_NAMED_STORM)) {
+    if (!asStormName(after[1])) continue;
     const rest = normalise(String(article.title).replace(after[0], " "));
     if (!first(rest, IMPACT) && !first(rest, STRONG)) return { keep: false, marker: true, reason: `retrospective ("${after[0].toLowerCase()}", no impact in the headline)` };
   }
 
   // Named storms only, none of them current (in the feed or closed in the last 14 days): a retrospective.
   // Without the storm list (EONET unreachable) the rule is skipped rather than guessed.
-  if (storms) {
+  // Skipped for headlines that report the storm acting now, and for Title Case headlines (names unreliable there).
+  if (storms && !stormActsNow(article?.title) && !isTitleCase(article?.title)) {
     const named = stormNamesIn(article?.title);
     if (named.length && !named.some((n) => isCurrentStorm(n, storms))) {
       return { keep: false, marker: true, reason: `retrospective (storm "${named.join('", "')}" not active or recently closed)` };
