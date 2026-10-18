@@ -131,7 +131,8 @@ export async function ingestOnce({
   log = console,
 } = {}) {
   const events = [];
-  const stats = { fetched: 0, dropped: 0, inserted: 0, published: 0, pending: 0, errors: [] };
+  const fallback = new Set(); // eventIds placed on the EONET geometry because GDACS was unreachable
+  const stats = { fetched: 0, dropped: 0, inserted: 0, eonetFallback: 0, published: 0, pending: 0, errors: [] };
 
   const sources = [
     ["nasa", async () => nasaEventsToContract(await fetchNasa())],
@@ -140,8 +141,9 @@ export async function ingestOnce({
 
   for (const [name, load] of sources) {
     try {
-      const { events: mapped, dropped } = await load();
+      const { events: mapped, dropped, eonetFallback = [] } = await load();
       events.push(...mapped);
+      for (const id of eonetFallback) fallback.add(id);
       stats.fetched += mapped.length;
       stats.dropped += dropped;
     } catch (err) {
@@ -153,6 +155,10 @@ export async function ingestOnce({
   if (events.length > 0) {
     const fresh = await recordNewEvents(events, { prisma });
     stats.inserted = fresh.length;
+    // recorded once and for good (insert-once): these keep the EONET point even after GDACS is back
+    const ids = fresh.filter((e) => fallback.has(e.eventId)).map((e) => e.eventId);
+    stats.eonetFallback = ids.length;
+    if (ids.length) log.warn(`[ingest] ${ids.length} event(s) recorded with the EONET point because GDACS was unreachable: ${ids.join(", ")}`);
   }
 
   // Outbox runs even when nothing new was fetched: earlier failures are retried here.
@@ -185,6 +191,8 @@ export function createIngestRunner({ ingest = ingestOnce, now = () => Date.now()
   let inflight = null;
   let last = null; // { at, trigger, stats | null, error | null }
   let lastWake = null; // { at, outcome }
+  const startedAt = now();
+  let eonetFallbackTotal = 0; // since this process started (the free plan restarts it after every sleep)
 
   function run(trigger) {
     if (inflight) return inflight;
@@ -192,6 +200,7 @@ export function createIngestRunner({ ingest = ingestOnce, now = () => Date.now()
       try {
         const stats = await ingest({ log, ...deps });
         last = { at: now(), trigger, stats, error: null };
+        eonetFallbackTotal += stats.eonetFallback ?? 0;
         log.log(
           `[ingest] (${trigger}) fetched=${stats.fetched} new=${stats.inserted} published=${stats.published} pending=${stats.pending}` +
             (stats.errors.length ? ` errors=${stats.errors.join(" | ")}` : "")
@@ -233,6 +242,9 @@ export function createIngestRunner({ ingest = ingestOnce, now = () => Date.now()
       lastStats: last?.stats ? { fetched: last.stats.fetched, inserted: last.stats.inserted, published: last.stats.published, pending: last.stats.pending } : null,
       lastWakeAt: iso(lastWake?.at),
       lastWakeOutcome: lastWake?.outcome ?? null,
+      // events recorded with the EONET point because GDACS was unreachable (they keep it: insert-once);
+      // the event ids are in the log line "[ingest] ... recorded with the EONET point"
+      eonetFallbackRecorded: { total: eonetFallbackTotal, since: iso(startedAt), lastRun: last?.stats?.eonetFallback ?? null },
     };
   }
 

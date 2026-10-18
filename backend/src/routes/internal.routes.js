@@ -83,7 +83,7 @@ export function createInternalRouter({
       ran: result.ran,
       reason: result.reason,
       lastRunAt: result.last?.at ? new Date(result.last.at).toISOString() : null,
-      stats: s ? { fetched: s.fetched, inserted: s.inserted, published: s.published, pending: s.pending, errors: s.errors.length } : null,
+      stats: s ? { fetched: s.fetched, inserted: s.inserted, eonetFallback: s.eonetFallback ?? 0, published: s.published, pending: s.pending, errors: s.errors.length } : null,
     });
   });
 

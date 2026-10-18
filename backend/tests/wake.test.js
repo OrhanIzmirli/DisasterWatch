@@ -1,7 +1,9 @@
+import fs from "node:fs";
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
-import { createTestApp } from "./helpers.js";
-import { createIngestRunner, WAKE_MIN_INTERVAL_MS } from "../src/jobs/ingest.js";
+import { createTestApp, resetDb, prisma } from "./helpers.js";
+import { createIngestRunner, ingestOnce, WAKE_MIN_INTERVAL_MS } from "../src/jobs/ingest.js";
+import { createGdacsClient } from "../src/services/gdacs.js";
 import { secretsEqual, MIN_SECRET_LENGTH } from "../src/routes/internal.routes.js";
 import { nasaEventsToContract } from "../src/events/mappers.js";
 import { disasterEventSchema } from "../src/events/contract.js";
@@ -92,6 +94,28 @@ describe("POST /internal/ingest", () => {
     expect(ingest).not.toHaveBeenCalled();
   });
 
+  it("reads the secret from the Authorization header only: one in the URL / query string is refused", async () => {
+    const { runner, ingest } = fakeRunner();
+    const app = appWith({ secret: SECRET, runner });
+    for (const q of [`?secret=${SECRET}`, `?token=${SECRET}`, `?authorization=Bearer%20${SECRET}`]) {
+      expect((await request(app).post(`/internal/ingest${q}`)).status).toBe(401);
+    }
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it("the workflow sends the secret in a header and never prints it", () => {
+    const yml = fs.readFileSync(new URL("../../.github/workflows/wake.yml", import.meta.url), "utf8");
+    // every line that reads the value ($INGEST_WAKE_SECRET or secrets.INGEST_WAKE_SECRET; the error text only names it)
+    const uses = yml.split(/\r?\n/).filter((l) => /\$INGEST_WAKE_SECRET|secrets\.INGEST_WAKE_SECRET/.test(l) && !l.trim().startsWith("#"));
+    // only: the env mapping from secrets, the "is it set" check, and the Authorization header
+    expect(uses).toHaveLength(3);
+    expect(uses[0].trim()).toBe("INGEST_WAKE_SECRET: ${{ secrets.INGEST_WAKE_SECRET }}");
+    expect(uses[1]).toContain('[ -z "$INGEST_WAKE_SECRET" ]');
+    expect(uses[2]).toContain('-H "Authorization: Bearer $INGEST_WAKE_SECRET"');
+    expect(yml).toContain('"$BACKEND_URL/internal/ingest"'); // no query string
+    expect(yml).not.toMatch(/set -x|--verbose|--trace|curl[^\n]* -v |echo[^\n]*\$\{?INGEST_WAKE_SECRET/);
+  });
+
   it("runs an ingestion with the right secret, then is idempotent; the body carries counts only", async () => {
     const { runner, ingest } = fakeRunner();
     const app = appWith({ secret: SECRET, runner });
@@ -135,6 +159,7 @@ describe("/health shows the ingestion runner and the storm lists", () => {
     expect(res.status).toBe(200);
     expect(res.body.ingest).toMatchObject({ running: expect.any(Boolean) });
     expect(res.body.ingest).toHaveProperty("lastWakeAt");
+    expect(res.body.ingest.eonetFallbackRecorded).toMatchObject({ total: expect.any(Number) });
     expect(res.body.news).toHaveProperty("storms");
   });
 
@@ -201,5 +226,82 @@ describe("alerts use the same location as the map marker", () => {
     const [event] = nasaEventsToContract([eonetOnly]).events;
     expect(matchesSubscription(event, KONYA).matched).toBe(true);
     expect(matchesSubscription(event, ISTANBUL).matched).toBe(false);
+  });
+});
+
+describe("events recorded with the EONET point because GDACS was unreachable (counted on /health)", () => {
+  // simplified geometry; GDACS link like the real EONET source
+  const flood = (n, extra = {}) => ({
+    id: `EONET_${n}`,
+    title: `Flood in Testland ${n}`,
+    categories: [{ id: "floods", title: "Floods" }],
+    sources: [{ id: "GDACS", url: `https://www.gdacs.org/report.aspx?eventtype=FL&eventid=${n}` }],
+    geometry: [{ date: "2026-10-11T20:00:00Z", type: "Point", coordinates: [33, 37.8] }],
+    ...extra,
+  });
+  const gdacsAnswer = { ok: true, json: async () => ({ properties: { alertlevel: "Green", alertscore: 1, country: "Testland", iso3: "TST" }, geometry: { type: "Point", coordinates: [29, 41.1] } }) };
+
+  it("the GDACS client marks an event it could not ask about, and clears the mark once GDACS answers", async () => {
+    let t = 0;
+    let down = true;
+    const fetchImpl = vi.fn(async () => { if (down) throw new Error("ECONNRESET"); return gdacsAnswer; });
+    const client = createGdacsClient({ fetchImpl, now: () => t, failureTtlMs: 1000, log: quiet, disabled: false });
+    const ev = flood(1);
+    await client.enrich([ev]);
+    expect(ev).toMatchObject({ gdacsPlace: null, gdacsUnreachable: true });
+    down = false;
+    t = 1001;
+    await client.enrich([ev]);
+    expect(ev).not.toHaveProperty("gdacsUnreachable");
+  });
+
+  it("a stale cached answer served while GDACS is down is not a fallback", async () => {
+    let t = 0;
+    const fetchImpl = vi.fn().mockResolvedValueOnce(gdacsAnswer).mockRejectedValue(new Error("ECONNRESET"));
+    const client = createGdacsClient({ fetchImpl, now: () => t, ttlMs: 10, log: quiet, disabled: false });
+    const ev = flood(2);
+    await client.enrich([ev]);
+    t = 100;
+    await client.enrich([ev]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(ev).not.toHaveProperty("gdacsUnreachable");
+  });
+
+  it("the mapper lists only events placed on EONET because of an unreachable GDACS", () => {
+    const noLink = { ...flood(8), sources: [] };
+    const { events, eonetFallback } = nasaEventsToContract([
+      flood(3, { gdacsPlace: null, gdacsUnreachable: true }), // GDACS down -> EONET point
+      flood(4, { gdacsPlace: { countries: ["TR"], lat: 41.1, lng: 29 } }), // GDACS point
+      flood(5, { gdacsPlace: null }), // GDACS answered without a point: EONET is the only location anyway
+      noLink, // no GDACS link
+    ]);
+    expect(events).toHaveLength(4);
+    expect(eonetFallback).toEqual(["nasa:EONET_3"]);
+    expect(events.find((e) => e.eventId === "nasa:EONET_3")).toMatchObject({ lat: 37.8, lng: 33 });
+  });
+
+  it("ingestOnce counts the newly recorded ones (once), the runner adds them up for /health", async () => {
+    await resetDb();
+    const events = [flood(6, { gdacsPlace: null, gdacsUnreachable: true }), flood(7, { gdacsPlace: { countries: ["TR"], lat: 41.1, lng: 29 } })];
+    const deps = { prisma, fetchNasa: async () => events, fetchUsgs: async () => [], publish: vi.fn(async () => {}) };
+    const log = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const runner = createIngestRunner({ ingest: (o) => ingestOnce({ ...o, ...deps }), now: () => 1_000_000, log });
+
+    await runner.run("timer");
+    expect(runner.status().lastStats).toMatchObject({ inserted: 2 });
+    expect(runner.status().eonetFallbackRecorded).toMatchObject({ total: 1, lastRun: 1 });
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("nasa:EONET_6"));
+
+    await runner.run("timer"); // already recorded: not counted again
+    expect(runner.status().eonetFallbackRecorded).toMatchObject({ total: 1, lastRun: 0 });
+    const row = await prisma.ingestedEvent.findUnique({ where: { eventId: "nasa:EONET_6" } });
+    expect(row).toMatchObject({ lat: 37.8, lng: 33 });
+  });
+
+  it("the wake endpoint reports the count of the run", async () => {
+    const runner = createIngestRunner({ ingest: async () => ({ ...STATS, eonetFallback: 2 }), now: () => 1, log: quiet });
+    const res = await request(appWith({ secret: SECRET, runner })).post("/internal/ingest").set("Authorization", `Bearer ${SECRET}`);
+    expect(res.body.stats).toMatchObject({ eonetFallback: 2 });
+    expect(runner.status().eonetFallbackRecorded).toMatchObject({ total: 2, lastRun: 2 });
   });
 });

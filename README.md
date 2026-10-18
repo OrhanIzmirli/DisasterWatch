@@ -380,7 +380,7 @@ Setup, values never in the repository:
 | GitHub → … → Actions → **Variables** | `BACKEND_URL` | the backend's Render URL, no trailing slash |
 | GitHub → … → Actions → **Variables** | `NOTIFICATION_URL` | the notification service's Render URL, no trailing slash |
 
-`/health` → `ingest` shows the last run (time, trigger, counts, which part failed) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`). GitHub delays scheduled runs under load and disables a schedule after 60 days without repository activity: check `lastWakeAt`, and optionally let a second scheduler (e.g. cron-job.org) call the same endpoint; it is idempotent.
+`/health` → `ingest` shows the last run (time, trigger, counts, which part failed) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`). `ingest.eonetFallbackRecorded` counts the events recorded with the EONET point because GDACS could not be reached (`total` since the process started, `lastRun`); events are recorded once, so these keep that point, and their ids are in the `[ingest] ... recorded with the EONET point` log line. GitHub delays scheduled runs under load and disables a schedule after 60 days without repository activity: check `lastWakeAt`, and optionally let a second scheduler (e.g. cron-job.org) call the same endpoint; it is idempotent.
 
 ### Known limitations
 

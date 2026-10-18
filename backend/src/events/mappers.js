@@ -42,8 +42,14 @@ function validateAll(candidates) {
   return { events, dropped };
 }
 
+/**
+ * EONET events -> contract events. Also returns `eonetFallback`: the eventIds
+ * placed on the EONET geometry only because GDACS could not be reached for an
+ * event that links to it (the map would show the GDACS point once reachable).
+ */
 export function nasaEventsToContract(rawEvents) {
   const candidates = [];
+  const fallback = new Set();
   for (const ev of Array.isArray(rawEvents) ? rawEvents : []) {
     const type = mapCategoryToType(ev?.categories?.[0]?.title);
     const id = cleanId(ev?.id);
@@ -59,6 +65,7 @@ export function nasaEventsToContract(rawEvents) {
 
     const occurredAt = toIso(best?.date || ev?.updated || ev?.created);
     if (!occurredAt) continue;
+    if (ev?.gdacsUnreachable && place.source === "eonet") fallback.add(`nasa:${id}`);
 
     candidates.push({
       v: 1,
@@ -73,7 +80,8 @@ export function nasaEventsToContract(rawEvents) {
       occurredAt,
     });
   }
-  return validateAll(candidates);
+  const { events, dropped } = validateAll(candidates);
+  return { events, dropped, eonetFallback: events.filter((e) => fallback.has(e.eventId)).map((e) => e.eventId) };
 }
 
 export function usgsFeaturesToContract(features, { minMag = 4.5 } = {}) {
