@@ -23,11 +23,12 @@ describe("unsubscribe page", () => {
     const fetchMock = ok();
     vi.stubGlobal("fetch", fetchMock);
     open("unsubscribe", `?token=${TOKEN}`);
-    expect(window.location.search).toBe(""); // token removed from the address bar
     await new Promise((r) => setTimeout(r, 20));
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(window.location.search).toBe(`?token=${TOKEN}`); // a reload before the press still works
     fireEvent.click(screen.getByRole("button", { name: "Unsubscribe from alert e-mails" }));
     expect(await screen.findByText("You are unsubscribed.")).toBeTruthy();
+    expect(window.location.search).toBe(""); // used: removed from the address bar
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/email/unsubscribe");

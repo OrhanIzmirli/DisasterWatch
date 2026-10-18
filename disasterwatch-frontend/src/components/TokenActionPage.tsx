@@ -17,8 +17,9 @@ type Props = {
 
 /**
  * Pages opened from a link in an e-mail (/unsubscribe, /confirm-email). The
- * link's token is read once and removed from the address bar; the change
- * happens only when the person presses the button (one POST). Opening the
+ * change happens only when the person presses the button (one POST); the
+ * token leaves the address bar once it has been used (a reload before the
+ * press still works). Opening the
  * page changes nothing, so mail scanners that open links, even ones that run
  * JavaScript, can neither unsubscribe nor confirm anyone.
  */
@@ -29,7 +30,6 @@ export default function TokenActionPage({ title, action, intro, done, invalid, e
   useEffect(() => {
     const previous = document.title;
     document.title = `${title} – DisasterWatch`;
-    window.history.replaceState(null, "", window.location.pathname);
     return () => {
       document.title = previous;
     };
@@ -43,7 +43,9 @@ export default function TokenActionPage({ title, action, intro, done, invalid, e
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      setState(res.ok ? "done" : res.status === 404 ? "invalid" : "error");
+      const next = res.ok ? "done" : res.status === 404 ? "invalid" : "error";
+      if (next !== "error") window.history.replaceState(null, "", window.location.pathname); // used up: out of the address bar
+      setState(next);
     } catch {
       setState("error");
     }

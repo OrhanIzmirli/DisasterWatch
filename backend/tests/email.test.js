@@ -213,3 +213,26 @@ describe("daily limit counting", () => {
     expect(await emailChannelStatus({ prisma })).toMatchObject({ sentLast24h: 1, state: "active" });
   });
 });
+
+describe("confirmation status on the Alerts page", () => {
+  it("queued until the notification-service picks it up, then the status of the current opt-in's e-mail", async () => {
+    const agent = await signUp();
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    expect((await agent.get("/alerts/email")).body.confirmation).toEqual({ status: "queued", at: null });
+    const u = await userRow();
+    await prisma.emailDelivery.create({ data: { userId: u.id, kind: "confirm", status: "failed", notificationCount: 0, attempts: 1 } });
+    expect((await agent.get("/alerts/email")).body.confirmation).toMatchObject({ status: "failed" });
+    // a new opt-in: the older e-mail does not count for it
+    await agent.put("/alerts/email").send({ enabled: false });
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    expect((await agent.get("/alerts/email")).body.confirmation).toEqual({ status: "queued", at: null });
+  });
+
+  it("an account that is on but unconfirmed without a link gets one on the next 'on'", async () => {
+    const agent = await signUp();
+    await prisma.user.update({ where: { email: "mail-user@example.com" }, data: { emailAlertsEnabled: true, emailAlertsConsentAt: new Date(), emailUnsubscribeToken: "U".repeat(43) } });
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    expect((await userRow()).emailConfirmToken).toMatch(EMAIL_TOKEN);
+  });
+});
+

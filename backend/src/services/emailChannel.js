@@ -25,11 +25,11 @@ export const newEmailToken = () => crypto.randomBytes(32).toString("base64url");
 export async function emailChannelStatus({ prisma = defaultPrisma, now = new Date() } = {}) {
   const row = await prisma.emailChannelStatus.findUnique({ where: { id: 1 } });
   const since = new Date(now.getTime() - WINDOW_MS);
-  // same rule as the notification-service (src/email/dispatcher.js COUNTED): sent, pending,
-  // and failed ones that were attempted, by COALESCE(sentAt, lastAttemptAt, createdAt)
+  // same rule as the notification-service (src/email/dispatcher.js COUNTED; keep in step): sent, pending,
+  // and failed or cancelled ones that were attempted, by COALESCE(sentAt, lastAttemptAt, createdAt)
   const [{ n: sentLast24h }] = await prisma.$queryRaw`
     SELECT count(*)::int AS n FROM "EmailDelivery"
-     WHERE ("status" IN ('sent', 'pending') OR ("status" = 'failed' AND "attempts" > 0))
+     WHERE ("status" IN ('sent', 'pending') OR ("status" IN ('failed', 'cancelled') AND "attempts" > 0))
        AND COALESCE("sentAt", "lastAttemptAt", "createdAt") > ${since}`;
   let state = "not-configured";
   if (row?.configured) {

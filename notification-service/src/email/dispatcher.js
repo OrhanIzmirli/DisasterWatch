@@ -46,15 +46,21 @@ export const DEBOUNCE_MS = 20 * 1000; // wait for the rest of a burst of message
 export const MAX_WAIT_MS = 2 * 60 * 1000; // ...but not longer than this
 export const RETRY_INTERVAL_MS = 10 * 60 * 1000;
 export const CONFIRM_RESEND_MS = 60 * 60 * 1000; // a new opt-in re-sends the confirmation at most hourly
+/**
+ * Confirmation e-mails per rolling 24 h, inside the daily limit. Anyone can
+ * register accounts with any address, so confirmations get a small share of
+ * the limit and can never use up what alert digests need.
+ */
+export const confirmLimit = (dailyLimit) => Math.max(1, Math.min(10, Math.floor(dailyLimit / 5)));
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Deliveries counted against the daily limit in the last 24 h: sent, pending,
- * and failed ones that were attempted (a timed-out send may have been accepted).
- * The backend's services/emailChannel.js counts the same way.
+ * and failed or cancelled ones that were attempted (a timed-out send may have
+ * been accepted). Keep in step with backend/src/services/emailChannel.js.
  */
-const COUNTED = `("status" IN ('sent', 'pending') OR ("status" = 'failed' AND "attempts" > 0))
+const COUNTED = `("status" IN ('sent', 'pending') OR ("status" IN ('failed', 'cancelled') AND "attempts" > 0))
   AND COALESCE("sentAt", "lastAttemptAt", "createdAt") > $1`;
 
 export function createEmailDispatcher({ pool, config, sender, now = () => new Date(), log = console, debounceMs = DEBOUNCE_MS, maxWaitMs = MAX_WAIT_MS }) {
@@ -93,8 +99,11 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
     }
   }
 
-  async function countRecent(db, t) {
-    const { rows } = await db.query(`SELECT count(*)::int AS n FROM "EmailDelivery" WHERE ${COUNTED}`, [new Date(t.getTime() - WINDOW_MS)]);
+  async function countRecent(db, t, kind = null) {
+    const { rows } = await db.query(
+      `SELECT count(*)::int AS n FROM "EmailDelivery" WHERE ${COUNTED}${kind ? ` AND "kind" = $2` : ""}`,
+      kind ? [new Date(t.getTime() - WINDOW_MS), kind] : [new Date(t.getTime() - WINDOW_MS)]
+    );
     return rows[0].n;
   }
 
@@ -104,8 +113,10 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
       const out = { claimed: 0, confirmations: 0, skippedDailyLimit: 0 };
       await db.query("SELECT pg_advisory_xact_lock($1)", [LOCK_KEY]);
       let used = await countRecent(db, t);
+      let confirmsUsed = await countRecent(db, t, "confirm");
 
-      // confirmation links first: one per opt-in of an unconfirmed address (re-sent at most hourly)
+      // confirmation links first: one per opt-in of an unconfirmed address (re-sent at most hourly),
+      // within their own small share of the limit
       const { rows: unconfirmed } = await db.query(
         `SELECT "id" FROM "User"
           WHERE "emailAlertsEnabled" = true AND "disabledAt" IS NULL AND "emailVerifiedAt" IS NULL
@@ -116,12 +127,24 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
         [new Date(t.getTime() - CONFIRM_RESEND_MS)]
       );
       for (const { id: userId } of unconfirmed) {
-        if (used >= config.dailyLimit) break; // tried again on a later run
+        if (used >= config.dailyLimit || confirmsUsed >= confirmLimit(config.dailyLimit)) break; // tried again on a later run
         await db.query(`INSERT INTO "EmailDelivery" ("userId", "kind", "status", "notificationCount", "createdAt") VALUES ($1, 'confirm', 'pending', 0, $2)`, [userId, t]);
         await db.query(`UPDATE "User" SET "emailConfirmSentAt" = $2 WHERE "id" = $1`, [userId, t]);
         used += 1;
+        confirmsUsed += 1;
         out.confirmations += 1;
       }
+
+      // notifications that waited past the cutoff (e.g. behind a digest that was retried for hours) get a reason
+      await db.query(
+        `UPDATE "Notification" n SET "emailSkipReason" = 'too-old'
+           FROM "User" u
+          WHERE u."id" = n."userId" AND n."emailSentAt" IS NULL AND n."emailDeliveryId" IS NULL AND n."emailSkipReason" IS NULL
+            AND n."createdAt" <= $1 AND n."createdAt" > $2
+            AND u."emailAlertsEnabled" = true AND u."emailVerifiedAt" IS NOT NULL
+            AND u."emailAlertsConsentAt" IS NOT NULL AND n."createdAt" >= u."emailAlertsConsentAt"`,
+        [new Date(t.getTime() - NOTIFICATION_MAX_AGE_MS), new Date(t.getTime() - 3 * NOTIFICATION_MAX_AGE_MS)]
+      );
 
       const { rows } = await db.query(
         `SELECT n."id", n."userId"
@@ -170,10 +193,8 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
   /** The message of a delivery, rendered from the database; null when there is nothing to send any more. */
   async function render(d) {
     if (d.kind === "confirm") {
-      if (d.emailVerifiedAt || !d.emailConfirmToken) return null;
       return renderConfirmation({ appUrl: config.appUrl, confirmUrl: `${config.appUrl}/confirm-email?token=${encodeURIComponent(d.emailConfirmToken)}` });
     }
-    if (!d.emailVerifiedAt) return null;
     const { rows: notifications } = await pool.query(
       `SELECT n."eventId", n."title", n."type", n."severity", n."lat", n."lng", n."distanceKm", n."occurredAt", n."subscriptionId",
               s."label" AS "subscriptionLabel", s."type" AS "subscriptionType", s."minSeverity" AS "subscriptionMinSeverity",
@@ -198,19 +219,29 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
     };
   }
 
+  const DELIVERY_SELECT = `SELECT d."id", d."kind", d."attempts", d."createdAt", d."notificationCount", d."payload",
+            u."email", u."emailAlertsEnabled", u."disabledAt", u."emailUnsubscribeToken", u."emailVerifiedAt", u."emailConfirmToken"
+       FROM "EmailDelivery" d JOIN "User" u ON u."id" = d."userId"`;
+
   /** Step 2 for one delivery -> "sent" | "failed" | "retrying" | "cancelled" | "busy" */
-  async function deliver(d, t) {
+  async function deliver(id, t) {
     const { rowCount } = await pool.query(
       `UPDATE "EmailDelivery" SET "leaseUntil" = $2 WHERE "id" = $1 AND "status" = 'pending' AND ("leaseUntil" IS NULL OR "leaseUntil" < $3)`,
-      [d.id, new Date(t.getTime() + LEASE_MS), t]
+      [id, new Date(t.getTime() + LEASE_MS), t]
     );
-    if (!rowCount) return "busy"; // another instance is sending it
+    if (!rowCount) return "busy"; // another instance is sending it or it is done
+    // read the row again under the lease: another instance may have stored a payload or counted attempts meanwhile
+    const { rows } = await pool.query(`${DELIVERY_SELECT} WHERE d."id" = $1`, [id]);
+    const d = rows[0];
+    if (!d) return "cancelled";
 
     if (t.getTime() - new Date(d.createdAt).getTime() > DELIVERY_MAX_AGE_MS) {
       await finish(d.id, "failed", "send-failed", "not sent within 23 hours");
       return "failed";
     }
-    if (!d.emailAlertsEnabled || d.disabledAt || !d.emailUnsubscribeToken) {
+    // checked before a stored payload is used too: an unsubscribe or a confirmation meanwhile stops the send
+    const stale = d.kind === "confirm" ? d.emailVerifiedAt || !d.emailConfirmToken : !d.emailVerifiedAt;
+    if (!d.emailAlertsEnabled || d.disabledAt || !d.emailUnsubscribeToken || stale) {
       await finish(d.id, "cancelled", "disabled", null);
       return "cancelled";
     }
@@ -277,15 +308,10 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
       }
       if (config.configured) {
         Object.assign(result, await claim(t));
-        const { rows: pending } = await pool.query(
-          `SELECT d."id", d."kind", d."attempts", d."createdAt", d."notificationCount", d."payload",
-                  u."email", u."emailAlertsEnabled", u."disabledAt", u."emailUnsubscribeToken", u."emailVerifiedAt", u."emailConfirmToken"
-             FROM "EmailDelivery" d JOIN "User" u ON u."id" = d."userId"
-            WHERE d."status" = 'pending' ORDER BY d."id"`
-        );
+        const { rows: pending } = await pool.query(`SELECT "id" FROM "EmailDelivery" WHERE "status" = 'pending' ORDER BY "id"`);
         for (const d of pending) {
           try {
-            result[await deliver(d, t)] += 1;
+            result[await deliver(d.id, t)] += 1;
           } catch (err) {
             // a database error for one delivery: it stays pending (its lease expires), the others go on
             setError(err?.message || String(err));

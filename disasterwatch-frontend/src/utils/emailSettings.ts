@@ -7,7 +7,8 @@ export type EmailSettings = {
   consentAt: string | null;
   /** double opt-in: the confirmation link sent to the address was opened */
   verified: boolean;
-  confirmationSentAt: string | null;
+  /** the confirmation e-mail of the current opt-in, while the address is unconfirmed */
+  confirmation: { status: "queued" | "pending" | "sent" | "failed" | "cancelled"; at: string | null } | null;
   channel: { state: EmailChannelState; dailyLimit: number | null; sentLast24h: number };
 };
 

@@ -50,7 +50,7 @@ router.use(requireAuth);
 
 /* ===========================
    E-mail alerts (opt-in, off by default)
-   GET /alerts/email  -> { enabled, consentAt, verified, confirmationSentAt, channel }
+   GET /alerts/email  -> { enabled, consentAt, verified, confirmation, channel }
    PUT /alerts/email  { enabled: true, consent: true } | { enabled: false }
 =========================== */
 const emailSettingsSchema = z.discriminatedUnion("enabled", [
@@ -60,10 +60,14 @@ const emailSettingsSchema = z.discriminatedUnion("enabled", [
 ]);
 
 async function emailSettings(userId) {
-  const [u, channel] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { emailAlertsEnabled: true, emailAlertsConsentAt: true, emailVerifiedAt: true, emailConfirmSentAt: true } }),
+  const [u, channel, lastConfirm] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { emailAlertsEnabled: true, emailAlertsConsentAt: true, emailVerifiedAt: true } }),
     emailChannelStatus({ prisma }),
+    prisma.emailDelivery.findFirst({ where: { userId, kind: "confirm" }, orderBy: { id: "desc" }, select: { status: true, createdAt: true } }),
   ]);
+  // the confirmation e-mail of the current opt-in: "queued" until the notification-service picked it up
+  const current = lastConfirm && u?.emailAlertsConsentAt && lastConfirm.createdAt >= u.emailAlertsConsentAt ? lastConfirm : null;
+  const confirmation = u?.emailVerifiedAt || !u?.emailAlertsEnabled ? null : current ? { status: current.status, at: current.createdAt.toISOString() } : { status: "queued", at: null };
   // the channel without the provider error: that is for /health, not for every user
   const { lastError, lastErrorAt, ...publicChannel } = channel;
   return {
@@ -71,7 +75,8 @@ async function emailSettings(userId) {
     consentAt: u?.emailAlertsConsentAt?.toISOString() ?? null,
     // double opt-in: alerts go out only after the confirmation link sent to the address was opened
     verified: Boolean(u?.emailVerifiedAt),
-    confirmationSentAt: u?.emailConfirmSentAt?.toISOString() ?? null,
+    // { status: "queued" | "pending" | "sent" | "failed" | "cancelled", at } while the address is unconfirmed
+    confirmation,
     channel: publicChannel,
   };
 }
@@ -96,7 +101,10 @@ router.put("/email", async (req, res) => {
       select: { emailAlertsEnabled: true, emailUnsubscribeToken: true, emailVerifiedAt: true, emailConfirmToken: true },
     });
     if (parsed.data.enabled) {
-      if (!current.emailAlertsEnabled) {
+      if (current.emailAlertsEnabled && !current.emailVerifiedAt && !current.emailConfirmToken) {
+        // on but unconfirmed without a link (e.g. opted in before double opt-in existed): create one
+        await prisma.user.update({ where: { id: req.user.id }, data: { emailConfirmToken: newEmailToken() } });
+      } else if (!current.emailAlertsEnabled) {
         await prisma.user.update({
           where: { id: req.user.id },
           // the token is kept across opt-ins, so unsubscribe links in older e-mails keep working

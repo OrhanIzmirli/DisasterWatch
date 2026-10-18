@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { isEmailSettings, type EmailSettings } from "../utils/emailSettings";
 
+/** What happened to the confirmation e-mail of the current opt-in (double opt-in). */
+function confirmationText(status: string | undefined, email: string): string {
+  if (status === "sent")
+    return `Almost done: we sent a confirmation link to ${email}. Alert e-mails start after you open it and confirm. Nothing there? Check the spam folder, or turn this off and on again for a new link (at most one per hour).`;
+  if (status === "failed" || status === "cancelled")
+    return `The confirmation e-mail to ${email} could not be sent. Turn this off and on again to try once more (at most one link per hour).`;
+  return `Almost done: a confirmation link to ${email} is on its way (new alerts are checked about once an hour, and at most one link is sent per hour). Alert e-mails start after you open it and confirm.`;
+}
+
 type Props = {
   email: string;
   settings: EmailSettings | null;
@@ -53,7 +62,7 @@ const EmailAlerts = ({ email, settings, onChange }: Props) => {
       </label>
       <p id="email-consent" className="channel-note">
         {enabled && !settings?.verified
-          ? `Almost done: ${settings?.confirmationSentAt ? "we sent" : "we are sending"} a confirmation link to ${email}. Alert e-mails start after you open it and confirm. Nothing there? Turn this off and on again for a new link (at most one per hour).`
+          ? confirmationText(settings?.confirmation?.status, email)
           : enabled
           ? `On: a summary goes to ${email} when new events match your alerts. Turn it off here at any time, or use the unsubscribe link in any of the e-mails.`
           : `Off. By turning this on you agree that DisasterWatch sends a summary e-mail to ${email} when new events match your alerts (at most one per check, about once an hour). We first send a link to confirm the address. You can turn it off here at any time, or with the unsubscribe link in every e-mail.`}

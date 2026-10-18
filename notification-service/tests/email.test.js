@@ -9,7 +9,7 @@ import { readEmailConfig, DEFAULT_DAILY_LIMIT } from "../src/email/config.js";
 import { maskEmail, scrubText } from "../src/email/mask.js";
 import { renderDigest, feedId, escapeHtml, MAX_ITEMS } from "../src/email/render.js";
 import { createResendSender, EmailSendError, RESEND_URL } from "../src/email/resend.js";
-import { createEmailDispatcher, MAX_ATTEMPTS, CONFIRM_RESEND_MS } from "../src/email/dispatcher.js";
+import { createEmailDispatcher, MAX_ATTEMPTS, CONFIRM_RESEND_MS, confirmLimit, NOTIFICATION_MAX_AGE_MS } from "../src/email/dispatcher.js";
 import { renderConfirmation } from "../src/email/render.js";
 
 const APP = "https://dw.example.com";
@@ -405,6 +405,21 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
     expect(provider.delivered).toHaveLength(1);
   });
 
+  it("cancelled deliveries that were attempted count too (a timed-out send may have gone out)", async () => {
+    const a = await user("cancelledcount@example.com");
+    await q(`INSERT INTO "EmailDelivery" ("userId", "status", "notificationCount", "attempts", "lastAttemptAt") VALUES ($1, 'cancelled', 1, 1, now())`, [a]);
+    await notification(a);
+    const out = await createEmailDispatcher({ pool, config: config({ dailyLimit: 1 }), sender: fakeProvider(), log: quietLog() }).runOnce();
+    expect(out).toMatchObject({ claimed: 0, skippedDailyLimit: 1 });
+  });
+
+  it("a notification that waited past the 24 h cutoff gets the reason too-old instead of silently staying unsent", async () => {
+    const a = await user("waited@example.com", { consentAt: new Date(Date.now() - 3 * NOTIFICATION_MAX_AGE_MS) });
+    await notification(a, { createdAt: new Date(Date.now() - NOTIFICATION_MAX_AGE_MS - 60_000) });
+    await createEmailDispatcher({ pool, config: config(), sender: fakeProvider(), log: quietLog() }).runOnce();
+    expect(await notifRows()).toMatchObject([{ emailSentAt: null, emailSkipReason: "too-old" }]);
+  });
+
   it("failed deliveries that reached the provider count against the daily limit", async () => {
     const a = await user("limited@example.com");
     await q(`INSERT INTO "EmailDelivery" ("userId", "status", "notificationCount", "attempts", "lastAttemptAt") VALUES ($1, 'failed', 1, 5, now())`, [a]);
@@ -493,6 +508,29 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
       expect(await d.runOnce()).toMatchObject({ confirmations: 0 });
       t = new Date(t.getTime() + CONFIRM_RESEND_MS);
       expect(await d.runOnce()).toMatchObject({ confirmations: 1, sent: 1 });
+    });
+
+    it("confirmations have their own small share of the daily limit: they cannot use up what digests need", async () => {
+      expect(confirmLimit(90)).toBe(10);
+      expect(confirmLimit(3)).toBe(1);
+      for (let i = 0; i < 4; i++) await user(`fake${i}@example.com`, { verified: false, confirmToken: String(i).repeat(43) });
+      const real = await user("real@example.com");
+      await notification(real);
+      const provider = fakeProvider();
+      const out = await createEmailDispatcher({ pool, config: config({ dailyLimit: 5 }), sender: provider, log: quietLog() }).runOnce();
+      expect(out).toMatchObject({ confirmations: 1, claimed: 1, skippedDailyLimit: 0 });
+      expect(provider.delivered.map((m) => m.to)).toContain("real@example.com");
+    });
+
+    it("a stored confirmation is not sent once the address was confirmed meanwhile", async () => {
+      await user("confirmedmeanwhile@example.com", { verified: false, confirmToken: CONFIRM });
+      const provider = fakeProvider();
+      provider.failures.push(new EmailSendError("Resend 503", { transient: true, status: 503 }));
+      const d = createEmailDispatcher({ pool, config: config(), sender: provider, log: quietLog() });
+      await d.runOnce();
+      await q(`UPDATE "User" SET "emailVerifiedAt" = now(), "emailConfirmToken" = NULL`);
+      expect(await d.runOnce()).toMatchObject({ cancelled: 1, sent: 0 });
+      expect(provider.delivered).toHaveLength(0);
     });
 
     it("the confirmation template carries nothing but the link and fixed text", () => {

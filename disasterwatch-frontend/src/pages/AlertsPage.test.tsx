@@ -26,7 +26,7 @@ describe("Alerts page delivery channels", () => {
 
 type Channel = "active" | "limit-reached" | "not-configured" | "unknown";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-const settings = (state: Channel, enabled = false, verified = true) => ({ enabled, consentAt: enabled ? "2026-10-18T10:00:00.000Z" : null, verified, confirmationSentAt: null, channel: { state, dailyLimit: 90, sentLast24h: state === "limit-reached" ? 90 : 3 } });
+const settings = (state: Channel, enabled = false, verified = true) => ({ enabled, consentAt: enabled ? "2026-10-18T10:00:00.000Z" : null, verified, confirmation: verified ? null : { status: "sent" as const, at: "2026-10-18T10:00:00.000Z" }, channel: { state, dailyLimit: 90, sentLast24h: state === "limit-reached" ? 90 : 3 } });
 
 function mockApi(initial: ReturnType<typeof settings>) {
   let current = initial;
