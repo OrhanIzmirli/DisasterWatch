@@ -400,6 +400,8 @@ const AlertsPage = ({ user, authLoading }: Props) => {
           <ul>
             <li>In-app notifications: active</li>
           </ul>
+          {/* the free hosting sleeps between visits; a scheduled job wakes it once an hour (.github/workflows/wake.yml) */}
+          <p className="channel-note">New events are checked about once an hour, so an alert can arrive up to an hour after the event is reported.</p>
         </article>
       </section>
 

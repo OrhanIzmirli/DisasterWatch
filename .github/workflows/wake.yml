@@ -1,0 +1,67 @@
+# Hourly wake-up of the Render free-plan services (they sleep after ~15 min without traffic).
+#
+# 1. POST the backend's /internal/ingest with the shared secret: a sleeping backend wakes and
+#    ingests on start, an awake one ingests now; new events go to Kafka (idempotent: nothing
+#    is repeated within 10 minutes of the last run).
+# 2. GET the notification service's /health: it wakes and consumes what is waiting in Kafka.
+#
+# Setup (values never in the repository):
+#   Settings -> Secrets and variables -> Actions
+#     Secrets:   INGEST_WAKE_SECRET  (same value as the backend's Render env var; 32+ characters)
+#     Variables: BACKEND_URL         (backend service URL, no trailing slash)
+#                NOTIFICATION_URL    (notification service URL, no trailing slash)
+name: Scheduled wake
+
+on:
+  schedule:
+    # :17 rather than :00 — GitHub delays or drops more scheduled runs at the top of the hour
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # only for the "keep the schedule enabled" step
+
+concurrency:
+  group: scheduled-wake
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wake the backend and ingest now
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          INGEST_WAKE_SECRET: ${{ secrets.INGEST_WAKE_SECRET }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ -z "$INGEST_WAKE_SECRET" ]; then
+            echo "::error::Set the BACKEND_URL variable and the INGEST_WAKE_SECRET secret (see the comment at the top of wake.yml)"
+            exit 1
+          fi
+          # a cold start takes up to about a minute; connection failures and timeouts are retried
+          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 150 --retry 3 --retry-delay 20 --retry-all-errors \
+            -X POST "$BACKEND_URL/internal/ingest" -H "Authorization: Bearer $INGEST_WAKE_SECRET")
+          echo "HTTP $code"
+          cat body.json; echo
+          [ "$code" = "200" ]
+
+      - name: Wake the notification service
+        if: always()
+        env:
+          NOTIFICATION_URL: ${{ vars.NOTIFICATION_URL }}
+        run: |
+          if [ -z "$NOTIFICATION_URL" ]; then
+            echo "::error::Set the NOTIFICATION_URL variable (see the comment at the top of wake.yml)"
+            exit 1
+          fi
+          curl -fsS --max-time 150 --retry 3 --retry-delay 20 --retry-all-errors "$NOTIFICATION_URL/health"; echo
+
+      # GitHub disables scheduled workflows after 60 days without repository activity;
+      # re-enabling from the workflow itself keeps it on (see the report for the backup check).
+      - name: Keep the schedule enabled
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable wake.yml --repo "$GITHUB_REPOSITORY"

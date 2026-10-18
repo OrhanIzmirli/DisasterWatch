@@ -3,7 +3,7 @@
  * contract. Works from the raw payloads (not the public-feed normalizers) so
  * the stable source ids are preserved: "nasa:EONET_1234", "usgs:us7000abcd".
  */
-import { mapCategoryToType, pickBestLatLngFromGeometryArray } from "../utils/normalizeDisasters.js";
+import { mapCategoryToType, pickBestLatLngFromGeometryArray, resolveEventLocation } from "../utils/normalizeDisasters.js";
 import { severityFromMag, assessEonetEvent } from "../utils/severity.js";
 import { formatMagnitude } from "../utils/magnitude.js";
 import { cleanTitle } from "../utils/eventDetails.js";
@@ -51,7 +51,11 @@ export function nasaEventsToContract(rawEvents) {
 
     const best = pickBestLatLngFromGeometryArray(ev?.geometry);
     if (!best?.coords) continue;
-    const [lng, lat] = fixSwappedCoords(best.coords);
+    // Same point as the public map marker: the GDACS event point when there is one (fetchNasaEventsRated
+    // attaches it as gdacsPlace), else the EONET geometry. Only the values change; the contract does not.
+    const place = resolveEventLocation(fixSwappedCoords(best.coords), ev?.gdacsPlace);
+    if (!place?.coords) continue;
+    const [lng, lat] = place.coords;
 
     const occurredAt = toIso(best.date || ev?.updated || ev?.created);
     if (!occurredAt) continue;

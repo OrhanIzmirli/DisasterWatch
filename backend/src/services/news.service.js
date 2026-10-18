@@ -511,6 +511,8 @@ export function createNewsService({
       articles: cache ? liveItems(cache.items, at).length : 0,
       provider: cache?.provider ?? null,
       nextIntervalMs: nextIntervalMs(),
+      // current-storm lists for the past-storm rule (EONET + GDACS tropical cyclones): last success / error per source
+      storms: stormContext?.status ? stormContext.status() : null,
       providers: Object.fromEntries(
         (providerList ?? []).map((p) => {
           const s = states.get(p.name);

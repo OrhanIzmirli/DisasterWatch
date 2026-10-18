@@ -211,6 +211,7 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | `CORS_ORIGINS` | no | live frontend + `localhost:8080/5173/4173` | browser origins allowed to call the API directly; the `/api` proxy never needs it |
 | `DISABLE_NEWS_JOB` | no | – | `1` switches off the background news refresh |
 | `DISABLE_INGESTION` | no | – | `1` switches off the NASA/USGS ingestion job (no events reach Kafka) |
+| `INGEST_WAKE_SECRET` | cloud | empty | shared secret of the hourly wake-up (`POST /internal/ingest`, [Scheduled wake-up](#scheduled-wake-up)); **32+ characters**, same value as the GitHub Actions secret of the same name. Without it the endpoint does not exist |
 | `TEST_DATABASE_URL` | tests | – | throwaway database for `npm test` ([Tests and CI](#tests-and-ci)) |
 
 ### Notification service (`notification-service/.env.example`)
@@ -363,9 +364,27 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 - **Idempotent consumer.** Notifications are inserted with `ON CONFLICT (userId, eventId) DO NOTHING`, so a message delivered twice (a retried publish, a Kafka redelivery after a consumer error) produces exactly one notification.
 - Together: **at-least-once delivery, at most one notification per user and event.**
 
+### Scheduled wake-up
+
+The services are not kept awake (the free plan has 750 instance hours a month per workspace); a GitHub Actions workflow (`.github/workflows/wake.yml`) wakes them once an hour, at minute 17:
+
+1. `POST <backend>/internal/ingest` with `Authorization: Bearer <INGEST_WAKE_SECRET>`: a sleeping backend wakes (and ingests on start), an awake one ingests now; new events are published to Kafka. Idempotent: within 10 minutes of the last run nothing is repeated, a run in progress is joined. The secret is compared in constant time and the endpoint is rate limited (10 requests per 15 minutes per client). The answer carries counts only.
+2. `GET <notification service>/health`: the consumer wakes and processes what waits in Kafka.
+
+Setup, values never in the repository:
+
+| Where | Name | Value |
+|---|---|---|
+| Render → backend → Environment | `INGEST_WAKE_SECRET` | a random string of 32+ characters, e.g. `node -e "console.log(require('crypto').randomBytes(36).toString('base64url'))"` |
+| GitHub → Settings → Secrets and variables → Actions → **Secrets** | `INGEST_WAKE_SECRET` | the same value |
+| GitHub → … → Actions → **Variables** | `BACKEND_URL` | the backend's Render URL, no trailing slash |
+| GitHub → … → Actions → **Variables** | `NOTIFICATION_URL` | the notification service's Render URL, no trailing slash |
+
+`/health` → `ingest` shows the last run (time, trigger, counts) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`).
+
 ### Known limitations
 
-- **Render free tier sleeps** after ~15 minutes without traffic. While the backend sleeps no ingestion runs and nothing is published; while the notification service sleeps nothing is consumed. Both catch up when they wake: Kafka keeps the messages, so the consumer resumes from its committed offset.
+- **Render free tier sleeps** after ~15 minutes without traffic. While the backend sleeps no ingestion runs and nothing is published; while the notification service sleeps nothing is consumed. Both catch up when they wake: Kafka keeps the messages, so the consumer resumes from its committed offset. The [scheduled wake-up](#scheduled-wake-up) wakes both once an hour, so an alert arrives at most about an hour after the event is reported.
 - **Aiven free Kafka powers off** after a period without traffic and has to be started from the Aiven console. The backend keeps serving the public feed without Kafka; events recorded meanwhile wait in the outbox and are published once the broker is back.
 - Notifications are **in-app only**; there is no e-mail, SMS or push channel.
 - Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
