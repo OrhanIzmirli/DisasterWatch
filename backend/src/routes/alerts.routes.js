@@ -2,7 +2,7 @@ import express from "express";
 import { z } from "zod";
 import prisma from "../prisma.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
-import { emailChannelStatus, newUnsubscribeToken } from "../services/emailChannel.js";
+import { emailChannelStatus, newEmailToken } from "../services/emailChannel.js";
 
 const router = express.Router();
 
@@ -50,7 +50,7 @@ router.use(requireAuth);
 
 /* ===========================
    E-mail alerts (opt-in, off by default)
-   GET /alerts/email  -> { enabled, consentAt, channel }
+   GET /alerts/email  -> { enabled, consentAt, verified, confirmationSentAt, channel }
    PUT /alerts/email  { enabled: true, consent: true } | { enabled: false }
 =========================== */
 const emailSettingsSchema = z.discriminatedUnion("enabled", [
@@ -61,12 +61,19 @@ const emailSettingsSchema = z.discriminatedUnion("enabled", [
 
 async function emailSettings(userId) {
   const [u, channel] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { emailAlertsEnabled: true, emailAlertsConsentAt: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { emailAlertsEnabled: true, emailAlertsConsentAt: true, emailVerifiedAt: true, emailConfirmSentAt: true } }),
     emailChannelStatus({ prisma }),
   ]);
   // the channel without the provider error: that is for /health, not for every user
   const { lastError, lastErrorAt, ...publicChannel } = channel;
-  return { enabled: Boolean(u?.emailAlertsEnabled), consentAt: u?.emailAlertsConsentAt?.toISOString() ?? null, channel: publicChannel };
+  return {
+    enabled: Boolean(u?.emailAlertsEnabled),
+    consentAt: u?.emailAlertsConsentAt?.toISOString() ?? null,
+    // double opt-in: alerts go out only after the confirmation link sent to the address was opened
+    verified: Boolean(u?.emailVerifiedAt),
+    confirmationSentAt: u?.emailConfirmSentAt?.toISOString() ?? null,
+    channel: publicChannel,
+  };
 }
 
 router.get("/email", async (req, res) => {
@@ -86,14 +93,20 @@ router.put("/email", async (req, res) => {
   try {
     const current = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { emailAlertsEnabled: true, emailUnsubscribeToken: true },
+      select: { emailAlertsEnabled: true, emailUnsubscribeToken: true, emailVerifiedAt: true, emailConfirmToken: true },
     });
     if (parsed.data.enabled) {
       if (!current.emailAlertsEnabled) {
         await prisma.user.update({
           where: { id: req.user.id },
           // the token is kept across opt-ins, so unsubscribe links in older e-mails keep working
-          data: { emailAlertsEnabled: true, emailAlertsConsentAt: new Date(), emailUnsubscribeToken: current.emailUnsubscribeToken ?? newUnsubscribeToken() },
+          data: {
+            emailAlertsEnabled: true,
+            emailAlertsConsentAt: new Date(),
+            emailUnsubscribeToken: current.emailUnsubscribeToken ?? newEmailToken(),
+            // an unconfirmed address gets a confirmation link first (the notification-service sends it)
+            ...(current.emailVerifiedAt ? {} : { emailConfirmToken: current.emailConfirmToken ?? newEmailToken() }),
+          },
         });
       }
     } else {

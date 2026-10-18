@@ -9,7 +9,8 @@ import { readEmailConfig, DEFAULT_DAILY_LIMIT } from "../src/email/config.js";
 import { maskEmail, scrubText } from "../src/email/mask.js";
 import { renderDigest, feedId, escapeHtml, MAX_ITEMS } from "../src/email/render.js";
 import { createResendSender, EmailSendError, RESEND_URL } from "../src/email/resend.js";
-import { createEmailDispatcher, MAX_ATTEMPTS } from "../src/email/dispatcher.js";
+import { createEmailDispatcher, MAX_ATTEMPTS, CONFIRM_RESEND_MS } from "../src/email/dispatcher.js";
+import { renderConfirmation } from "../src/email/render.js";
 
 const APP = "https://dw.example.com";
 const TOKEN = "T".repeat(43);
@@ -125,6 +126,8 @@ describe("Resend client", () => {
     expect(e403.message).not.toContain("owner@example.com");
     expect(await attempt(answer(429, { message: "rate limited" }))).toMatchObject({ transient: true });
     expect(await attempt(answer(503, null))).toMatchObject({ transient: true });
+    expect(await attempt(answer(409, { name: "concurrent_idempotent_requests", message: "in progress" }))).toMatchObject({ transient: true });
+    expect(await attempt(answer(409, { name: "invalid_idempotent_request", message: "payload differs" }))).toMatchObject({ transient: false });
     const net = await attempt(vi.fn(async () => { throw new Error("ECONNRESET"); }));
     expect(net).toMatchObject({ transient: true });
     for (const e of [e403, net]) expect(e.message).not.toContain("re_secret_value");
@@ -156,11 +159,11 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
   }
 
   const q = (sql, params) => pool.query(sql, params);
-  async function user(email, { enabled = true, consentAt = new Date(Date.now() - 3600_000), token = null, disabledAt = null } = {}) {
+  async function user(email, { enabled = true, consentAt = new Date(Date.now() - 3600_000), token = null, disabledAt = null, verified = true, confirmToken = null } = {}) {
     const { rows } = await q(
-      `INSERT INTO "User" ("email", "password", "emailAlertsEnabled", "emailAlertsConsentAt", "emailUnsubscribeToken", "disabledAt")
-       VALUES ($1, 'x', $2, $3, $4, $5) RETURNING "id"`,
-      [email, enabled, enabled ? consentAt : null, token ?? `${email.split("@")[0].replace(/[^A-Za-z0-9]/g, "").padEnd(43, "x").slice(0, 43)}`, disabledAt]
+      `INSERT INTO "User" ("email", "password", "emailAlertsEnabled", "emailAlertsConsentAt", "emailUnsubscribeToken", "disabledAt", "emailVerifiedAt", "emailConfirmToken")
+       VALUES ($1, 'x', $2, $3, $4, $5, $6, $7) RETURNING "id"`,
+      [email, enabled, enabled ? consentAt : null, token ?? `${email.split("@")[0].replace(/[^A-Za-z0-9]/g, "").padEnd(43, "x").slice(0, 43)}`, disabledAt, verified ? new Date(Date.now() - 7200_000) : null, confirmToken]
     );
     return rows[0].id;
   }
@@ -265,9 +268,10 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
     expect(await deliveries()).toMatchObject([{ status: "pending", attempts: 1, lastError: "Resend 503" }]);
     expect(d.status()).toMatchObject({ pending: 1, lastError: "Resend 503" });
 
-    // a new notification meanwhile goes into a NEW digest, the failed one is retried as it was
+    // a new notification meanwhile waits: the failed digest is retried as it was, the new one follows in its own
     await notification(a);
-    expect(await d.runOnce()).toMatchObject({ claimed: 1, sent: 2 });
+    expect(await d.runOnce()).toMatchObject({ claimed: 0, sent: 1 });
+    expect(await d.runOnce()).toMatchObject({ claimed: 1, sent: 1 });
     const keys = provider.send.mock.calls.map(([m]) => m.idempotencyKey);
     expect(keys).toEqual(["dw-email-delivery-1", "dw-email-delivery-1", "dw-email-delivery-2"]);
     expect(provider.delivered).toHaveLength(2);
@@ -331,7 +335,7 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
     expect(await notifRows()).toMatchObject([{ emailSkipReason: "disabled" }]);
   });
 
-  it("two instances at once (deploy overlap): the advisory lock lets one run, each digest goes out once", async () => {
+  it("two instances at once (deploy overlap): the lease lets one send each delivery, the other skips it", async () => {
     const a = await user("twice@example.com");
     await notification(a);
     const provider = fakeProvider();
@@ -341,12 +345,72 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
     const one = createEmailDispatcher({ pool, config: config(), sender: slow, log: quietLog() });
     const two = createEmailDispatcher({ pool, config: config(), sender: slow, log: quietLog() });
     const first = one.runOnce();
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 150));
     const second = await two.runOnce();
     release();
-    await first;
-    expect(second).toEqual({ skipped: "locked" });
+    expect(await first).toMatchObject({ sent: 1 });
+    expect(second).toMatchObject({ claimed: 0, sent: 0, busy: 1 });
     expect(provider.delivered).toHaveLength(1);
+  });
+
+  it("a user whose digest is still pending (retrying) gets no second digest in the same run", async () => {
+    const a = await user("onlyone@example.com");
+    await notification(a);
+    const provider = fakeProvider();
+    provider.failures.push(new EmailSendError("Resend 503", { transient: true, status: 503 }));
+    const d = createEmailDispatcher({ pool, config: config(), sender: provider, log: quietLog() });
+    await d.runOnce();
+    await notification(a);
+    expect(await d.runOnce()).toMatchObject({ claimed: 0, sent: 1 });
+    expect(provider.delivered).toHaveLength(1);
+    expect(await d.runOnce()).toMatchObject({ claimed: 1, sent: 1 }); // the newer one follows in its own digest
+  });
+
+  it("a retry sends exactly the stored payload, even if the data changed meanwhile (same key, same body)", async () => {
+    const a = await user("same@example.com");
+    const { rows } = await q(`INSERT INTO "AlertSubscription" ("userId", "label", "centerLat", "centerLng", "radiusKm") VALUES ($1, 'Home', 10, 20, 300) RETURNING "id"`, [a]);
+    const n = await notification(a);
+    await q(`UPDATE "Notification" SET "subscriptionId" = $1 WHERE "id" = $2`, [rows[0].id, n]);
+    const provider = fakeProvider();
+    provider.failures.push(new EmailSendError("Resend 503", { transient: true, status: 503 }));
+    const d = createEmailDispatcher({ pool, config: config(), sender: provider, log: quietLog() });
+    await d.runOnce();
+    await q(`UPDATE "AlertSubscription" SET "label" = 'Renamed'`);
+    await d.runOnce();
+    const [first, second] = provider.send.mock.calls.map(([m]) => m);
+    expect(second).toEqual(first);
+    expect(second.text).toContain('"Home"');
+  });
+
+  it("a database error on one delivery does not stop the others, and the status row is still written", async () => {
+    const a = await user("first@example.com");
+    const b = await user("second@example.com");
+    await notification(a);
+    await notification(b);
+    const provider = fakeProvider();
+    let calls = 0;
+    const flaky = {
+      connect: () => pool.connect(),
+      query: (sql, params) => {
+        // the first delivery's payload cannot be stored (connection lost)
+        if (String(sql).includes('SET "payload"') && calls++ === 0) return Promise.reject(new Error("connection reset"));
+        return pool.query(sql, params);
+      },
+    };
+    const d = createEmailDispatcher({ pool: flaky, config: config(), sender: provider, log: quietLog() });
+    expect(await d.runOnce()).toMatchObject({ claimed: 2, sent: 1, retrying: 1 });
+    expect((await q(`SELECT "updatedAt" FROM "EmailChannelStatus"`)).rows).toHaveLength(1);
+    expect(d.status().lastError).toBe("connection reset");
+    expect(await d.runOnce()).toMatchObject({ sent: 0, busy: 1 }); // its lease still runs: nobody sends it meanwhile
+    expect(provider.delivered).toHaveLength(1);
+  });
+
+  it("failed deliveries that reached the provider count against the daily limit", async () => {
+    const a = await user("limited@example.com");
+    await q(`INSERT INTO "EmailDelivery" ("userId", "status", "notificationCount", "attempts", "lastAttemptAt") VALUES ($1, 'failed', 1, 5, now())`, [a]);
+    await notification(a);
+    const out = await createEmailDispatcher({ pool, config: config({ dailyLimit: 1 }), sender: fakeProvider(), log: quietLog() }).runOnce();
+    expect(out).toMatchObject({ claimed: 0, skippedDailyLimit: 1 });
   });
 
   it("writes the channel status row: configured, limit, last send; without provider settings nothing is claimed", async () => {
@@ -367,8 +431,14 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
   });
 
   it("schedule() waits for the burst to end (debounced) and then runs once", async () => {
-    let connects = 0;
-    const counting = { connect: () => (connects++, pool.connect()) };
+    let connects = 0; // runs, counted by their status-row write
+    const counting = {
+      connect: () => pool.connect(),
+      query: (sql, params) => {
+        if (String(sql).includes('INSERT INTO "EmailChannelStatus"')) connects++;
+        return pool.query(sql, params);
+      },
+    };
     const d = createEmailDispatcher({ pool: counting, config: config(), sender: fakeProvider(), log: quietLog(), debounceMs: 80, maxWaitMs: 1000 });
     for (let i = 0; i < 4; i++) {
       d.schedule();
@@ -379,5 +449,57 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
     expect(connects).toBe(1);
     expect(d.status().lastRunAt).not.toBeNull();
     d.stop();
+  });
+
+  describe("double opt-in", () => {
+    const CONFIRM = "C".repeat(43);
+
+    it("an unconfirmed address gets only the confirmation e-mail (fixed text, no user-written text), no alerts", async () => {
+      const a = await user("unconfirmed@example.com", { verified: false, confirmToken: CONFIRM });
+      const { rows } = await q(`INSERT INTO "AlertSubscription" ("userId", "label", "centerLat", "centerLng", "radiusKm") VALUES ($1, 'Visit evil.example now', 10, 20, 300) RETURNING "id"`, [a]);
+      const n = await notification(a);
+      await q(`UPDATE "Notification" SET "subscriptionId" = $1 WHERE "id" = $2`, [rows[0].id, n]);
+      const provider = fakeProvider();
+      const d = createEmailDispatcher({ pool, config: config(), sender: provider, log: quietLog() });
+      expect(await d.runOnce()).toMatchObject({ confirmations: 1, claimed: 0, sent: 1 });
+      expect(provider.delivered).toHaveLength(1);
+      const [mail] = provider.delivered;
+      expect(mail.subject).toBe("Confirm DisasterWatch alert e-mails");
+      expect(mail.text).toContain(`${APP}/confirm-email?token=${CONFIRM}`);
+      expect(JSON.stringify(mail)).not.toMatch(/evil\.example|Testland/);
+      expect(await d.runOnce()).toMatchObject({ confirmations: 0, sent: 0 }); // not sent again
+      expect((await notifRows())[0].emailSentAt).toBeNull();
+    });
+
+    it("after the confirmation the alerts follow (those created after the consent)", async () => {
+      const a = await user("later@example.com", { verified: false, confirmToken: CONFIRM });
+      await notification(a, { title: "M 6.1 - Confirmland" });
+      const provider = fakeProvider();
+      const d = createEmailDispatcher({ pool, config: config(), sender: provider, log: quietLog() });
+      await d.runOnce();
+      await q(`UPDATE "User" SET "emailVerifiedAt" = now(), "emailConfirmToken" = NULL`);
+      expect(await d.runOnce()).toMatchObject({ claimed: 1, sent: 1 });
+      expect(provider.delivered.map((m) => m.subject)).toEqual(["Confirm DisasterWatch alert e-mails", "DisasterWatch alert: M 6.1 - Confirmland"]);
+    });
+
+    it("a new opt-in re-sends the confirmation, at most once an hour", async () => {
+      await user("again@example.com", { verified: false, confirmToken: CONFIRM });
+      const provider = fakeProvider();
+      let t = new Date();
+      const d = createEmailDispatcher({ pool, config: config(), sender: provider, log: quietLog(), now: () => t });
+      await d.runOnce();
+      await q(`UPDATE "User" SET "emailAlertsConsentAt" = $1`, [new Date(t.getTime() + 1000)]); // off and on again
+      t = new Date(t.getTime() + 2000);
+      expect(await d.runOnce()).toMatchObject({ confirmations: 0 });
+      t = new Date(t.getTime() + CONFIRM_RESEND_MS);
+      expect(await d.runOnce()).toMatchObject({ confirmations: 1, sent: 1 });
+    });
+
+    it("the confirmation template carries nothing but the link and fixed text", () => {
+      const { text, html } = renderConfirmation({ appUrl: APP, confirmUrl: `${APP}/confirm-email?token=${CONFIRM}` });
+      expect(text).toContain(`${APP}/confirm-email?token=${CONFIRM}`);
+      expect(html).toContain(`href="${APP}/confirm-email?token=${CONFIRM}"`);
+      expect(html).not.toMatch(/<img|<script/i);
+    });
   });
 });

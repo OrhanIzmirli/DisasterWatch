@@ -6,8 +6,10 @@
  * Resend once only, within its 24 h key window.
  *
  * Errors are `EmailSendError { transient, status }`: network errors,
- * timeouts, 429 and 5xx are transient (retried next run); other 4xx (bad
- * sender, recipient not allowed in test mode, invalid key) are not.
+ * timeouts, 429, 5xx and 409 concurrent_idempotent_requests (the same key is
+ * still being processed) are transient (retried next run); other 4xx (bad
+ * sender, recipient not allowed in test mode, invalid key, a key reused with
+ * another payload) are not.
  * Messages are scrubbed of e-mail addresses; the API key never appears.
  */
 import { scrubText } from "./mask.js";
@@ -57,7 +59,8 @@ export function createResendSender({ apiKey, fetchImpl = (...a) => fetch(...a), 
     if (res.ok && body?.id) return { id: String(body.id) };
     const status = res.status;
     const detail = body?.message || body?.name || (res.ok ? "no message id in the answer" : "");
-    throw new EmailSendError(`Resend ${status}${detail ? `: ${detail}` : ""}`, { transient: status === 429 || status >= 500 || res.ok, status });
+    const concurrent = status === 409 && body?.name === "concurrent_idempotent_requests";
+    throw new EmailSendError(`Resend ${status}${detail ? `: ${detail}` : ""}`, { transient: status === 429 || status >= 500 || concurrent || res.ok, status });
   }
 
   return { send };

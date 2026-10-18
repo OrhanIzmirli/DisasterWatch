@@ -18,19 +18,19 @@ import defaultPrisma from "../prisma.js";
 export const STALE_MS = 3 * 60 * 60 * 1000;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Unsubscribe tokens: 32 random bytes, base64url (43 characters). */
-export const UNSUBSCRIBE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
-export const newUnsubscribeToken = () => crypto.randomBytes(32).toString("base64url");
+/** Unsubscribe and confirmation tokens: 32 random bytes, base64url (43 characters). */
+export const EMAIL_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+export const newEmailToken = () => crypto.randomBytes(32).toString("base64url");
 
 export async function emailChannelStatus({ prisma = defaultPrisma, now = new Date() } = {}) {
   const row = await prisma.emailChannelStatus.findUnique({ where: { id: 1 } });
   const since = new Date(now.getTime() - WINDOW_MS);
-  const sentLast24h = await prisma.emailDelivery.count({
-    where: {
-      status: { in: ["sent", "pending"] },
-      OR: [{ sentAt: { gt: since } }, { sentAt: null, createdAt: { gt: since } }],
-    },
-  });
+  // same rule as the notification-service (src/email/dispatcher.js COUNTED): sent, pending,
+  // and failed ones that were attempted, by COALESCE(sentAt, lastAttemptAt, createdAt)
+  const [{ n: sentLast24h }] = await prisma.$queryRaw`
+    SELECT count(*)::int AS n FROM "EmailDelivery"
+     WHERE ("status" IN ('sent', 'pending') OR ("status" = 'failed' AND "attempts" > 0))
+       AND COALESCE("sentAt", "lastAttemptAt", "createdAt") > ${since}`;
   let state = "not-configured";
   if (row?.configured) {
     if (now.getTime() - row.updatedAt.getTime() > STALE_MS) state = "unknown";

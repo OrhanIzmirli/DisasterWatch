@@ -26,7 +26,7 @@ describe("Alerts page delivery channels", () => {
 
 type Channel = "active" | "limit-reached" | "not-configured" | "unknown";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-const settings = (state: Channel, enabled = false) => ({ enabled, consentAt: enabled ? "2026-10-18T10:00:00.000Z" : null, channel: { state, dailyLimit: 90, sentLast24h: state === "limit-reached" ? 90 : 3 } });
+const settings = (state: Channel, enabled = false, verified = true) => ({ enabled, consentAt: enabled ? "2026-10-18T10:00:00.000Z" : null, verified, confirmationSentAt: null, channel: { state, dailyLimit: 90, sentLast24h: state === "limit-reached" ? 90 : 3 } });
 
 function mockApi(initial: ReturnType<typeof settings>) {
   let current = initial;
@@ -81,5 +81,15 @@ describe("Alerts page e-mail channel", () => {
     mockApi(settings("unknown", true));
     renderPage();
     expect(await screen.findByText(/E-mail: status unknown/)).toBeTruthy();
+  });
+});
+
+describe("Alerts page e-mail double opt-in", () => {
+  it("on but not confirmed: says a confirmation link was sent and does not claim e-mail is active", async () => {
+    mockApi(settings("active", true, false));
+    renderPage();
+    expect(await screen.findByText(/waiting for you to confirm your address/)).toBeTruthy();
+    expect(screen.getByText(/Almost done/).textContent).toContain("someone@example.com");
+    expect(screen.queryByText("E-mail: active")).toBeNull();
   });
 });

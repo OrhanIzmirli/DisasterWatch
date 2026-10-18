@@ -125,3 +125,31 @@ export function renderDigest({ notifications, appUrl, unsubscribeUrl }) {
 
   return { subject: subject.slice(0, 200), text, html };
 }
+
+/**
+ * Double opt-in: the only e-mail sent before the owner of the address agreed.
+ * Fixed text and the confirmation link only, nothing a user typed (an account
+ * can be registered with someone else's address).
+ */
+export function renderConfirmation({ appUrl, confirmUrl }) {
+  const subject = "Confirm DisasterWatch alert e-mails";
+  const lines = [
+    "Someone asked DisasterWatch to send disaster alert e-mails to this address.",
+    "If that was you, confirm it with this link (it opens the site and asks you to confirm):",
+    confirmUrl,
+    "If it was not you, ignore this e-mail: no alert e-mails are sent to this address unless the link is confirmed.",
+  ];
+  const e = escapeHtml;
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${e(subject)}</title></head>
+<body style="margin:0;padding:16px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111827">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto">
+    <tr><td style="font-size:18px;font-weight:700;padding-bottom:8px">DisasterWatch</td></tr>
+    <tr><td style="font-size:15px;padding-bottom:12px">${e(lines[0])}</td></tr>
+    <tr><td style="font-size:15px;padding-bottom:12px">If that was you, <a href="${e(confirmUrl)}" style="color:#1d4ed8">confirm alert e-mails</a> (the link opens the site and asks you to confirm).</td></tr>
+    <tr><td style="font-size:13px;color:#4b5563">${e(lines[3])} <a href="${e(appUrl)}/" style="color:#1d4ed8">DisasterWatch</a></td></tr>
+  </table>
+</body></html>`;
+  return { subject, text: lines.join("\n\n"), html, headers: {} };
+}
+

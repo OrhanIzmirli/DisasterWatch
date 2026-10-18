@@ -52,9 +52,11 @@ const EmailAlerts = ({ email, settings, onChange }: Props) => {
         <span>E-mail me a summary of new alerts</span>
       </label>
       <p id="email-consent" className="channel-note">
-        {enabled
+        {enabled && !settings?.verified
+          ? `Almost done: ${settings?.confirmationSentAt ? "we sent" : "we are sending"} a confirmation link to ${email}. Alert e-mails start after you open it and confirm. Nothing there? Turn this off and on again for a new link (at most one per hour).`
+          : enabled
           ? `On: a summary goes to ${email} when new events match your alerts. Turn it off here at any time, or use the unsubscribe link in any of the e-mails.`
-          : `Off. By turning this on you agree that DisasterWatch sends a summary e-mail to ${email} when new events match your alerts (at most one per check, about once an hour). You can turn it off here at any time, or with the unsubscribe link in every e-mail.`}
+          : `Off. By turning this on you agree that DisasterWatch sends a summary e-mail to ${email} when new events match your alerts (at most one per check, about once an hour). We first send a link to confirm the address. You can turn it off here at any time, or with the unsubscribe link in every e-mail.`}
       </p>
       {error && <div className="form-error">{error}</div>}
     </div>

@@ -30,6 +30,13 @@ model User {
   /// Unguessable token of the one-click unsubscribe link (no sign-in needed);
   /// created on the first opt-in and kept, so links in older e-mails keep working.
   emailUnsubscribeToken String?             @unique
+  /// Double opt-in: the address is only e-mailed alerts after its owner
+  /// opened the confirmation link (registration does not verify addresses).
+  emailVerifiedAt       DateTime?
+  /// Token of the confirmation link; cleared once used.
+  emailConfirmToken     String?             @unique
+  /// When the notification-service queued the confirmation e-mail.
+  emailConfirmSentAt    DateTime?
   emailDeliveries       EmailDelivery[]
 }
 
@@ -134,6 +141,8 @@ model EmailDelivery {
   id                Int            @id @default(autoincrement())
   userId            Int
   user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "digest" (alerts) | "confirm" (double opt-in link, no user-written text)
+  kind              String         @default("digest")
   /// "pending" | "sent" | "failed" | "cancelled"
   status            String         @default("pending")
   notificationCount Int
@@ -144,6 +153,11 @@ model EmailDelivery {
   /// Provider error, e-mail addresses masked.
   lastError         String?
   providerMessageId String?
+  /// The rendered message { subject, text, html, headers }, stored before the
+  /// first attempt so a retry sends the same payload under the same idempotency key.
+  payload           Json?
+  /// Short lease of the instance that is sending it (no second sender meanwhile).
+  leaseUntil        DateTime?
   notifications     Notification[]
 
   @@index([status, createdAt])

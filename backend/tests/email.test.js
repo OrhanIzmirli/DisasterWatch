@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { createTestApp, resetDb, registerAgent, prisma } from "./helpers.js";
-import { emailChannelStatus, STALE_MS, UNSUBSCRIBE_TOKEN } from "../src/services/emailChannel.js";
+import { emailChannelStatus, STALE_MS, EMAIL_TOKEN } from "../src/services/emailChannel.js";
 import { ingestOnce } from "../src/jobs/ingest.js";
 
 beforeEach(resetDb);
@@ -41,7 +41,7 @@ describe("e-mail alerts are opt-in", () => {
     expect(on.body.enabled).toBe(true);
     const first = await userRow();
     expect(first.emailAlertsConsentAt).toBeInstanceOf(Date);
-    expect(first.emailUnsubscribeToken).toMatch(UNSUBSCRIBE_TOKEN);
+    expect(first.emailUnsubscribeToken).toMatch(EMAIL_TOKEN);
     expect(JSON.stringify(on.body)).not.toContain(first.emailUnsubscribeToken); // never sent to the browser
 
     const off = await agent.put("/alerts/email").send({ enabled: false });
@@ -159,5 +159,57 @@ describe("ingestion records the map's location note for the e-mails", () => {
       { eventId: "nasa:EONET_1", locationPrecision: "approximate" },
       { eventId: "nasa:EONET_2", locationPrecision: "exact" },
     ]);
+  });
+});
+
+describe("double opt-in: the address must be confirmed (registration does not verify it)", () => {
+  it("turning e-mail on creates a confirmation token; the settings say it is not confirmed yet", async () => {
+    const agent = await signUp();
+    const on = await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    expect(on.body).toMatchObject({ enabled: true, verified: false });
+    const u = await userRow();
+    expect(u.emailConfirmToken).toMatch(EMAIL_TOKEN);
+    expect(u.emailConfirmToken).not.toBe(u.emailUnsubscribeToken);
+    expect(JSON.stringify(on.body)).not.toContain(u.emailConfirmToken);
+  });
+
+  it("the confirmation link confirms once; the token cannot be reused; a confirmed address needs no new link", async () => {
+    const agent = await signUp();
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    const { emailConfirmToken: token } = await userRow();
+    expect((await request(app).post("/email/confirm").send({ token })).status).toBe(200);
+    expect(await userRow()).toMatchObject({ emailConfirmToken: null });
+    expect((await userRow()).emailVerifiedAt).toBeInstanceOf(Date);
+    expect((await request(app).post("/email/confirm").send({ token })).status).toBe(404);
+    expect((await agent.get("/alerts/email")).body).toMatchObject({ verified: true });
+    await agent.put("/alerts/email").send({ enabled: false });
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    expect((await userRow()).emailConfirmToken).toBeNull();
+  });
+
+  it("unknown, malformed or query-string tokens confirm nothing", async () => {
+    const agent = await signUp();
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    const { emailConfirmToken: token } = await userRow();
+    expect((await request(app).post("/email/confirm").send({ token: "B".repeat(43) })).status).toBe(404);
+    expect((await request(app).post("/email/confirm").send({ token: [token] })).status).toBe(404);
+    expect((await request(app).post(`/email/confirm?token=${token}`)).status).toBe(404);
+    expect((await request(app).get(`/email/confirm?token=${token}`)).status).toBe(404);
+    expect((await userRow()).emailVerifiedAt).toBeNull();
+  });
+});
+
+describe("daily limit counting", () => {
+  it("counts failed deliveries that reached the provider (a timed-out send may have been accepted), not untried ones", async () => {
+    await reportStatus({ dailyLimit: 2 });
+    const { id: userId } = await prisma.user.create({ data: { email: "count2@example.com", password: "x" } });
+    await prisma.emailDelivery.createMany({
+      data: [
+        { userId, status: "failed", notificationCount: 1, attempts: 5, lastAttemptAt: new Date() },
+        { userId, status: "failed", notificationCount: 1, attempts: 0 },
+        { userId, status: "cancelled", notificationCount: 1 },
+      ],
+    });
+    expect(await emailChannelStatus({ prisma })).toMatchObject({ sentLast24h: 1, state: "active" });
   });
 });
