@@ -122,18 +122,21 @@ const YEAR = /\b(1[89]\d\d|20\d\d)\b(?! ?(homes|houses|people|residents|families
 /** League and sport words: a hazard word next to them is usually a team name ("Hurricanes", "Storm", "Cyclones"). */
 const SPORT_WORDS = /\b(volleyball|football|soccer|basketball|baseball|hockey|cricket|rugby|netball|handball|league|champions league|premier league|super bowl|playoffs?|season opener|tournament|championships?)\b/;
 
-/** "... after Hurricane Helene" / "... Following Hurricane Beryl": a named storm the headline looks back on (any casing). */
-const AFTER_NAMED_STORM = /\b(?:after|since|following) (?:hurricane|typhoon|super typhoon|cyclone|tropical storm|storm) ([\p{L}][\p{L}'-]+)/iu;
-const NOT_A_NAME = new Set(["hits", "strikes", "slams", "makes", "passes", "season", "damage", "warning", "warnings", "watch", "landfall", "threat", "batters", "lashes"]);
+/**
+ * "... after Hurricane Helene" / "... Following Hurricane Beryl": a named storm the headline looks back on.
+ * The lead-in and class words match in any casing; the name must still start with a capital in the
+ * headline (checked on the match), so "after storm brings snow" is not read as a name.
+ */
+const AFTER_NAMED_STORM = /\b(?:after|since|following) (?:hurricane|typhoon|super typhoon|cyclone|tropical storm|storm) ([\p{L}][\p{L}'’-]*)/iu;
 
 /**
  * "Hurricane Melissa", "Super Typhoon Champi", "Tropical Cyclone 01P": the
- * storm class word, then a capitalised name or a basin designation. Words
- * that follow a class word without being a name ("Hurricane Center",
- * "Typhoon Season", "Cyclone Hits") are not names.
+ * storm class word (any casing), then a capitalised name or a basin
+ * designation. Words that follow a class word without being a name
+ * ("Hurricane Center", "Typhoon Season", "Cyclone Hits") are not names.
  */
-// No `i` flag: the name must start with a capital (with `i`, \p{Lu} would match any letter); the class words take either case.
-const NAMED_STORM = /\b(?:[Ss]uper [Tt]yphoon|[Tt]yphoon|[Hh]urricane|[Tt]ropical [Ss]torm|[Tt]ropical [Cc]yclone|[Tt]ropical [Dd]epression|[Cc]yclone)\s+(\p{Lu}[\p{L}'-]+|\d{1,2}[A-Za-z])(?![\p{L}\p{N}])/gu;
+const NAMED_STORM = /\b(?:super typhoon|typhoon|hurricane|tropical storm|tropical cyclone|tropical depression|cyclone)\s+([\p{L}][\p{L}'’-]*|\d{1,2}[a-z])(?![\p{L}\p{N}])/giu;
+/** Words after a storm class word that are not names; shared by both storm rules. */
 const STORM_NAME_STOPWORDS = new Set([
   "center", "centre", "centers", "season", "seasons", "warning", "warnings", "watch", "watches", "hunter", "hunters", "relief", "recovery",
   "damage", "damages", "victims", "survivors", "strength", "category", "force", "forecast", "forecasts", "tracker", "path", "threat",
@@ -142,15 +145,29 @@ const STORM_NAME_STOPWORDS = new Set([
   "aftermath", "death", "deaths", "toll", "names", "name", "and", "the", "of", "in", "to", "as", "is", "could", "may", "will", "was", "were",
 ]);
 
+/**
+ * A captured word as a storm name: capitalised (or a designation such as 01P),
+ * possessive dropped ("Melissa's" -> "melissa"), lower-cased; null when it is
+ * not a name.
+ */
+function asStormName(word) {
+  if (!/^(\p{Lu}|\d)/u.test(word)) return null;
+  const name = word.replace(/['’]s?$/u, "").toLowerCase();
+  return name && !STORM_NAME_STOPWORDS.has(name) ? name : null;
+}
+
 /** Lower-cased storm names in a title ("Hurricane Trudy, Typhoon Koguma" -> ["trudy", "koguma"]). Also used on EONET storm titles. */
 export function stormNamesIn(title) {
   const names = new Set();
   for (const m of String(title ?? "").matchAll(NAMED_STORM)) {
-    const name = m[1].toLowerCase();
-    if (!STORM_NAME_STOPWORDS.has(name)) names.add(name);
+    const name = asStormName(m[1]);
+    if (name) names.add(name);
   }
   return [...names];
 }
+
+/** "melissa-hit" matches the current storm "melissa"; "choi-wan" matches "choi-wan". */
+const isCurrentStorm = (name, storms) => storms.has(name) || storms.has(name.split("-")[0]);
 
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 
@@ -223,7 +240,7 @@ export function isDisasterNews(article, { now = new Date(), storms = null } = {}
   if (sport && !first(headline, IMPACT)) return { keep: false, marker: true, reason: `sports ("${sport[1]}", no impact in the headline)` };
 
   const after = String(article?.title ?? "").match(AFTER_NAMED_STORM);
-  if (after && !NOT_A_NAME.has(after[1].toLowerCase())) {
+  if (after && asStormName(after[1])) {
     const rest = normalise(String(article.title).replace(after[0], " "));
     if (!first(rest, IMPACT) && !first(rest, STRONG)) return { keep: false, marker: true, reason: `retrospective ("${after[0].toLowerCase()}", no impact in the headline)` };
   }
@@ -232,7 +249,7 @@ export function isDisasterNews(article, { now = new Date(), storms = null } = {}
   // Without the storm list (EONET unreachable) the rule is skipped rather than guessed.
   if (storms) {
     const named = stormNamesIn(article?.title);
-    if (named.length && !named.some((n) => storms.has(n))) {
+    if (named.length && !named.some((n) => isCurrentStorm(n, storms))) {
       return { keep: false, marker: true, reason: `retrospective (storm "${named.join('", "')}" not active or recently closed)` };
     }
   }

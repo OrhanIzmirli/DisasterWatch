@@ -137,16 +137,19 @@ export function urlDate(url, now = new Date()) {
 
 /**
  * GDELT's date is when GDELT saw the page (seendate), so an old page crawled
- * again looks new. When the URL carries an earlier publication day, that day
- * (noon UTC; the URL has no time) becomes publishedAt; otherwise the seen
- * time stays, being the more precise of the two.
+ * again looks new. When the URL carries an earlier publication day, the end
+ * of that day (23:59:59 UTC) becomes publishedAt: the URL has no time or time
+ * zone, and the latest moment of the day never makes an article look older
+ * than it is (a page seen just after midnight UTC is not aged by half a day).
+ * Otherwise the seen time stays, being the more precise of the two.
  */
 export function withUrlDate(article, now = new Date()) {
   const day = urlDate(article?.url, now);
   if (!day) return article;
   const seen = article.publishedAt ? new Date(article.publishedAt) : null;
   if (seen && !Number.isNaN(seen.getTime()) && seen.toISOString().slice(0, 10) <= day.toISOString().slice(0, 10)) return article;
-  return { ...article, publishedAt: day.toISOString() };
+  const endOfDay = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 23, 59, 59));
+  return { ...article, publishedAt: endOfDay.toISOString() };
 }
 
 export function normalizeArticle(raw) {

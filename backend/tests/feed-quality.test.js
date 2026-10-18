@@ -31,16 +31,21 @@ describe("(a) GDELT publication date from the article URL", () => {
 
   it("uses the URL day only when it is earlier than GDELT's seen date", () => {
     const seen = "2026-10-18T06:45:00.000Z";
-    expect(withUrlDate({ url: "https://news.example.com/2024/08/02/story/", publishedAt: seen }, NOW).publishedAt).toBe("2024-08-02T12:00:00.000Z");
+    expect(withUrlDate({ url: "https://news.example.com/2024/08/02/story/", publishedAt: seen }, NOW).publishedAt).toBe("2024-08-02T23:59:59.000Z");
     // same day: the seen time is more precise
     expect(withUrlDate({ url: "https://news.example.com/2026/10/18/story/", publishedAt: seen }, NOW).publishedAt).toBe(seen);
     expect(withUrlDate({ url: "https://news.example.com/news/story", publishedAt: seen }, NOW).publishedAt).toBe(seen);
   });
 
+  it("the end of the URL day never ages a page seen just after midnight UTC by half a day", () => {
+    // US evening article on the 15th, seen 01:20 UTC on the 16th
+    expect(withUrlDate({ url: "https://news.example.com/2026/10/15/story/", publishedAt: "2026-10-16T01:20:00.000Z" }, NOW).publishedAt).toBe("2026-10-15T23:59:59.000Z");
+  });
+
   it("the GDELT provider applies it to every article", async () => {
     const client = { searchArticles: async () => [{ url: "https://news.example.com/2024/08/02/storm-may-develop/", title: "Storm may develop this weekend", seendate: "20261018T064500Z" }] };
     const [a] = await createGdeltProvider({ client }).searchGeneral();
-    expect(a.publishedAt).toBe("2024-08-02T12:00:00.000Z");
+    expect(a.publishedAt).toBe("2024-08-02T23:59:59.000Z");
     expect(a.provider).toBe("gdelt");
   });
 
@@ -63,7 +68,7 @@ describe("(a) GDELT publication date from the article URL", () => {
     await svc.refresh();
     const items = svc.getNews().items;
     expect(items.map((a) => a.title)).toEqual(["Earthquake shakes coastal city", "Flash floods sweep through valley towns"]);
-    expect(items.find((a) => a.title.startsWith("Flash")).publishedAt).toBe("2026-10-16T12:00:00.000Z");
+    expect(items.find((a) => a.title.startsWith("Flash")).publishedAt).toBe("2026-10-16T23:59:59.000Z");
     expect(items.find((a) => a.title.startsWith("Earthquake")).publishedAt).toBe("2026-10-18T06:00:00.000Z");
   });
 
@@ -81,7 +86,7 @@ describe("(a) GDELT publication date from the article URL", () => {
     await svc.restore();
     const items = svc.getNews().items;
     expect(items.map((a) => a.title)).toEqual(["Flash floods sweep through valley towns"]);
-    expect(items[0].publishedAt).toBe("2026-10-17T12:00:00.000Z");
+    expect(items[0].publishedAt).toBe("2026-10-17T23:59:59.000Z");
   });
 
   it("other providers keep their own dates (no URL-date or 72 h rule)", async () => {
@@ -95,7 +100,9 @@ describe("(a) GDELT publication date from the article URL", () => {
 describe("(b) 'after / since / following Hurricane X' in any casing", () => {
   it("drops the retrospective whatever the casing", () => {
     expect(verdict("Commissioner announces removal of abandoned vessel Following Hurricane Beryl").keep).toBe(false);
-    expect(verdict("Commissioner announces removal of abandoned vessel following hurricane beryl").keep).toBe(false);
+    expect(verdict("Commissioner announces removal of abandoned vessel FOLLOWING HURRICANE BERYL").keep).toBe(false);
+    // an all-lower-case name is not read as a name (the price of not mistaking "after storm brings" for one)
+    expect(verdict("Commissioner announces removal of abandoned vessel following hurricane beryl").keep).toBe(true);
     expect(verdict("Town rebuilds its library AFTER HURRICANE IAN").keep).toBe(false);
     expect(verdict("Commissioner announces removal of abandoned vessel Following Hurricane Beryl").reason).toMatch(/^retrospective/);
   });
@@ -103,6 +110,13 @@ describe("(b) 'after / since / following Hurricane X' in any casing", () => {
   it("keeps it with impact in the headline, and 'Following Hurricane Season' is not a name", () => {
     expect(verdict("Thousands evacuated Following Hurricane Trudy landfall").keep).toBe(true);
     expect(verdict("Insurers brace Following Hurricane Season forecast of strong winds").keep).toBe(true);
+  });
+
+  it("a lower-case word after 'after storm' is not a name (no regression on current reports)", () => {
+    // the committed draft read "brings" as a storm name and dropped this as a retrospective
+    expect(verdict("Schools close after storm brings snow and power cuts").keep).toBe(true);
+    expect(verdict("Schools close after storm brings heavy snow").reason).not.toMatch(/^retrospective/);
+    expect(verdict("Power still out in thousands of homes since storm knocked lines down").keep).toBe(true);
   });
 });
 
@@ -136,6 +150,16 @@ describe("(c) headlines about storms that are not current", () => {
     expect(verdict("Tropical Storm Trudy brings heavy rain to the coast", { storms }).keep).toBe(true);
     // a reused name cannot be told apart without a year; a past year is caught by the historical rule
     expect(verdict("Hurricane Trudy of 2020 remembered by fishermen", { storms }).keep).toBe(false);
+  });
+
+  it("a possessive or a hyphenated suffix still matches the current storm", () => {
+    const current = new Set(["melissa", "choi-wan"]);
+    expect(stormNamesIn("Hurricane Melissa's death toll rises")).toEqual(["melissa"]);
+    expect(verdict("Hurricane Melissa's death toll rises", { storms: current }).keep).toBe(true);
+    expect(verdict("Hurricane Melissa’s winds topple trees", { storms: current }).keep).toBe(true);
+    expect(verdict("Hurricane Melissa-hit towns wait for aid", { storms: current }).keep).toBe(true);
+    expect(verdict("Typhoon Choi-wan lashes the coast", { storms: current }).keep).toBe(true);
+    expect(stormNamesIn("HURRICANE MELISSA NEARS COAST")).toEqual(["melissa"]);
   });
 
   it("keeps a headline that names a current storm next to a past one", () => {
@@ -183,6 +207,14 @@ describe("(c) headlines about storms that are not current", () => {
     expect(await ctx.names()).toBeNull();
   });
 
+  it("an EONET answer with no events at all is a failure, not 'no storms'", async () => {
+    const ctx = createStormContext({ fetchEvents: async () => [], now: () => NOW, log: quiet });
+    expect(await ctx.names()).toBeNull();
+    // off-season: events of other categories but no storm -> an empty list is a real answer
+    const offSeason = createStormContext({ fetchEvents: async () => [{ title: "Wildfire in Chile", closed: null, categories: [{ id: "wildfires" }] }], now: () => NOW, log: quiet });
+    expect([...(await offSeason.names())]).toEqual([]);
+  });
+
   it("after a restart the list is fetched again from EONET (nothing kept in memory only)", async () => {
     const fetchEvents = vi.fn(async () => [storm("Hurricane Trudy", null), storm("Typhoon Koguma", new Date(NOW.getTime() - 3 * DAY).toISOString())]);
     const fresh = createStormContext({ fetchEvents, now: () => NOW, log: quiet });
@@ -198,8 +230,10 @@ describe("(c) headlines about storms that are not current", () => {
       article("Typhoon Koguma batters the islands"),
     ] }];
     const stormContext = { names: async () => new Set(["trudy"]) };
-    const feedStorm = { id: 7, type: "storm", severity: "medium", location: "Typhoon Koguma", lat: 38, lng: 157, details: { cleanTitle: "Typhoon Koguma" } };
-    const svc = createNewsService({ providers, store: createMemoryNewsStore(), loadEvents: async () => [feedStorm], stormContext, now: () => T, log: quiet });
+    const feedStorm = { id: 7, type: "storm", severity: "medium", location: "Typhoon Koguma", lat: 38, lng: 157, details: { cleanTitle: "Typhoon Koguma", status: "open" } };
+    // closed 25 days ago: still in the 30-day feed, but not current (EONET's list decides for closed storms)
+    const oldStorm = { id: 8, type: "storm", severity: "low", location: "Hurricane Melissa", lat: 18, lng: -77, details: { cleanTitle: "Hurricane Melissa", status: "closed" } };
+    const svc = createNewsService({ providers, store: createMemoryNewsStore(), loadEvents: async () => [feedStorm, oldStorm], stormContext, now: () => T, log: quiet });
     await svc.refresh();
     expect(svc.getNews().items.map((a) => a.title).sort()).toEqual(["Insured losses from Hurricane Trudy estimated at 2 billion", "Typhoon Koguma batters the islands"]);
   });

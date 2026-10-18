@@ -42,7 +42,10 @@ export function createStormContext({ fetchEvents = fetchNasaEvents, now = () => 
     const at = now();
     if (cached && at.getTime() - cached.at.getTime() < STORM_CACHE_MS) return cached.names;
     try {
-      cached = { names: currentStormNames(await fetchEvents(), at), at };
+      const events = await fetchEvents();
+      // no events at all (any category) is a broken answer, not "no storms": treat it as a failure
+      if (!Array.isArray(events) || events.length === 0) throw new Error("EONET returned no events");
+      cached = { names: currentStormNames(events, at), at };
       return cached.names;
     } catch (err) {
       if (cached && at.getTime() - cached.at.getTime() < STORM_STALE_MAX_MS) {

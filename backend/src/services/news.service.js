@@ -363,7 +363,8 @@ export function createNewsService({
     }
     if (!names) return null;
     const all = new Set(names);
-    for (const ev of events) if (ev.type === "storm") for (const n of stormNamesIn(eventLabel(ev))) all.add(n);
+    // open feed storms only: closed ones are in EONET's list when they closed within 14 days (the feed keeps 30)
+    for (const ev of events) if (ev.type === "storm" && ev.details?.status !== "closed") for (const n of stormNamesIn(eventLabel(ev))) all.add(n);
     return all;
   }
 
