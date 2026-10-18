@@ -175,7 +175,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
   return (
     <>
       <div className="detail-overlay" onClick={onClose} />
-      <div className="detail-drawer edd" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="detail-drawer edd" data-map-obstruction role="dialog" aria-modal="true" aria-label={title}>
         <div className="detail-header">
           <div className="detail-header-main">
             <div className="edd-tags">
@@ -265,7 +265,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
               <p className="edd-sub">
                 <span className={`edd-gdacs edd-gdacs-${d.gdacsLevel}`}>{d.gdacsLevel}</span> GDACS impact level
                 {d.gdacsScore !== null && d.gdacsScore !== undefined ? ` (score ${d.gdacsScore})` : ""} ·{" "}
-                <a href="https://www.gdacs.org/" target="_blank" rel="noreferrer">
+                <a href="https://www.gdacs.org/" target="_blank" rel="noreferrer" className="text-link">
                   gdacs.org
                 </a>
               </p>

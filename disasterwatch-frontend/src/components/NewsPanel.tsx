@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDisasterNews, NewsError, REGION_LABELS, type NewsItem, type NewsRegion, type NewsType } from "../services/newsService";
 import { relativeTime } from "../utils/formatDate";
+import { safeImageUrl } from "../utils/imageUrl";
 import { eventTagText, locationText, providerText } from "../utils/newsText";
 
 type Props = {
@@ -42,6 +43,14 @@ function Skeleton() {
       ))}
     </ul>
   );
+}
+
+/** Article image; left out when there is none, it is not https-safe, or it fails to load (no broken-image icon). */
+function NewsCardImage({ src }: { src?: string | null }) {
+  const url = safeImageUrl(src);
+  const [failed, setFailed] = useState<string | null>(null);
+  if (!url || failed === url) return null;
+  return <img className="news-card-image" src={url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(url)} />;
 }
 
 export default function NewsPanel({ isOpen, onClose }: Props) {
@@ -204,9 +213,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
                 const place = locationText(a);
                 return (
                   <li key={a.url} className={a.provider ? `news-card news-card-${a.provider}` : "news-card"}>
-                    {a.image && a.provider !== "guardian" && (
-                      <img className="news-card-image" src={a.image} alt="" loading="lazy" referrerPolicy="no-referrer" />
-                    )}
+                    {a.provider !== "guardian" && <NewsCardImage src={a.image} />}
                     <div className="news-card-body">
                       <div className="news-card-meta">
                         <span className="news-card-domain">{a.domain || "unknown source"}</span>

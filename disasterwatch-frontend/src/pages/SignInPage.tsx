@@ -66,7 +66,7 @@ const SignInPage = ({ onSignedIn }: Props) => {
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
+              placeholder="name@example.com"
               autoComplete="email"
               type="email"
             />
