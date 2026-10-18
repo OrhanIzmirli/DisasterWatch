@@ -32,9 +32,15 @@ export function eventSubtitle(e) {
  */
 export function withSubtitles(items, all = items) {
   const counts = new Map();
-  for (const e of all) counts.set(titleOf(e), (counts.get(titleOf(e)) ?? 0) + 1);
+  // the page items are sanitised copies of `all`: look their title key up by id so both sides use the same key
+  const keyById = new Map();
+  for (const e of all) {
+    const key = titleOf(e);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (e?.id !== undefined) keyById.set(e.id, key);
+  }
   return items.map((e) => {
-    if ((counts.get(titleOf(e)) ?? 0) < 2) return e;
+    if ((counts.get(keyById.get(e?.id) ?? titleOf(e)) ?? 0) < 2) return e;
     const subtitle = eventSubtitle(e);
     return subtitle ? { ...e, subtitle } : e;
   });

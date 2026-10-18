@@ -4,7 +4,8 @@ import { urlDate, withUrlDate } from "../src/services/newsLinking.js";
 import { createGdeltProvider } from "../src/services/newsProviders/gdelt.provider.js";
 import { createNewsService } from "../src/services/news.service.js";
 import { createMemoryNewsStore } from "../src/services/newsStore.js";
-import { createStormContext, currentStormNames, STORM_CACHE_MS } from "../src/services/stormContext.js";
+import { createStormContext, currentStormNames, currentCycloneNames, STORM_CACHE_MS } from "../src/services/stormContext.js";
+import { createGdacsClient, parseTropicalCyclones } from "../src/services/gdacs.js";
 import { createFeedService } from "../src/services/feed.service.js";
 import { eventSubtitle, withSubtitles } from "../src/utils/eventSubtitle.js";
 
@@ -12,6 +13,10 @@ import { eventSubtitle, withSubtitles } from "../src/utils/eventSubtitle.js";
 const quiet = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const NOW = new Date("2026-10-18T12:00:00Z");
 const DAY = 24 * 3600 * 1000;
+// GDACS unreachable: keeps the EONET-only tests about EONET
+const NO_GDACS = async () => {
+  throw new Error("GDACS down");
+};
 const verdict = (title, opts = {}) => isDisasterNews({ title, url: "https://news.example.com/world/story" }, { now: NOW, ...opts });
 
 describe("(a) GDELT publication date from the article URL", () => {
@@ -194,7 +199,7 @@ describe("(c) headlines about storms that are not current", () => {
   it("the storm list is cached for an hour, survives an EONET failure for a while, then turns unknown", async () => {
     let t = NOW.getTime();
     const fetchEvents = vi.fn(async () => [storm("Hurricane Trudy", null)]);
-    const ctx = createStormContext({ fetchEvents, now: () => new Date(t), log: quiet });
+    const ctx = createStormContext({ fetchEvents, fetchCyclones: NO_GDACS, now: () => new Date(t), log: quiet });
     expect([...(await ctx.names())]).toEqual(["trudy"]);
     t += STORM_CACHE_MS - 1;
     await ctx.names();
@@ -208,16 +213,16 @@ describe("(c) headlines about storms that are not current", () => {
   });
 
   it("an EONET answer with no events at all is a failure, not 'no storms'", async () => {
-    const ctx = createStormContext({ fetchEvents: async () => [], now: () => NOW, log: quiet });
+    const ctx = createStormContext({ fetchEvents: async () => [], fetchCyclones: NO_GDACS, now: () => NOW, log: quiet });
     expect(await ctx.names()).toBeNull();
     // off-season: events of other categories but no storm -> an empty list is a real answer
-    const offSeason = createStormContext({ fetchEvents: async () => [{ title: "Wildfire in Chile", closed: null, categories: [{ id: "wildfires" }] }], now: () => NOW, log: quiet });
+    const offSeason = createStormContext({ fetchEvents: async () => [{ title: "Wildfire in Chile", closed: null, categories: [{ id: "wildfires" }] }], fetchCyclones: NO_GDACS, now: () => NOW, log: quiet });
     expect([...(await offSeason.names())]).toEqual([]);
   });
 
   it("after a restart the list is fetched again from EONET (nothing kept in memory only)", async () => {
     const fetchEvents = vi.fn(async () => [storm("Hurricane Trudy", null), storm("Typhoon Koguma", new Date(NOW.getTime() - 3 * DAY).toISOString())]);
-    const fresh = createStormContext({ fetchEvents, now: () => NOW, log: quiet });
+    const fresh = createStormContext({ fetchEvents, fetchCyclones: NO_GDACS, now: () => NOW, log: quiet });
     expect([...(await fresh.names())].sort()).toEqual(["koguma", "trudy"]);
   });
 
@@ -236,6 +241,73 @@ describe("(c) headlines about storms that are not current", () => {
     const svc = createNewsService({ providers, store: createMemoryNewsStore(), loadEvents: async () => [feedStorm, oldStorm], stormContext, now: () => T, log: quiet });
     await svc.refresh();
     expect(svc.getNews().items.map((a) => a.title).sort()).toEqual(["Insured losses from Hurricane Trudy estimated at 2 billion", "Typhoon Koguma batters the islands"]);
+  });
+});
+
+describe("(c) GDACS tropical cyclones as a second storm source", () => {
+  const gdacsList = (...names) => ({
+    type: "FeatureCollection",
+    features: names.map(([eventname, iscurrent, todate]) => ({ properties: { eventtype: "TC", eventname, iscurrent, todate } })),
+  });
+
+  it("reads GDACS names without the year suffix, skips other event types, rejects a payload without features", () => {
+    const list = parseTropicalCyclones({ features: [...gdacsList(["TRUDY-26", true, "2026-10-18T09:00:00"], ["CHOI-WAN-26", false, "2026-10-06T18:00:00"]).features, { properties: { eventtype: "EQ", eventname: "QUAKE-26" } }] });
+    expect(list).toEqual([
+      { name: "trudy", current: true, endedAt: "2026-10-18T09:00:00.000Z" },
+      { name: "choi-wan", current: false, endedAt: "2026-10-06T18:00:00.000Z" },
+    ]);
+    expect(() => parseTropicalCyclones({ message: "error" })).toThrow();
+  });
+
+  it("current = GDACS current, or ended within 14 days", () => {
+    const at = (days) => new Date(NOW.getTime() - days * DAY).toISOString();
+    const names = currentCycloneNames([{ name: "wati", current: true, endedAt: at(0) }, { name: "koguma", current: false, endedAt: at(13) }, { name: "nolo", current: false, endedAt: at(15) }], NOW);
+    expect([...names].sort()).toEqual(["koguma", "wati"]);
+  });
+
+  it("the client asks the event list for every alert level; 204 = none; errors and 'disabled' throw", async () => {
+    const urls = [];
+    const fetchImpl = vi.fn(async (url) => {
+      urls.push(url);
+      return new Response(JSON.stringify(gdacsList(["WATI-26", true, "2026-10-18T06:00:00"])), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const client = createGdacsClient({ fetchImpl, log: quiet });
+    expect(await client.listTropicalCyclones({ from: new Date("2026-10-04T12:00:00Z"), to: NOW })).toEqual([{ name: "wati", current: true, endedAt: "2026-10-18T06:00:00.000Z" }]);
+    expect(urls[0]).toBe("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=TC&fromDate=2026-10-04&toDate=2026-10-18&alertlevel=green;orange;red");
+
+    const empty = createGdacsClient({ fetchImpl: async () => new Response(null, { status: 204 }), log: quiet });
+    expect(await empty.listTropicalCyclones({ from: NOW, to: NOW })).toEqual([]);
+    const down = createGdacsClient({ fetchImpl: async () => new Response("", { status: 503 }), log: quiet });
+    await expect(down.listTropicalCyclones({ from: NOW, to: NOW })).rejects.toThrow("503");
+    await expect(createGdacsClient({ disabled: true, log: quiet }).listTropicalCyclones({ from: NOW, to: NOW })).rejects.toThrow("disabled");
+  });
+
+  const eonetStorm = (title) => ({ title, closed: null, categories: [{ id: "severeStorms" }] });
+
+  it("a storm only GDACS lists counts as current, so its news stays", async () => {
+    const ctx = createStormContext({ fetchEvents: async () => [eonetStorm("Hurricane Trudy")], fetchCyclones: async () => [{ name: "wati", current: true, endedAt: null }], now: () => NOW, log: quiet });
+    const storms = await ctx.names();
+    expect([...storms].sort()).toEqual(["trudy", "wati"]);
+    expect(verdict("Tropical Cyclone Wati brings heavy rain to the islands", { storms }).keep).toBe(true);
+    expect(verdict("FSC scrutinises outstanding Hurricane Melissa claims", { storms }).keep).toBe(false);
+  });
+
+  it("one source failing: the other decides", async () => {
+    const onlyGdacs = createStormContext({ fetchEvents: async () => { throw new Error("EONET 503"); }, fetchCyclones: async () => [{ name: "wati", current: true, endedAt: null }], now: () => NOW, log: quiet });
+    expect([...(await onlyGdacs.names())]).toEqual(["wati"]);
+    const onlyEonet = createStormContext({ fetchEvents: async () => [eonetStorm("Hurricane Trudy")], fetchCyclones: NO_GDACS, now: () => NOW, log: quiet });
+    expect([...(await onlyEonet.names())]).toEqual(["trudy"]);
+  });
+
+  it("both failing: the list is unknown and the news service skips the rule", async () => {
+    const ctx = createStormContext({ fetchEvents: async () => { throw new Error("EONET 503"); }, fetchCyclones: NO_GDACS, now: () => NOW, log: quiet });
+    expect(await ctx.names()).toBeNull();
+    const providers = [{ name: "gdelt", label: "GDELT", refreshIntervalMs: 1, retentionMs: null, searchGroup: async () => [], searchGeneral: async () => [
+      { title: "FSC scrutinises outstanding Hurricane Melissa claims", url: "https://news.example.com/world/melissa-claims", domain: "news.example.com", publishedAt: "2026-10-18T06:00:00.000Z", image: null, provider: "gdelt" },
+    ] }];
+    const svc = createNewsService({ providers, store: createMemoryNewsStore(), loadEvents: async () => [], stormContext: ctx, now: () => NOW, log: quiet });
+    await svc.refresh();
+    expect(svc.getNews().items.map((a) => a.title)).toEqual(["FSC scrutinises outstanding Hurricane Melissa claims"]);
   });
 });
 
@@ -262,6 +334,12 @@ describe("(B) subtitle for same-titled feed events", () => {
     const items = withSubtitles([fire(1, -18.2, 131.6, 7652, "2026-10-14T00:00:00Z"), fire(2, -16.5, 142.5, 7043, "2026-10-14T00:00:00Z"), { id: 3, title: "Hurricane Trudy", lat: 17.9, lng: -105.5, details: { cleanTitle: "Hurricane Trudy" } }]);
     expect(items.map((e) => e.subtitle ?? null)).toEqual(["≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct", "≈ 16.5°S 142.5°E · 7,043 ha · since 14 Oct", null]);
     expect(items.map((e) => e.title)).toEqual(["Wildfire in Australia", "Wildfire in Australia", "Hurricane Trudy"]);
+  });
+
+  it("matches page items to the window by id, so a sanitised page title still finds its repeats", () => {
+    const raw = [{ id: 1, title: "Fire <b>near</b> town", lat: 1, lng: 2, details: { occurredAt: "2026-10-14T00:00:00Z" } }, { id: 2, title: "Fire <b>near</b> town", lat: 3, lng: 4, details: { occurredAt: "2026-10-14T00:00:00Z" } }];
+    const page = raw.map((e) => ({ ...e, title: "Fire near town" }));
+    expect(withSubtitles(page, raw).every((e) => typeof e.subtitle === "string")).toBe(true);
   });
 
   it("counts repeats over the whole window, not just the returned page", () => {

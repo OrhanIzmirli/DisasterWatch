@@ -1,18 +1,22 @@
 /**
  * Which named storms are current, for the news relevance rule that drops
- * articles about other (past) storms: storms that are open in EONET or were
- * closed in the last 14 days.
+ * articles about other (past) storms. Two sources, united:
  *
- * The list comes from EONET itself (open and closed events of the last 30
- * days carry their `closed` date), so it survives a restart: after one the
- * first refresh simply asks EONET again. The answer is cached for an hour;
- * when EONET cannot be reached the last answer is used for up to 6 hours,
- * after that (or with nothing cached) names() resolves to null and the rule
- * is skipped rather than guessed.
+ *  - NASA EONET: storms that are open or were closed in the last 14 days
+ *    (open and closed events of the last 30 days carry their `closed` date);
+ *  - GDACS: tropical cyclones that are current or ended in the last 14 days
+ *    (its event list covers basins EONET lists late or not at all).
  *
- *   createStormContext({ fetchEvents, now, log }).names() -> Promise<Set<string> | null>
+ * Both lists come from the sources themselves, so they survive a restart:
+ * after one the first refresh simply asks again. Each answer is cached for an
+ * hour; when a source cannot be reached its last answer is used for up to 6
+ * hours. When one source is unknown the other alone decides; when both are
+ * unknown names() resolves to null and the rule is skipped rather than guessed.
+ *
+ *   createStormContext({ fetchEvents, fetchCyclones, now, log }).names() -> Promise<Set<string> | null>
  */
 import { fetchNasaEvents } from "./nasa.service.js";
+import { gdacsClient } from "./gdacs.js";
 import { stormNamesIn } from "./newsRelevance.js";
 
 export const RECENTLY_CLOSED_MS = 14 * 24 * 3600 * 1000;
@@ -35,26 +39,63 @@ export function currentStormNames(events, at = new Date(), recentMs = RECENTLY_C
   return names;
 }
 
-export function createStormContext({ fetchEvents = fetchNasaEvents, now = () => new Date(), log = console } = {}) {
-  let cached = null; // { names, at }
+/** Names of GDACS tropical cyclones that are current or ended within `recentMs` of `at`. */
+export function currentCycloneNames(cyclones, at = new Date(), recentMs = RECENTLY_CLOSED_MS) {
+  const names = new Set();
+  for (const c of cyclones ?? []) {
+    const ended = c.endedAt ? new Date(c.endedAt).getTime() : NaN;
+    if (c.current || (Number.isFinite(ended) && at.getTime() - ended <= recentMs)) names.add(c.name);
+  }
+  return names;
+}
+
+/** EONET's full event list (any category); no events at all is a broken answer, not "no storms". */
+async function eonetStormNames(fetchEvents, at) {
+  const events = await fetchEvents();
+  if (!Array.isArray(events) || events.length === 0) throw new Error("EONET returned no events");
+  return currentStormNames(events, at);
+}
+
+async function gdacsCycloneNames(fetchCyclones, at) {
+  return currentCycloneNames(await fetchCyclones({ from: new Date(at.getTime() - RECENTLY_CLOSED_MS), to: at }), at);
+}
+
+export function createStormContext({
+  fetchEvents = fetchNasaEvents,
+  fetchCyclones = (range) => gdacsClient.listTropicalCyclones(range),
+  now = () => new Date(),
+  log = console,
+} = {}) {
+  /** One source with its own cache: its names, or null when unknown. */
+  function source(label, load) {
+    let cached = null; // { names, at }
+    return async (at) => {
+      if (cached && at.getTime() - cached.at.getTime() < STORM_CACHE_MS) return cached.names;
+      try {
+        cached = { names: await load(at), at };
+        return cached.names;
+      } catch (err) {
+        if (cached && at.getTime() - cached.at.getTime() < STORM_STALE_MAX_MS) {
+          log.warn(`[news] storm list: ${label} failed (${err?.message || err}); using its list from ${cached.at.toISOString()}`);
+          return cached.names;
+        }
+        log.warn(`[news] storm list: ${label} failed (${err?.message || err}); no ${label} list`);
+        return null;
+      }
+    };
+  }
+
+  const eonet = source("EONET", (at) => eonetStormNames(fetchEvents, at));
+  const gdacs = source("GDACS", (at) => gdacsCycloneNames(fetchCyclones, at));
 
   async function names() {
     const at = now();
-    if (cached && at.getTime() - cached.at.getTime() < STORM_CACHE_MS) return cached.names;
-    try {
-      const events = await fetchEvents();
-      // no events at all (any category) is a broken answer, not "no storms": treat it as a failure
-      if (!Array.isArray(events) || events.length === 0) throw new Error("EONET returned no events");
-      cached = { names: currentStormNames(events, at), at };
-      return cached.names;
-    } catch (err) {
-      if (cached && at.getTime() - cached.at.getTime() < STORM_STALE_MAX_MS) {
-        log.warn(`[news] storm list: EONET failed (${err?.message || err}); using the list from ${cached.at.toISOString()}`);
-        return cached.names;
-      }
-      log.warn(`[news] storm list: EONET failed (${err?.message || err}); the past-storm rule is skipped`);
+    const lists = (await Promise.all([eonet(at), gdacs(at)])).filter(Boolean);
+    if (!lists.length) {
+      log.warn("[news] storm list: neither EONET nor GDACS known; the past-storm rule is skipped");
       return null;
     }
+    return new Set(lists.flatMap((l) => [...l]));
   }
 
   return { names };

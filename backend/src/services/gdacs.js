@@ -18,10 +18,15 @@
  *  - also keeps where GDACS places the event (affected countries as ISO
  *    3166-1 alpha-2 codes, and its point), read from the same answer, for
  *    the news panel's region filter (getPlace);
+ *  - lists the tropical cyclones of a date range (listTropicalCyclones),
+ *    a second source for the news job's list of current storms;
  *  - is injectable (fetch, clock, timeouts) for tests.
  */
 
 const GDACS_API = "https://www.gdacs.org/gdacsapi/api/events/geteventdata";
+const GDACS_EVENT_LIST = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH";
+/** The event list is a larger answer than one event's data: a longer timeout than DEFAULT_GDACS_TIMEOUT_MS. */
+export const GDACS_LIST_TIMEOUT_MS = 15000;
 const REPORT_URL = /gdacs\.org\/report\.aspx\?(?:[^#]*&)?eventtype=([A-Z]{2})(?:&[^#]*)?&eventid=(\d+)/i;
 const REPORT_URL_SWAPPED = /gdacs\.org\/report\.aspx\?(?:[^#]*&)?eventid=(\d+)(?:&[^#]*)?&eventtype=([A-Z]{2})/i;
 
@@ -32,6 +37,26 @@ export const GDACS_CONCURRENCY = 8;
 
 /** GDACS alert level -> our severity. */
 export const GDACS_LEVEL_SEVERITY = { green: "low", orange: "medium", red: "high" };
+
+/**
+ * GDACS event list (GeoJSON) -> [{ name, current, endedAt }] for its tropical
+ * cyclones. GDACS names them "TRUDY-26" (name plus 2-digit year); the year is
+ * dropped ("trudy", "choi-wan"). Throws on a payload without a feature list.
+ */
+export function parseTropicalCyclones(payload) {
+  if (!Array.isArray(payload?.features)) throw new Error("GDACS event list without features");
+  const out = [];
+  for (const f of payload.features) {
+    const p = f?.properties ?? {};
+    if (p.eventtype && p.eventtype !== "TC") continue;
+    const raw = String(p.eventname || p.name || "").replace(/^tropical cyclone\s+/i, "").trim();
+    const name = raw.replace(/-\d{2}$/, "").toLowerCase();
+    if (!name) continue;
+    const ended = p.todate ? new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(p.todate) ? p.todate : `${p.todate}Z`) : null;
+    out.push({ name, current: p.iscurrent === true || p.iscurrent === "true", endedAt: ended && !Number.isNaN(ended.getTime()) ? ended.toISOString() : null });
+  }
+  return out;
+}
 
 /** { eventtype, eventid } from an EONET event's GDACS source link, or null. */
 export function parseGdacsRef(event) {
@@ -192,7 +217,29 @@ export function createGdacsClient({
     Object.assign(stats, { requests: 0, hits: 0, failures: 0, lastError: null, lastFetchAt: null });
   }
 
-  return { getLevel, getLevels, getPlace, enrich, status, reset };
+  /**
+   * Tropical cyclones GDACS lists between `from` and `to` (Dates), every
+   * alert level: [{ name, current, endedAt }]. Throws when GDACS is
+   * disabled, unreachable or answers something else (the caller decides).
+   */
+  async function listTropicalCyclones({ from, to }) {
+    if (disabled) throw new Error("GDACS disabled");
+    const day = (d) => d.toISOString().slice(0, 10);
+    const url = `${GDACS_EVENT_LIST}?eventlist=TC&fromDate=${day(from)}&toDate=${day(to)}&alertlevel=green;orange;red`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(timeoutMs, GDACS_LIST_TIMEOUT_MS));
+    try {
+      const res = await fetchImpl(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+      // GDACS answers 204 (no body) when nothing matches
+      if (res.status === 204) return [];
+      if (!res.ok) throw new Error(`GDACS event list ${res.status}`);
+      return parseTropicalCyclones(await res.json());
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return { getLevel, getLevels, getPlace, enrich, listTropicalCyclones, status, reset };
 }
 
 /** Process-wide client shared by the feed, the ingestion job and the news job. */
