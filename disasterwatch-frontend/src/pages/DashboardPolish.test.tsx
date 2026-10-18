@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 // Leaflet does not run in jsdom.
@@ -20,7 +21,9 @@ const item = (id: number) => ({
   details: { cleanTitle: `Wildfire ${id}`, occurredAt: new Date(Date.now() - 3_600_000).toISOString() },
 });
 
-function stubApi(count: number) {
+const USER = { email: "someone@example.com", role: "user" };
+
+function stubApi(count: number, opts: { me?: 200 | 401 } = {}) {
   const calls: string[] = [];
   const items = Array.from({ length: count }, (_, i) => item(i + 1));
   vi.stubGlobal(
@@ -31,7 +34,9 @@ function stubApi(count: number) {
       const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
       if (url.includes("/api/disasters"))
         return json({ items, count, counts: { total: count, bySeverity: { high: 0, medium: 0, low: count, unrated: 0 }, byType: {} }, stale: false, sources: { nasa: "ok", usgs: "ok" }, updatedAt: new Date().toISOString() });
-      if (url.includes("/users/me")) return json({ message: "signed out" }, 401);
+      if (url.includes("/users/me")) return opts.me === 200 ? json({ user: USER }) : json({ message: "signed out" }, 401);
+      if (url.includes("/users/login") || url.includes("/users/register")) return json({ user: USER });
+      if (url.includes("/users/logout")) return json({ ok: true });
       if (url.includes("/health")) return json({ ok: true });
       return json({ message: "no" }, 404);
     })
@@ -39,11 +44,11 @@ function stubApi(count: number) {
   return calls;
 }
 
-async function renderApp() {
+async function renderApp(path = "/") {
   vi.resetModules();
   const { default: App } = await import("../App");
   return render(
-    <MemoryRouter initialEntries={["/"]}>
+    <MemoryRouter initialEntries={[path]}>
       <App />
     </MemoryRouter>
   );
@@ -97,12 +102,58 @@ describe("session check", () => {
     expect(screen.getAllByRole("link", { name: /sign in/i }).length).toBeGreaterThan(0);
   });
 
-  it("asks when this browser had a session, and drops the hint on a 401", async () => {
+  it("expired session: the hint says signed in, /me answers 401 -> hint dropped and the user is shown signed out", async () => {
     localStorage.setItem("dw.session", "in");
     const calls = stubApi(1);
     await renderApp();
     await screen.findAllByText("Wildfire 1");
     await waitFor(() => expect(localStorage.getItem("dw.session")).toBe("out"));
     expect(meCalls(calls)).toBe(1);
+    expect(screen.getAllByRole("link", { name: /sign in/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /sign out/i })).toBeNull();
+  });
+
+  it("still checks the session when storage is unavailable (getItem/setItem throw)", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const calls = stubApi(1, { me: 200 });
+    await renderApp();
+    await screen.findAllByText("Wildfire 1");
+    expect(meCalls(calls)).toBe(1);
+    expect(await screen.findByRole("button", { name: /sign out/i })).toBeTruthy();
+    vi.restoreAllMocks();
+  });
+
+  it("stores only the in/out flag", async () => {
+    stubApi(1, { me: 200 });
+    await renderApp();
+    await screen.findByRole("button", { name: /sign out/i });
+    expect(Object.keys(localStorage).filter((k) => k !== "dw.dashboardView")).toEqual(["dw.session"]);
+    expect(localStorage.getItem("dw.session")).toBe("in");
+  });
+
+  for (const [page, path] of [["sign-in", "/signin"], ["sign-up", "/signup"]] as const) {
+    it(`${page} sets the hint to signed in`, async () => {
+      localStorage.setItem("dw.session", "out");
+      stubApi(1);
+      const { container } = await renderApp(path);
+      const user = userEvent.setup();
+      await user.type(await screen.findByPlaceholderText("name@example.com"), "someone@example.com");
+      await user.type(container.querySelector<HTMLInputElement>("input[type=password]")!, "correct horse battery");
+      await user.click(container.querySelector<HTMLButtonElement>("form button[type=submit]")!);
+      await waitFor(() => expect(localStorage.getItem("dw.session")).toBe("in"));
+    });
+  }
+
+  it("sign-out sets the hint to signed out", async () => {
+    localStorage.setItem("dw.session", "in");
+    stubApi(1, { me: 200 });
+    await renderApp();
+    await userEvent.setup().click(await screen.findByRole("button", { name: /sign out/i }));
+    await waitFor(() => expect(localStorage.getItem("dw.session")).toBe("out"));
   });
 });
