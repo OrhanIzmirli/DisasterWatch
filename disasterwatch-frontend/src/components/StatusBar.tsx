@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { pollWhileVisible } from "../utils/visiblePoll";
 
 type NewsState = "OK" | "Stale" | "Unavailable" | "…";
 type SystemState = "Operational" | "Degraded" | "Checking";
@@ -53,11 +54,11 @@ const StatusBar = () => {
       if (!cancelled) setStatus({ system, latencyMs, news });
     };
 
-    check();
-    const timer = window.setInterval(check, POLL_MS);
+    // paused while the tab is hidden: an open background tab must not keep the free-plan backend awake
+    const stop = pollWhileVisible(check, POLL_MS);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stop();
     };
   }, []);
 

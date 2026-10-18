@@ -110,7 +110,7 @@ export function createGdacsClient({
   log = console,
   disabled = process.env.DISABLE_GDACS === "1",
 } = {}) {
-  const cache = new Map(); // key -> { value|null, place|null, expiresAt }
+  const cache = new Map(); // key -> { value|null, place|null, unreachable?, expiresAt }
   const inflight = new Map(); // key -> Promise
   const stats = { requests: 0, hits: 0, failures: 0, lastError: null, lastFetchAt: null };
 
@@ -120,7 +120,7 @@ export function createGdacsClient({
     try {
       const url = `${GDACS_API}?eventtype=${encodeURIComponent(ref.eventtype)}&eventid=${encodeURIComponent(ref.eventid)}`;
       const res = await fetchImpl(url, { signal: controller.signal, headers: { Accept: "application/json" } });
-      if (!res.ok) throw new Error(`GDACS ${res.status}`);
+      if (!res.ok) throw Object.assign(new Error(`GDACS ${res.status}`), { status: res.status });
       const payload = await res.json();
       return { value: parseGdacsLevel(payload), place: parseGdacsPlace(payload) };
     } finally {
@@ -149,12 +149,15 @@ export function createGdacsClient({
       } catch (err) {
         stats.failures++;
         stats.lastError = err?.name === "AbortError" ? `timeout after ${timeoutMs} ms` : err?.message || String(err);
-        // serve the previous level while GDACS is down, otherwise remember the failure briefly
-        if (hit) {
+        // serve the previous answer while GDACS is down, otherwise remember the failure briefly
+        if (hit && !hit.unreachable) {
           cache.set(key, { value: hit.value, place: hit.place ?? null, expiresAt: now() + failureTtlMs });
           return hit.value;
         }
-        cache.set(key, { value: null, place: null, expiresAt: now() + failureTtlMs });
+        // `unreachable`: nothing known about this event because GDACS could not be asked (not "GDACS has no point");
+        // a 4xx is an answer (GDACS does not know the event), and a repeated failure keeps the mark
+        const answered = err?.status >= 400 && err?.status < 500;
+        cache.set(key, { value: null, place: null, unreachable: !answered, expiresAt: now() + failureTtlMs });
         return null;
       } finally {
         inflight.delete(key);
@@ -189,7 +192,8 @@ export function createGdacsClient({
    * Attaches `event.gdacs = { level, score, text } | null` and
    * `event.gdacsPlace = { countries, lat, lng } | null` (where GDACS places
    * the event, from the same cached answer) to every EONET event that links
-   * to GDACS (others are left untouched). Returns the same array. Never
+   * to GDACS (others are left untouched), and `event.gdacsUnreachable = true`
+   * when GDACS could not be reached for it and nothing was cached. Returns the same array. Never
    * throws and never blocks longer than one timeout per batch.
    */
   async function enrich(events) {
@@ -201,7 +205,10 @@ export function createGdacsClient({
     list.forEach((e, i) => {
       if (!refs[i]) return;
       e.gdacs = levels.get(gdacsKey(refs[i])) ?? null;
-      e.gdacsPlace = cache.get(gdacsKey(refs[i]))?.place ?? null;
+      const entry = cache.get(gdacsKey(refs[i]));
+      e.gdacsPlace = entry?.place ?? null;
+      if (entry?.unreachable) e.gdacsUnreachable = true;
+      else delete e.gdacsUnreachable;
     });
     if (stats.failures > before) log.warn(`[gdacs] ${stats.failures - before} lookup(s) failed (${stats.lastError}); those events use the EONET measurement`);
     return list;

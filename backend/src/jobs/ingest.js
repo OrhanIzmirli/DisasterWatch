@@ -131,7 +131,8 @@ export async function ingestOnce({
   log = console,
 } = {}) {
   const events = [];
-  const stats = { fetched: 0, dropped: 0, inserted: 0, published: 0, pending: 0, errors: [] };
+  const fallback = new Set(); // eventIds placed on the EONET geometry because GDACS was unreachable
+  const stats = { fetched: 0, dropped: 0, inserted: 0, eonetFallback: 0, published: 0, pending: 0, errors: [] };
 
   const sources = [
     ["nasa", async () => nasaEventsToContract(await fetchNasa())],
@@ -140,8 +141,9 @@ export async function ingestOnce({
 
   for (const [name, load] of sources) {
     try {
-      const { events: mapped, dropped } = await load();
+      const { events: mapped, dropped, eonetFallback = [] } = await load();
       events.push(...mapped);
+      for (const id of eonetFallback) fallback.add(id);
       stats.fetched += mapped.length;
       stats.dropped += dropped;
     } catch (err) {
@@ -153,6 +155,10 @@ export async function ingestOnce({
   if (events.length > 0) {
     const fresh = await recordNewEvents(events, { prisma });
     stats.inserted = fresh.length;
+    // recorded once and for good (insert-once): these keep the EONET point even after GDACS is back
+    const ids = fresh.filter((e) => fallback.has(e.eventId)).map((e) => e.eventId);
+    stats.eonetFallback = ids.length;
+    if (ids.length) log.warn(`[ingest] ${ids.length} event(s) recorded with the EONET point because GDACS was unreachable: ${ids.join(", ")}`);
   }
 
   // Outbox runs even when nothing new was fetched: earlier failures are retried here.
@@ -164,29 +170,96 @@ export async function ingestOnce({
   return stats;
 }
 
+/** A wake-up call within this long after the last run does nothing (the hourly wake is idempotent). */
+export const WAKE_MIN_INTERVAL_MS = 10 * 60 * 1000;
+
 /**
- * Runs ingestOnce now and then every `intervalMs`. Never throws; failures are
- * logged and the next tick runs normally.
+ * One ingestion runner shared by the 5-minute timer and the scheduled wake
+ * endpoint (POST /internal/ingest), so the two never run at the same time:
+ *
+ *   run(trigger)  runs now, or joins the run already in progress;
+ *   wake()        the endpoint's entry: does nothing when a run finished
+ *                 without errors in the last WAKE_MIN_INTERVAL_MS (a service
+ *                 that just woke up has already ingested on start; an awake
+ *                 one ingests every 5 minutes), joins a run in progress,
+ *                 otherwise runs.
+ *   status()      last run time, trigger and counts, for /health.
+ *
+ * Never throws: a failed run is logged and reported in its result.
  */
-export function startIngestion({ intervalMs = INGEST_INTERVAL_MS, log = console, ...deps } = {}) {
-  let running = false;
+export function createIngestRunner({ ingest = ingestOnce, now = () => Date.now(), minIntervalMs = WAKE_MIN_INTERVAL_MS, log = console, ...deps } = {}) {
+  let inflight = null;
+  let last = null; // { at, trigger, stats | null, error | null }
+  let lastWake = null; // { at, outcome }
+  const startedAt = now();
+  let eonetFallbackTotal = 0; // since this process started (the free plan restarts it after every sleep)
 
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      const s = await ingestOnce({ log, ...deps });
-      log.log(
-        `[ingest] fetched=${s.fetched} new=${s.inserted} published=${s.published} pending=${s.pending}` +
-          (s.errors.length ? ` errors=${s.errors.join(" | ")}` : "")
-      );
-    } catch (err) {
-      log.error("[ingest] run failed:", err?.message || err);
-    } finally {
-      running = false;
+  function run(trigger) {
+    if (inflight) return inflight;
+    inflight = (async () => {
+      try {
+        const stats = await ingest({ log, ...deps });
+        last = { at: now(), trigger, stats, error: null };
+        eonetFallbackTotal += stats.eonetFallback ?? 0;
+        log.log(
+          `[ingest] (${trigger}) fetched=${stats.fetched} new=${stats.inserted} published=${stats.published} pending=${stats.pending}` +
+            (stats.errors.length ? ` errors=${stats.errors.join(" | ")}` : "")
+        );
+      } catch (err) {
+        last = { at: now(), trigger, stats: null, error: err?.message || String(err) };
+        log.error(`[ingest] (${trigger}) run failed:`, last.error);
+      } finally {
+        inflight = null;
+      }
+      return last;
+    })();
+    return inflight;
+  }
+
+  const succeeded = (r) => r && !r.error && !(r.stats?.errors?.length);
+
+  async function wake() {
+    const t = now();
+    // only a recent run that worked makes a wake-up redundant; a failed one is retried
+    if (!inflight && succeeded(last) && t - last.at < minIntervalMs) {
+      lastWake = { at: t, outcome: "skipped-recent" };
+      return { ran: false, reason: "recent", last };
     }
-  };
+    const joined = Boolean(inflight);
+    const result = await run("wake");
+    lastWake = { at: t, outcome: joined ? "joined-running" : result.error ? "failed" : "ran" };
+    return { ran: !joined, reason: joined ? "in-progress" : "ran", last: result };
+  }
 
+  const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
+  function status() {
+    return {
+      running: Boolean(inflight),
+      lastRunAt: iso(last?.at),
+      lastTrigger: last?.trigger ?? null,
+      // which part failed ("run", "nasa", "usgs", "publish"), never the upstream message: /health is public
+      lastErrorSources: last?.error ? ["run"] : last?.stats?.errors?.length ? last.stats.errors.map((e) => String(e).split(":")[0]) : [],
+      lastStats: last?.stats ? { fetched: last.stats.fetched, inserted: last.stats.inserted, eonetFallback: last.stats.eonetFallback ?? 0, published: last.stats.published, pending: last.stats.pending } : null,
+      lastWakeAt: iso(lastWake?.at),
+      lastWakeOutcome: lastWake?.outcome ?? null,
+      // events recorded with the EONET point because GDACS was unreachable (they keep it: insert-once);
+      // the event ids are in the log line "[ingest] ... recorded with the EONET point"
+      eonetFallbackRecorded: { total: eonetFallbackTotal, since: iso(startedAt) },
+    };
+  }
+
+  return { run, wake, status };
+}
+
+/** Process-wide runner used by index.js (timer) and the wake endpoint. */
+export const ingestRunner = createIngestRunner();
+
+/**
+ * Runs an ingestion now and then every `intervalMs` through the shared
+ * runner. Never throws; failures are logged and the next tick runs normally.
+ */
+export function startIngestion({ intervalMs = INGEST_INTERVAL_MS, runner = ingestRunner } = {}) {
+  const tick = () => runner.run("timer");
   tick();
   const timer = setInterval(tick, intervalMs);
   timer.unref?.();

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDateTime } from "../utils/formatDate";
+import { pollWhileVisible } from "../utils/visiblePoll";
 
 export type NotificationItem = {
   id: number;
@@ -63,12 +64,8 @@ const NotificationBell = ({ pollMs = 60_000 }: Props) => {
     }
   }, []);
 
-  // Initial load + polling while mounted (the component is only mounted when signed in)
-  useEffect(() => {
-    load();
-    const timer = window.setInterval(load, pollMs);
-    return () => window.clearInterval(timer);
-  }, [load, pollMs]);
+  // Initial load + polling while mounted (the component is only mounted when signed in); paused in hidden tabs
+  useEffect(() => pollWhileVisible(load, pollMs), [load, pollMs]);
 
   // Close on outside click / Escape
   useEffect(() => {

@@ -13,7 +13,8 @@ import alertsRoutes from "./routes/alerts.routes.js";
 import notificationsRoutes from "./routes/notifications.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import { producerStatus } from "./services/kafkaProducer.js";
-import { countPendingOutbox } from "./jobs/ingest.js";
+import { countPendingOutbox, ingestRunner } from "./jobs/ingest.js";
+import { createInternalRouter } from "./routes/internal.routes.js";
 import { gdacsClient } from "./services/gdacs.js";
 
 /**
@@ -26,6 +27,8 @@ import { gdacsClient } from "./services/gdacs.js";
  *   production setting; pass `false` to disable it (tests only).
  * @param {string} [options.corsOrigins] comma-separated allowed origins
  *   (defaults to CORS_ORIGINS from the environment, else the built-in list).
+ * @param {object} [options.internal] options for the scheduled-wake router
+ *   (routes/internal.routes.js); defaults read INGEST_WAKE_SECRET.
  */
 export function createApp(options = {}) {
   const app = express();
@@ -59,7 +62,7 @@ export function createApp(options = {}) {
   // and per provider what happened on its last attempt (so a silent GDELT failure is visible).
   const newsStatus = () => {
     const s = newsService.status();
-    return { provider: s.provider, updatedAt: s.updatedAt, stale: s.stale, articles: s.articles, providers: s.providers };
+    return { provider: s.provider, updatedAt: s.updatedAt, stale: s.stale, articles: s.articles, providers: s.providers, storms: s.storms };
   };
 
   app.get("/health", async (req, res) => {
@@ -75,6 +78,8 @@ export function createApp(options = {}) {
       service: "backend",
       kafka: producerStatus(),
       outboxPending,
+      // last ingestion run and last scheduled wake-up (counts and times only)
+      ingest: ingestRunner.status(),
       news: newsStatus(),
       gdacs: gdacsClient.status(),
       time: new Date().toISOString(),
@@ -101,6 +106,9 @@ export function createApp(options = {}) {
 
   // Admin console: user management and audit log (frontend /api/admin -> backend /admin)
   app.use("/admin", adminRoutes);
+
+  // Scheduled wake-up (GitHub Actions): POST /internal/ingest with a shared secret
+  app.use("/internal", createInternalRouter(options.internal));
 
   // Unknown routes and every error, including body-parser failures, answer JSON: never Express's HTML pages.
   app.use((req, res) => {

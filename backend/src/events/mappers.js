@@ -3,7 +3,7 @@
  * contract. Works from the raw payloads (not the public-feed normalizers) so
  * the stable source ids are preserved: "nasa:EONET_1234", "usgs:us7000abcd".
  */
-import { mapCategoryToType, pickBestLatLngFromGeometryArray } from "../utils/normalizeDisasters.js";
+import { mapCategoryToType, pickBestLatLngFromGeometryArray, resolveEventLocation } from "../utils/normalizeDisasters.js";
 import { severityFromMag, assessEonetEvent } from "../utils/severity.js";
 import { formatMagnitude } from "../utils/magnitude.js";
 import { cleanTitle } from "../utils/eventDetails.js";
@@ -42,19 +42,30 @@ function validateAll(candidates) {
   return { events, dropped };
 }
 
+/**
+ * EONET events -> contract events. Also returns `eonetFallback`: the eventIds
+ * placed on the EONET geometry only because GDACS could not be reached for an
+ * event that links to it (the map would show the GDACS point once reachable).
+ */
 export function nasaEventsToContract(rawEvents) {
   const candidates = [];
+  const fallback = new Set();
   for (const ev of Array.isArray(rawEvents) ? rawEvents : []) {
     const type = mapCategoryToType(ev?.categories?.[0]?.title);
     const id = cleanId(ev?.id);
     if (!type || !id) continue;
 
     const best = pickBestLatLngFromGeometryArray(ev?.geometry);
-    if (!best?.coords) continue;
-    const [lng, lat] = fixSwappedCoords(best.coords);
+    // Same point as the public map marker: the GDACS event point when there is one (fetchNasaEventsRated
+    // attaches it as gdacsPlace), else the EONET geometry; like the map, a GDACS point alone is enough.
+    // Only the values change; the contract does not.
+    const place = resolveEventLocation(best?.coords ? fixSwappedCoords(best.coords) : null, ev?.gdacsPlace);
+    if (!place?.coords) continue;
+    const [lng, lat] = place.coords;
 
-    const occurredAt = toIso(best.date || ev?.updated || ev?.created);
+    const occurredAt = toIso(best?.date || ev?.updated || ev?.created);
     if (!occurredAt) continue;
+    if (ev?.gdacsUnreachable && place.source === "eonet") fallback.add(`nasa:${id}`);
 
     candidates.push({
       v: 1,
@@ -69,7 +80,8 @@ export function nasaEventsToContract(rawEvents) {
       occurredAt,
     });
   }
-  return validateAll(candidates);
+  const { events, dropped } = validateAll(candidates);
+  return { events, dropped, eonetFallback: events.filter((e) => fallback.has(e.eventId)).map((e) => e.eventId) };
 }
 
 export function usgsFeaturesToContract(features, { minMag = 4.5 } = {}) {

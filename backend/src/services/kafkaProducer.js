@@ -60,13 +60,27 @@ export function producerStatus() {
   return connected ? "connected" : "disconnected";
 }
 
+let settleReady;
+/**
+ * Resolves once the first initProducer() attempt has finished, connected or
+ * not, so the wake endpoint can let a cold-started service connect to Kafka
+ * before it ingests and publishes.
+ */
+export const producerReady = new Promise((resolve) => {
+  settleReady = resolve;
+});
+
 export async function initProducer() {
-  if (kafkaConfigError) throw new Error(kafkaConfigError);
-  await producer.connect();
-  connected = true;
-  console.log(
-    `Kafka producer connected (${useSasl ? "SASL_SSL" : "plaintext"}): ${brokers.join(", ")}`
-  );
+  try {
+    if (kafkaConfigError) throw new Error(kafkaConfigError);
+    await producer.connect();
+    connected = true;
+    console.log(
+      `Kafka producer connected (${useSasl ? "SASL_SSL" : "plaintext"}): ${brokers.join(", ")}`
+    );
+  } finally {
+    settleReady();
+  }
 }
 
 const TOPIC = "disaster-events";

@@ -69,15 +69,22 @@ export function createStormContext({
   now = () => new Date(),
   log = console,
 } = {}) {
+  /** Per source, for /health: last attempt, last success, last error, how many names. */
+  const health = {};
+
   /** One source with its own cache: its names, or null when unknown. */
   function source(label, load, cacheMs) {
     let cached = null; // { names, at }
+    const h = (health[label.toLowerCase()] = { lastAttemptAt: null, lastSuccessAt: null, lastError: null, names: null });
     return async (at) => {
       if (cached && at.getTime() - cached.at.getTime() < cacheMs) return cached.names;
+      h.lastAttemptAt = at.toISOString();
       try {
         cached = { names: await load(at), at };
+        Object.assign(h, { lastSuccessAt: at.toISOString(), lastError: null, names: cached.names.size });
         return cached.names;
       } catch (err) {
+        h.lastError = err?.message || String(err);
         if (cached && at.getTime() - cached.at.getTime() < STORM_STALE_MAX_MS) {
           log.warn(`[news] storm list: ${label} failed (${err?.message || err}); using its list from ${cached.at.toISOString()}`);
           return cached.names;
@@ -101,5 +108,10 @@ export function createStormContext({
     return new Set(lists.flatMap((l) => [...l]));
   }
 
-  return { names };
+  /** { eonet, gdacs }: each { lastAttemptAt, lastSuccessAt, lastError, names } (a count, not the list). */
+  function status() {
+    return structuredClone(health);
+  }
+
+  return { names, status };
 }
