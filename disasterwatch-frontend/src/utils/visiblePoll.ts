@@ -8,12 +8,18 @@
  */
 export function pollWhileVisible(fn: () => void, ms: number): () => void {
   const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
-  if (!hidden()) fn();
+  let lastRun = -Infinity;
+  const run = () => {
+    lastRun = Date.now();
+    fn();
+  };
+  if (!hidden()) run();
   const timer = window.setInterval(() => {
-    if (!hidden()) fn();
+    if (!hidden()) run();
   }, ms);
+  // catch up when shown again, but at most once per interval (quick tab switching sends nothing extra)
   const onVisibility = () => {
-    if (!hidden()) fn();
+    if (!hidden() && Date.now() - lastRun >= ms) run();
   };
   document.addEventListener("visibilitychange", onVisibility);
   return () => {

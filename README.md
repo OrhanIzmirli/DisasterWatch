@@ -368,7 +368,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 
 The services are not kept awake (the free plan has 750 instance hours a month per workspace); a GitHub Actions workflow (`.github/workflows/wake.yml`) wakes them once an hour, at minute 17:
 
-1. `POST <backend>/internal/ingest` with `Authorization: Bearer <INGEST_WAKE_SECRET>`: a sleeping backend wakes (and ingests on start), an awake one ingests now; new events are published to Kafka. Idempotent: within 10 minutes of the last run nothing is repeated, a run in progress is joined. The secret is compared in constant time and the endpoint is rate limited (10 requests per 15 minutes per client). The answer carries counts only.
+1. `POST <backend>/internal/ingest` with `Authorization: Bearer <INGEST_WAKE_SECRET>`: a sleeping backend wakes (and ingests on start), an awake one ingests unless a run worked in the last 10 minutes (it ingests every 5 minutes anyway); new events are published to Kafka. Idempotent: a run in progress is joined, a failed recent run is retried. The secret is compared in constant time and the endpoint is rate limited (10 requests per 15 minutes per client). The answer carries counts only; `ok: false` (a failed source fetch or Kafka publish, e.g. a powered-off Aiven broker) fails the workflow run, so GitHub reports it.
 2. `GET <notification service>/health`: the consumer wakes and processes what waits in Kafka.
 
 Setup, values never in the repository:
@@ -380,7 +380,7 @@ Setup, values never in the repository:
 | GitHub → … → Actions → **Variables** | `BACKEND_URL` | the backend's Render URL, no trailing slash |
 | GitHub → … → Actions → **Variables** | `NOTIFICATION_URL` | the notification service's Render URL, no trailing slash |
 
-`/health` → `ingest` shows the last run (time, trigger, counts) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`).
+`/health` → `ingest` shows the last run (time, trigger, counts, which part failed) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`). GitHub delays scheduled runs under load and disables a schedule after 60 days without repository activity: check `lastWakeAt`, and optionally let a second scheduler (e.g. cron-job.org) call the same endpoint; it is idempotent.
 
 ### Known limitations
 

@@ -9,7 +9,8 @@
  * traffic; while it sleeps nothing is ingested or published. The hourly call
  * wakes it (the start-up run ingests) and, when it was already awake, runs
  * an ingestion now. It is idempotent: a run that finished in the last
- * WAKE_MIN_INTERVAL_MS is not repeated, a run in progress is joined.
+ * WAKE_MIN_INTERVAL_MS without errors is not repeated, a run in progress is
+ * joined. `ok` is false when any part of the run failed.
  *
  * Protection: a shared secret (INGEST_WAKE_SECRET, at least 32 characters)
  * compared in constant time, and a rate limit per client. Without a usable
@@ -25,7 +26,7 @@ import { producerReady } from "../services/kafkaProducer.js";
 export const MIN_SECRET_LENGTH = 32;
 export const WAKE_RATE_LIMIT = { windowMs: 15 * 60 * 1000, limit: 10 };
 /** How long a cold-started service may wait for its first Kafka connection attempt before ingesting. */
-export const READY_TIMEOUT_MS = 20 * 1000;
+export const READY_TIMEOUT_MS = 45 * 1000;
 
 /** Constant-time comparison of two strings of any length (both hashed to 32 bytes first). */
 export function secretsEqual(given, expected) {
@@ -77,7 +78,8 @@ export function createInternalRouter({
     const result = await runner.wake();
     const s = result.last?.stats;
     res.json({
-      ok: !result.last?.error,
+      // false when the run failed or any part of it did (a source fetch, the Kafka publish): the workflow fails on it
+      ok: !result.last?.error && !(s?.errors?.length),
       ran: result.ran,
       reason: result.reason,
       lastRunAt: result.last?.at ? new Date(result.last.at).toISOString() : null,

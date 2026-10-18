@@ -1,8 +1,8 @@
 # Hourly wake-up of the Render free-plan services (they sleep after ~15 min without traffic).
 #
 # 1. POST the backend's /internal/ingest with the shared secret: a sleeping backend wakes and
-#    ingests on start, an awake one ingests now; new events go to Kafka (idempotent: nothing
-#    is repeated within 10 minutes of the last run).
+#    ingests on start, an awake one ingests unless a run worked in the last 10 minutes; new
+#    events go to Kafka.
 # 2. GET the notification service's /health: it wakes and consumes what is waiting in Kafka.
 #
 # Setup (values never in the repository):
@@ -10,6 +10,10 @@
 #     Secrets:   INGEST_WAKE_SECRET  (same value as the backend's Render env var; 32+ characters)
 #     Variables: BACKEND_URL         (backend service URL, no trailing slash)
 #                NOTIFICATION_URL    (notification service URL, no trailing slash)
+#
+# GitHub disables scheduled workflows after 60 days without repository activity, and delays or
+# skips scheduled runs under load. /health -> ingest.lastWakeAt shows when the last wake-up
+# arrived; a second, external scheduler may call the same endpoint (it is idempotent).
 name: Scheduled wake
 
 on:
@@ -20,7 +24,6 @@ on:
 
 permissions:
   contents: read
-  actions: write # only for the "keep the schedule enabled" step
 
 concurrency:
   group: scheduled-wake
@@ -29,7 +32,8 @@ concurrency:
 jobs:
   wake:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # worst case: backend 3 x 90 s + 2 x 20 s, notification 3 x 60 s + 2 x 20 s = 530 s
+    timeout-minutes: 12
     steps:
       - name: Wake the backend and ingest now
         env:
@@ -41,11 +45,13 @@ jobs:
             exit 1
           fi
           # a cold start takes up to about a minute; connection failures and timeouts are retried
-          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 150 --retry 3 --retry-delay 20 --retry-all-errors \
+          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 90 --retry 2 --retry-delay 20 --retry-all-errors \
             -X POST "$BACKEND_URL/internal/ingest" -H "Authorization: Bearer $INGEST_WAKE_SECRET")
           echo "HTTP $code"
           cat body.json; echo
           [ "$code" = "200" ]
+          # a run with a failed part (source fetch, Kafka publish) fails the job, so GitHub reports it
+          grep -q '"ok":true' body.json || { echo "::error::the ingestion reported a failure (see the counts above; Kafka may be powered off)"; exit 1; }
 
       - name: Wake the notification service
         if: always()
@@ -56,12 +62,4 @@ jobs:
             echo "::error::Set the NOTIFICATION_URL variable (see the comment at the top of wake.yml)"
             exit 1
           fi
-          curl -fsS --max-time 150 --retry 3 --retry-delay 20 --retry-all-errors "$NOTIFICATION_URL/health"; echo
-
-      # GitHub disables scheduled workflows after 60 days without repository activity;
-      # re-enabling from the workflow itself keeps it on (see the report for the backup check).
-      - name: Keep the schedule enabled
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow enable wake.yml --repo "$GITHUB_REPOSITORY"
+          curl -fsS --max-time 60 --retry 2 --retry-delay 20 --retry-all-errors "$NOTIFICATION_URL/health"; echo

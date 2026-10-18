@@ -33,6 +33,20 @@ describe("pollWhileVisible", () => {
     expect(fn).toHaveBeenCalledTimes(3);
   });
 
+  it("quick tab switching sends nothing extra: the catch-up runs at most once per interval", () => {
+    vi.useFakeTimers();
+    setVisibility("visible");
+    const fn = vi.fn();
+    const stop = pollWhileVisible(fn, 30_000);
+    for (let i = 0; i < 10; i++) {
+      setVisibility("hidden");
+      vi.advanceTimersByTime(1000);
+      setVisibility("visible");
+    }
+    expect(fn).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
   it("does not run at start in a tab that opens hidden", () => {
     setVisibility("hidden");
     const fn = vi.fn();

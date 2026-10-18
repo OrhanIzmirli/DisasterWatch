@@ -52,7 +52,18 @@ describe("ingest runner shared by the timer and the wake endpoint", () => {
     const runner = createIngestRunner({ ingest: async () => { throw new Error("db down"); }, now: () => 1, log: quiet });
     const out = await runner.wake();
     expect(out.last.error).toBe("db down");
-    expect(runner.status()).toMatchObject({ lastError: "db down", lastWakeOutcome: "failed" });
+    expect(runner.status()).toMatchObject({ lastErrorSources: ["run"], lastWakeOutcome: "failed" });
+  });
+
+  it("a recent run that failed (or had a failed part) does not block the wake: it is retried", async () => {
+    let t = 0;
+    const ingest = vi.fn().mockResolvedValueOnce({ ...STATS, errors: ["publish: The group coordinator is not available"] }).mockResolvedValue(STATS);
+    const runner = createIngestRunner({ ingest, now: () => t, log: quiet });
+    await runner.run("timer");
+    expect(runner.status().lastErrorSources).toEqual(["publish"]); // the source only, never the upstream message
+    t += 60_000;
+    expect(await runner.wake()).toMatchObject({ ran: true, reason: "ran" });
+    expect(ingest).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -91,6 +102,14 @@ describe("POST /internal/ingest", () => {
     expect(second.body).toMatchObject({ ran: false, reason: "recent" });
     expect(ingest).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(first.body) + JSON.stringify(second.body)).not.toContain(SECRET);
+  });
+
+  it("ok is false when a part of the run failed (the workflow fails on it)", async () => {
+    const runner = createIngestRunner({ ingest: async () => ({ ...STATS, errors: ["publish: broker unreachable"] }), now: () => 1, log: quiet });
+    const res = await request(appWith({ secret: SECRET, runner })).post("/internal/ingest").set("Authorization", `Bearer ${SECRET}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: false, stats: { errors: 1 } });
+    expect(JSON.stringify(res.body)).not.toContain("broker unreachable");
   });
 
   it("waits for the first Kafka connection attempt, but not longer than the timeout", async () => {
@@ -170,6 +189,11 @@ describe("alerts use the same location as the map marker", () => {
     const [event] = nasaEventsToContract([TURKIYE_FLOOD]).events;
     expect(matchesSubscription(event, ISTANBUL).matched).toBe(true);
     expect(matchesSubscription(event, KONYA).matched).toBe(false);
+  });
+
+  it("a GDACS point alone is enough, as on the map (no usable EONET geometry)", () => {
+    const [event] = nasaEventsToContract([{ ...TURKIYE_FLOOD, updated: "2026-10-11T20:00:00Z", geometry: [{ date: "2026-10-11T20:00:00Z", type: "Point", coordinates: null }] }]).events;
+    expect(event).toMatchObject({ lat: 41.1157, lng: 28.9986, occurredAt: "2026-10-11T20:00:00.000Z" });
   });
 
   it("without a GDACS point the EONET geometry is used as before", () => {

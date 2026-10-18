@@ -172,9 +172,10 @@ export const WAKE_MIN_INTERVAL_MS = 10 * 60 * 1000;
  * endpoint (POST /internal/ingest), so the two never run at the same time:
  *
  *   run(trigger)  runs now, or joins the run already in progress;
- *   wake()        the endpoint's entry: does nothing when a run finished in
- *                 the last WAKE_MIN_INTERVAL_MS (a service that just woke up
- *                 has already ingested on start), joins a run in progress,
+ *   wake()        the endpoint's entry: does nothing when a run finished
+ *                 without errors in the last WAKE_MIN_INTERVAL_MS (a service
+ *                 that just woke up has already ingested on start; an awake
+ *                 one ingests every 5 minutes), joins a run in progress,
  *                 otherwise runs.
  *   status()      last run time, trigger and counts, for /health.
  *
@@ -206,9 +207,12 @@ export function createIngestRunner({ ingest = ingestOnce, now = () => Date.now()
     return inflight;
   }
 
+  const succeeded = (r) => r && !r.error && !(r.stats?.errors?.length);
+
   async function wake() {
     const t = now();
-    if (!inflight && last && t - last.at < minIntervalMs) {
+    // only a recent run that worked makes a wake-up redundant; a failed one is retried
+    if (!inflight && succeeded(last) && t - last.at < minIntervalMs) {
       lastWake = { at: t, outcome: "skipped-recent" };
       return { ran: false, reason: "recent", last };
     }
@@ -224,7 +228,8 @@ export function createIngestRunner({ ingest = ingestOnce, now = () => Date.now()
       running: Boolean(inflight),
       lastRunAt: iso(last?.at),
       lastTrigger: last?.trigger ?? null,
-      lastError: last?.error ?? (last?.stats?.errors?.length ? last.stats.errors.join(" | ") : null),
+      // which part failed ("run", "nasa", "usgs", "publish"), never the upstream message: /health is public
+      lastErrorSources: last?.error ? ["run"] : last?.stats?.errors?.length ? last.stats.errors.map((e) => String(e).split(":")[0]) : [],
       lastStats: last?.stats ? { fetched: last.stats.fetched, inserted: last.stats.inserted, published: last.stats.published, pending: last.stats.pending } : null,
       lastWakeAt: iso(lastWake?.at),
       lastWakeOutcome: lastWake?.outcome ?? null,

@@ -50,14 +50,14 @@ export function nasaEventsToContract(rawEvents) {
     if (!type || !id) continue;
 
     const best = pickBestLatLngFromGeometryArray(ev?.geometry);
-    if (!best?.coords) continue;
     // Same point as the public map marker: the GDACS event point when there is one (fetchNasaEventsRated
-    // attaches it as gdacsPlace), else the EONET geometry. Only the values change; the contract does not.
-    const place = resolveEventLocation(fixSwappedCoords(best.coords), ev?.gdacsPlace);
+    // attaches it as gdacsPlace), else the EONET geometry; like the map, a GDACS point alone is enough.
+    // Only the values change; the contract does not.
+    const place = resolveEventLocation(best?.coords ? fixSwappedCoords(best.coords) : null, ev?.gdacsPlace);
     if (!place?.coords) continue;
     const [lng, lat] = place.coords;
 
-    const occurredAt = toIso(best.date || ev?.updated || ev?.created);
+    const occurredAt = toIso(best?.date || ev?.updated || ev?.created);
     if (!occurredAt) continue;
 
     candidates.push({
