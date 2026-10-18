@@ -15,6 +15,7 @@ import StatusBar from "./components/StatusBar";
 import NotificationBell from "./components/NotificationBell";
 import NotFoundPage from "./pages/NotFoundPage";
 import SkipLink from "./components/SkipLink";
+import { readSessionHint, shouldCheckSession, writeSessionHint } from "./utils/sessionHint";
 
 // Pages other than the dashboard load on demand (smaller first download).
 const AlertsPage = lazy(() => import("./pages/AlertsPage"));
@@ -95,13 +96,23 @@ export default function App() {
     let cancelled = false;
 
     (async () => {
+      // Signed out last time: no request, so no expected-401 in the console (see utils/sessionHint)
+      if (!shouldCheckSession(readSessionHint())) {
+        if (!cancelled) {
+          setUser(null);
+          setAuthLoading(false);
+        }
+        return;
+      }
       try {
         const res = await fetch("/api/users/me", { credentials: "include" });
         if (!res.ok) {
+          if (res.status === 401) writeSessionHint("out");
           if (!cancelled) setUser(null);
           return;
         }
         const data = await res.json();
+        writeSessionHint(data?.user ? "in" : "out");
         if (!cancelled) setUser(data?.user ?? null);
       } catch {
         if (!cancelled) setUser(null);
@@ -116,6 +127,7 @@ export default function App() {
   }, []);
 
   const onSignedIn = useCallback((signedInUser: AuthUser) => {
+    writeSessionHint("in");
     setUser(signedInUser);
     setAuthLoading(false);
   }, []);
@@ -129,6 +141,7 @@ export default function App() {
     } catch {
       // Even if the request fails, drop the local session state
     } finally {
+      writeSessionHint("out");
       setUser(null);
       navigate("/", { replace: true });
     }
@@ -143,7 +156,7 @@ export default function App() {
     <div className="app-root">
       {/* first Tab stop on the dashboard: past the header and every map marker, straight to the feed */}
       {pathname === "/" && <SkipLink />}
-      <header className="app-header">
+      <header className="app-header" data-map-obstruction>
         <div className="logo">
           <div className="logo-mark">DW</div>
           <div className="logo-text">

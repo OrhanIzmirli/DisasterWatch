@@ -27,6 +27,7 @@ import {
   type ClusterProps,
   type PointFeature,
 } from "../utils/clustering";
+import { visibleCenterOffset } from "../utils/mapCentering";
 
 // Web Mercator world tiles are 256px square per zoom step (256 * 2^z).
 // Below this helper figures out the smallest integer zoom at which the
@@ -36,7 +37,25 @@ import {
 // (most visible after the map column is stretched to match the feed
 // column's height).
 const TILE_SIZE = 256;
-const WORLD_BOUNDS = L.latLngBounds([-85.05, -180], [85.05, 180]);
+// Latitude is held to the tiled world (no gray band above/below it); longitude
+// spans three world copies so the centre can sit on the antimeridian (Fiji,
+// Wallis and Futuna) instead of being clamped away from it. worldCopyJump
+// brings a pan that crosses ±180 back to the copy where the markers are.
+const WORLD_BOUNDS = L.latLngBounds([-85.05, -540], [85.05, 540]);
+
+// Elements that may cover part of the map (sticky header, detail drawer,
+// phone bottom sheet) carry this attribute; a flight centres the event in the
+// part of the map that is left visible.
+const OBSTRUCTION_SELECTOR = "[data-map-obstruction]";
+
+function visibleOffset(map: L.Map) {
+  const rectOf = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  };
+  const obstructions = Array.from(document.querySelectorAll(OBSTRUCTION_SELECTOR), rectOf);
+  return visibleCenterOffset(rectOf(map.getContainer()), { width: window.innerWidth, height: window.innerHeight }, obstructions);
+}
 
 function minZoomForContainer(width: number, height: number) {
   const longestSide = Math.max(width, height, 1);
@@ -240,6 +259,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
     const targetZoom = reveal === null ? maxZoom : Math.max(4.5, reveal);
 
     let timer: number | null = null;
+    let frame: number | null = null;
     let armed = false; // resize listener attached
     let guard: number | null = null; // hard stop for the listener
     const disarm = () => {
@@ -252,7 +272,15 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
     };
     const fly = () => {
       timer = null;
-      map.flyTo([target.lat, target.lng], targetZoom, { duration: 0.7 });
+      // next frame: the drawer / bottom sheet is laid out and the phone layout has scrolled the map into place
+      frame = window.requestAnimationFrame(takeOff);
+    };
+    const takeOff = () => {
+      frame = null;
+      // aim so the event lands in the middle of the visible part of the map, not under the drawer or sheet
+      const offset = visibleOffset(map);
+      const aim = map.unproject(map.project([target.lat, target.lng], targetZoom).subtract([offset.x, offset.y]), targetZoom);
+      map.flyTo(aim, targetZoom, { duration: 0.7 });
       map.once("moveend", disarm);
       if (reveal === null) {
         // co-located events: open the cluster that holds the siblings once the flight has landed
@@ -279,6 +307,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
     schedule(Date.now() - mountedAt.current < 1000 ? 120 : 0);
     return () => {
       if (timer !== null) window.clearTimeout(timer);
+      if (frame !== null) window.cancelAnimationFrame(frame);
       disarm();
     };
     // viewIndex is only read inside the post-flight callback; re-running the flight on its changes is not wanted
@@ -475,6 +504,7 @@ const MapView: FC<MapViewProps> = ({ disasters, highlightId, onSelect, pulseIds 
       maxZoom={10}
       maxBounds={WORLD_BOUNDS}
       maxBoundsViscosity={1.0}
+      worldCopyJump={true}
     >
       {/*
         CARTO's free dark_all raster tiles (basemaps.cartocdn.com) now

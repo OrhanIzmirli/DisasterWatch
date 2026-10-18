@@ -822,38 +822,40 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
             </div>
           </div>
 
-          {/* Pagination controls */}
-          <div className="feed-pager" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-            <button
-              type="button"
-              className="filter-chip"
-              disabled={!canPrev}
-              onClick={() => {
-                setPage((p) => Math.max(1, p - 1));
-                scrollListToTop();
-              }}
-              style={{ opacity: canPrev ? 1 : 0.5, cursor: canPrev ? "pointer" : "not-allowed" }}
-            >
-              ◀ Prev
-            </button>
+          {/* Pagination controls (only when there is more than one page) */}
+          {totalPages > 1 && (
+            <div className="feed-pager" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <button
+                type="button"
+                className="filter-chip"
+                disabled={!canPrev}
+                onClick={() => {
+                  setPage((p) => Math.max(1, p - 1));
+                  scrollListToTop();
+                }}
+                style={{ opacity: canPrev ? 1 : 0.5, cursor: canPrev ? "pointer" : "not-allowed" }}
+              >
+                ◀ Prev
+              </button>
 
-            <span style={{ fontSize: 13, opacity: 0.9 }}>
-              Page <strong>{safePage}</strong> / <strong>{totalPages}</strong>
-            </span>
+              <span style={{ fontSize: 13, opacity: 0.9 }}>
+                Page <strong>{safePage}</strong> / <strong>{totalPages}</strong>
+              </span>
 
-            <button
-              type="button"
-              className="filter-chip"
-              disabled={!canNext}
-              onClick={() => {
-                setPage((p) => Math.min(totalPages, p + 1));
-                scrollListToTop();
-              }}
-              style={{ opacity: canNext ? 1 : 0.5, cursor: canNext ? "pointer" : "not-allowed" }}
-            >
-              Next ▶
-            </button>
-          </div>
+              <button
+                type="button"
+                className="filter-chip"
+                disabled={!canNext}
+                onClick={() => {
+                  setPage((p) => Math.min(totalPages, p + 1));
+                  scrollListToTop();
+                }}
+                style={{ opacity: canNext ? 1 : 0.5, cursor: canNext ? "pointer" : "not-allowed" }}
+              >
+                Next ▶
+              </button>
+            </div>
+          )}
 
           {feedStale && feedStatus === "ready" && (
             <div className="feed-stale-banner" role="status">

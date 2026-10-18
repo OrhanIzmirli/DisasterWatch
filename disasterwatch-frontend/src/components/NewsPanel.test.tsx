@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, within } from "@testing-library/react";
+import { render, screen, cleanup, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import NewsPanel from "./NewsPanel";
@@ -108,5 +108,39 @@ describe("locationText", () => {
     expect(locationText({ ...LOCATED, location: { countries: ["MX", "US"], regions: ["americas"], source: "guardian-tags" } })).toBe("Mexico, United States · Americas");
     expect(locationText({ ...LOCATED, location: { countries: [], regions: ["africa"], source: "guardian-tags" } })).toBe("Africa");
     expect(locationText(UNLOCATED)).toBeNull();
+  });
+});
+
+describe("news card images", () => {
+  function mockNewsWithImages(items: NewsItem[]) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ items, count: items.length, updatedAt: new Date().toISOString(), stale: false, source: "GDELT", provider: "gdelt" }), {
+          headers: { "content-type": "application/json" },
+        })
+      )
+    );
+  }
+  const withImage = (n: number, image: string): NewsItem => ({ ...LOCATED, url: `https://daily.example.com/story-${n}`, title: `Story ${n}`, provider: "gdelt", image });
+
+  it("upgrades http images to https and hides an image that fails to load", async () => {
+    mockNewsWithImages([withImage(1, "https://img.example.com/ok.jpg"), withImage(2, "http://img.example.com/old.jpg")]);
+    const { container } = renderPanel();
+    await screen.findByText("Story 2");
+    const imgs = () => Array.from(container.querySelectorAll<HTMLImageElement>("img.news-card-image"));
+    expect(imgs().map((i) => i.getAttribute("src"))).toEqual(["https://img.example.com/ok.jpg", "https://img.example.com/old.jpg"]);
+
+    imgs()[1].dispatchEvent(new Event("error"));
+    await waitFor(() => expect(imgs().map((i) => i.getAttribute("src"))).toEqual(["https://img.example.com/ok.jpg"]));
+    // the card itself stays
+    expect(screen.getByText("Story 2")).toBeTruthy();
+  });
+
+  it("renders no image for a URL that is not http(s)", async () => {
+    mockNewsWithImages([withImage(3, "data:image/png;base64,AAAA")]);
+    const { container } = renderPanel();
+    await screen.findByText("Story 3");
+    expect(container.querySelector("img.news-card-image")).toBeNull();
   });
 });
