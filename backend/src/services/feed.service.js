@@ -25,6 +25,7 @@
 import { fetchNasaEventsRated } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
 import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
+import { withSubtitles } from "../utils/eventSubtitle.js";
 
 /** Server-side cache lifetime per source; not configurable by callers. */
 export const FEED_CACHE_MS = 5 * 60 * 1000;
@@ -149,13 +150,15 @@ export function createFeedService({
 
     const nasaAll = nasa ? normalizeNasaEvents(nasa).filter(inWindow) : [];
     const quakesAll = usgs ? normalizeUsgsEarthquakes(usgs, { minMag, limit: Number.MAX_SAFE_INTEGER }).filter(inWindow) : [];
-    const items = [...nasaAll.slice(0, perSource), ...quakesAll.slice(0, perSource)].slice(0, limit).map((e) => ({
+    const page = [...nasaAll.slice(0, perSource), ...quakesAll.slice(0, perSource)].slice(0, limit).map((e) => ({
       ...e,
       meta: sanitizeText(e.meta),
       description: sanitizeText(e.description),
       location: sanitizeText(e.location),
       title: sanitizeText(e.title),
     }));
+    // same-titled events (14 x "Wildfire in Australia") get a telling-apart subtitle; the title stays as is
+    const items = withSubtitles(page, [...nasaAll, ...quakesAll]);
     return { items, counts: countEvents([...nasaAll, ...quakesAll]) };
   }
 

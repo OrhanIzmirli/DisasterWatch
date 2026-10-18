@@ -17,7 +17,10 @@
  *     after a past storm ("years after", "anniversary", "... after Hurricane
  *     Helene" with no impact word in the headline). Historical pieces (a past
  *     4-digit year, "N years ago", "World Series") and sports-team uses of a
- *     hazard word (a league or sport word and no impact word) go too.
+ *     hazard word (a league or sport word and no impact word) go too. When
+ *     the caller passes the current storms (`storms`: names of storms in
+ *     the feed or closed in the last 14 days), a headline that names only
+ *     other storms ("... Hurricane Melissa claims") is a retrospective too.
  *  2. Idioms and names are removed from the text before matching
  *     ("perfect storm", "storm of criticism", "flood of", "spread like
  *     wildfire", "political earthquake", "Carolina Hurricanes", ...).
@@ -41,7 +44,7 @@ const EXCLUDED_SECTIONS = new Set([
   "sport", "sports", "football", "soccer", "cricket", "tennis", "rugby", "rugby-union", "rugby-league", "golf", "formulaone", "f1", "nba", "nfl", "nhl", "mlb", "wnba",
   "business", "money", "markets", "finance", "technology", "tech",
   "culture", "film", "films", "movies", "music", "books", "tv-and-radio", "tv", "stage", "artanddesign", "games", "gaming", "entertainment", "celebrity", "arts",
-  "lifeandstyle", "lifestyle", "fashion", "food", "travel", "wellness",
+  "life", "lifeandstyle", "lifestyle", "fashion", "food", "travel", "wellness",
   "commentisfree", "opinion", "opinions", "editorial", "letters", "obituaries",
   "crosswords", "puzzles", "ng-interactive", "interactive", "gallery", "video", "podcasts", "live", "liveblog",
 ]);
@@ -119,9 +122,35 @@ const YEAR = /\b(1[89]\d\d|20\d\d)\b(?! ?(homes|houses|people|residents|families
 /** League and sport words: a hazard word next to them is usually a team name ("Hurricanes", "Storm", "Cyclones"). */
 const SPORT_WORDS = /\b(volleyball|football|soccer|basketball|baseball|hockey|cricket|rugby|netball|handball|league|champions league|premier league|super bowl|playoffs?|season opener|tournament|championships?)\b/;
 
-/** "... after Hurricane Helene": a named storm the headline looks back on (matched on the original casing). */
-const AFTER_NAMED_STORM = /\b(?:after|since|following) (?:Hurricane|Typhoon|Super Typhoon|Cyclone|Tropical Storm|Storm) ([A-Z][\p{L}'-]+)/u;
-const NOT_A_NAME = new Set(["Hits", "Strikes", "Slams", "Makes", "Passes", "Season", "Damage", "Warning", "Warnings", "Watch", "Landfall", "Threat", "Batters", "Lashes"]);
+/** "... after Hurricane Helene" / "... Following Hurricane Beryl": a named storm the headline looks back on (any casing). */
+const AFTER_NAMED_STORM = /\b(?:after|since|following) (?:hurricane|typhoon|super typhoon|cyclone|tropical storm|storm) ([\p{L}][\p{L}'-]+)/iu;
+const NOT_A_NAME = new Set(["hits", "strikes", "slams", "makes", "passes", "season", "damage", "warning", "warnings", "watch", "landfall", "threat", "batters", "lashes"]);
+
+/**
+ * "Hurricane Melissa", "Super Typhoon Champi", "Tropical Cyclone 01P": the
+ * storm class word, then a capitalised name or a basin designation. Words
+ * that follow a class word without being a name ("Hurricane Center",
+ * "Typhoon Season", "Cyclone Hits") are not names.
+ */
+// No `i` flag: the name must start with a capital (with `i`, \p{Lu} would match any letter); the class words take either case.
+const NAMED_STORM = /\b(?:[Ss]uper [Tt]yphoon|[Tt]yphoon|[Hh]urricane|[Tt]ropical [Ss]torm|[Tt]ropical [Cc]yclone|[Tt]ropical [Dd]epression|[Cc]yclone)\s+(\p{Lu}[\p{L}'-]+|\d{1,2}[A-Za-z])(?![\p{L}\p{N}])/gu;
+const STORM_NAME_STOPWORDS = new Set([
+  "center", "centre", "centers", "season", "seasons", "warning", "warnings", "watch", "watches", "hunter", "hunters", "relief", "recovery",
+  "damage", "damages", "victims", "survivors", "strength", "category", "force", "forecast", "forecasts", "tracker", "path", "threat",
+  "landfall", "alert", "alerts", "hits", "strikes", "slams", "makes", "passes", "batters", "lashes", "nears", "heads", "approaches",
+  "live", "update", "updates", "insurance", "claims", "preparedness", "shelter", "shelters", "evacuation", "evacuations", "cleanup",
+  "aftermath", "death", "deaths", "toll", "names", "name", "and", "the", "of", "in", "to", "as", "is", "could", "may", "will", "was", "were",
+]);
+
+/** Lower-cased storm names in a title ("Hurricane Trudy, Typhoon Koguma" -> ["trudy", "koguma"]). Also used on EONET storm titles. */
+export function stormNamesIn(title) {
+  const names = new Set();
+  for (const m of String(title ?? "").matchAll(NAMED_STORM)) {
+    const name = m[1].toLowerCase();
+    if (!STORM_NAME_STOPWORDS.has(name)) names.add(name);
+  }
+  return [...names];
+}
 
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 
@@ -168,7 +197,7 @@ export function excludedSection(url) {
  * `marker: true` on a drop means an explicit marker decided it (section,
  * feature, sports, product, retrospective), not a missing hazard term.
  */
-export function isDisasterNews(article, { now = new Date() } = {}) {
+export function isDisasterNews(article, { now = new Date(), storms = null } = {}) {
   const section = excludedSection(article?.url);
   if (section) return { keep: false, marker: true, reason: `section "${section}"` };
 
@@ -194,9 +223,18 @@ export function isDisasterNews(article, { now = new Date() } = {}) {
   if (sport && !first(headline, IMPACT)) return { keep: false, marker: true, reason: `sports ("${sport[1]}", no impact in the headline)` };
 
   const after = String(article?.title ?? "").match(AFTER_NAMED_STORM);
-  if (after && !NOT_A_NAME.has(after[1])) {
+  if (after && !NOT_A_NAME.has(after[1].toLowerCase())) {
     const rest = normalise(String(article.title).replace(after[0], " "));
     if (!first(rest, IMPACT) && !first(rest, STRONG)) return { keep: false, marker: true, reason: `retrospective ("${after[0].toLowerCase()}", no impact in the headline)` };
+  }
+
+  // Named storms only, none of them current (in the feed or closed in the last 14 days): a retrospective.
+  // Without the storm list (EONET unreachable) the rule is skipped rather than guessed.
+  if (storms) {
+    const named = stormNamesIn(article?.title);
+    if (named.length && !named.some((n) => storms.has(n))) {
+      return { keep: false, marker: true, reason: `retrospective (storm "${named.join('", "')}" not active or recently closed)` };
+    }
   }
 
   const strongHead = first(headline, STRONG);

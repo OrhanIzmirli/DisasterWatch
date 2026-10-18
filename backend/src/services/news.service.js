@@ -23,6 +23,11 @@
  *    (src/services/newsRelevance.js), whatever search returned it; the
  *    rules and the location check run again on the cached articles each
  *    time the cache is rebuilt (also after a restore from the database);
+ *  - GDELT dates are GDELT's crawl time: when the article URL carries an
+ *    earlier publication day that day is used, and GDELT articles older
+ *    than 72 h are dropped; headlines that only name storms which are
+ *    neither in the feed nor closed in EONET in the last 14 days are
+ *    dropped as retrospectives (src/services/stormContext.js);
  *  - every successful refresh is written to the NewsCache table and loaded
  *    back on start-up, so a restart serves the previous articles at once;
  *  - Guardian articles expire 24 h after they were fetched (licence);
@@ -33,8 +38,10 @@
  *
  * Everything external is injectable for tests.
  */
-import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, MAX_EVENT_QUERIES } from "./newsLinking.js";
-import { isDisasterNews } from "./newsRelevance.js";
+import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, MAX_EVENT_QUERIES, withUrlDate } from "./newsLinking.js";
+import { GDELT_RETENTION_MS } from "./newsProviders/gdelt.provider.js";
+import { createStormContext } from "./stormContext.js";
+import { isDisasterNews, stormNamesIn } from "./newsRelevance.js";
 import { withLocation, confirmLocation } from "./newsLocation.js";
 import { createNewsProviders } from "./newsProviders/index.js";
 import { fetchNasaEventsRated } from "./nasa.service.js";
@@ -112,13 +119,26 @@ function attachEvent(article, ev) {
 }
 
 /**
+ * GDELT articles are searched over the last 72 h; one whose publication date
+ * (from its URL when that is earlier than GDELT's seen date, see
+ * withUrlDate) is older than that is an old page crawled again. Returns a
+ * drop verdict, or null to go on with the relevance rules.
+ */
+function tooOld(article, at) {
+  if (article?.provider !== "gdelt" || !article.publishedAt) return null;
+  const published = new Date(article.publishedAt).getTime();
+  if (!Number.isFinite(published) || at.getTime() - published <= GDELT_RETENTION_MS) return null;
+  return { keep: false, marker: true, reason: `published ${article.publishedAt.slice(0, 10)}, older than 72 h` };
+}
+
+/**
  * Keeps disaster/hazard news only (src/services/newsRelevance.js) and logs
  * what was dropped and why, so the filter can be audited from the logs.
  */
-function relevantOnly(articles, provider, what, log, dropped) {
+function relevantOnly(articles, provider, what, log, dropped, rules = {}) {
   const kept = [];
   for (const a of articles) {
-    const verdict = isDisasterNews(a);
+    const verdict = tooOld(a, rules.now ?? new Date()) ?? isDisasterNews(a, rules);
     if (verdict.keep) kept.push(a);
     else dropped.push({ title: a.title, url: a.url, provider: provider.name, search: what, reason: verdict.reason });
   }
@@ -133,7 +153,7 @@ function relevantOnly(articles, provider, what, log, dropped) {
  * provider produced plus the failure count and the last failure's kind.
  * Request budget: plan.length + 1 <= MAX_REQUESTS_PER_REFRESH.
  */
-async function runPlan(provider, plan, top, log) {
+async function runPlan(provider, plan, top, log, rules = {}) {
   const linked = [];
   let general = [];
   let failures = 0;
@@ -145,7 +165,7 @@ async function runPlan(provider, plan, top, log) {
   for (const group of plan) {
     requests += 1;
     try {
-      const articles = relevantOnly(await provider.searchGroup(group, { maxRecords: GROUP_LIMIT }), provider, `${group.type} search`, log, dropped);
+      const articles = relevantOnly(await provider.searchGroup(group, { maxRecords: GROUP_LIMIT }), provider, `${group.type} search`, log, dropped, rules);
       const assigned = linkArticlesToEvents(articles, group.events, { single: group.events.length === 1 });
       for (const a of assigned) linked.push(attachEvent(a, a.event));
     } catch (err) {
@@ -159,7 +179,7 @@ async function runPlan(provider, plan, top, log) {
   requests += 1;
   try {
     // The provider matched the query somewhere in the article; the relevance rules decide what is disaster news.
-    const relevant = relevantOnly(await provider.searchGeneral({ maxRecords: GENERAL_LIMIT }), provider, "general search", log, dropped);
+    const relevant = relevantOnly(await provider.searchGeneral({ maxRecords: GENERAL_LIMIT }), provider, "general search", log, dropped, rules);
     general = linkArticlesToEvents(relevant, top, { requireHazard: true }).map((a) => attachEvent(a, a.event));
   } catch (err) {
     failures += 1;
@@ -183,11 +203,11 @@ async function runPlan(provider, plan, top, log) {
  * articles come already linked to their event; the relevance rules still
  * apply. Same result shape as runPlan.
  */
-async function runEvents(provider, events, log) {
+async function runEvents(provider, events, log, rules = {}) {
   const dropped = [];
   const out = await provider.searchEvents(events);
   if (out.failures) log.warn(`[news] ${provider.label}: ${out.failures} of ${out.attempted} event lookups failed (last: ${out.lastFailure})`);
-  const relevant = relevantOnly(out.articles, provider, "event media", log, dropped);
+  const relevant = relevantOnly(out.articles, provider, "event media", log, dropped, rules);
   const items = dedupeArticles(relevant.map((a) => attachEvent(a, a.event)));
   return {
     items,
@@ -208,8 +228,12 @@ export function createNewsService({
   now = () => new Date(),
   log = console,
   topEvents = TOP_EVENTS,
+  // the live EONET storm list only goes with the live feed loader (tests that inject events pass their own or none)
+  stormContext = loadEvents === loadFeedEvents ? createStormContext({ log }) : null,
 } = {}) {
   let cache = null; // { items, updatedAt, provider }
+  // Names of current storms (feed + EONET open or closed in the last 14 days); null until known (see stormContext.js)
+  let storms = null;
   let lastRefreshFailed = false; // the whole pass failed (feed unreadable, unexpected error)
   let refreshedOnce = false; // a refresh attempt completed in this process
   let lastError = null;
@@ -278,11 +302,15 @@ export function createNewsService({
    */
   function recheck(items, name) {
     const kept = [];
-    for (const a of items) {
-      const verdict = isDisasterNews(a, { now: now() });
+    const at = now();
+    for (const cached of items) {
+      // rows cached before the URL-date rule still carry GDELT's seen date
+      const a = (cached.provider ?? name) === "gdelt" ? withUrlDate({ ...cached, provider: "gdelt" }, at) : cached;
+      const verdict = tooOld(a, at) ?? isDisasterNews(a, { now: at, storms });
       if (!verdict.keep && (verdict.marker || (a.provider ?? name) !== "guardian")) continue;
       const location = confirmLocation({ ...a, provider: a.provider ?? name }, a.location ?? null);
-      kept.push(location === a.location ? a : { ...a, location });
+      const out = a === cached ? cached : { ...cached, publishedAt: a.publishedAt };
+      kept.push(location === out.location ? out : { ...out, location });
     }
     return kept;
   }
@@ -324,6 +352,21 @@ export function createNewsService({
     return cache;
   }
 
+  /** EONET's current storms plus the storms in the feed; null when EONET's list is unavailable. */
+  async function currentStorms(events) {
+    if (!stormContext) return null;
+    let names = null;
+    try {
+      names = await stormContext.names();
+    } catch (err) {
+      log.warn(`[news] storm list failed: ${err?.message || err}`);
+    }
+    if (!names) return null;
+    const all = new Set(names);
+    for (const ev of events) if (ev.type === "storm") for (const n of stormNamesIn(eventLabel(ev))) all.add(n);
+    return all;
+  }
+
   /** A provider is due when it has never been tried, or its own interval has passed since its last attempt. */
   function isDue(provider, at) {
     const last = states.get(provider.name)?.lastAttemptAt;
@@ -345,6 +388,8 @@ export function createNewsService({
       const startedAt = now();
       try {
         const events = await loadEvents();
+        storms = await currentStorms(events);
+        const rules = { now: startedAt, storms };
         const top = pickTopEvents(events, topEvents).map((ev) => ({ ...ev, locationText: eventLabel(ev) }));
         const plan = buildSearchPlan(top, { maxQueries: MAX_EVENT_QUERIES });
 
@@ -354,7 +399,7 @@ export function createNewsService({
           const s = stateOf(provider.name);
           s.lastAttemptAt = startedAt.toISOString();
           const groups = Number.isInteger(provider.maxGroupSearches) ? plan.slice(0, provider.maxGroupSearches) : plan;
-          const result = provider.searchEvents ? await runEvents(provider, events, log) : await runPlan(provider, groups, top, log);
+          const result = provider.searchEvents ? await runEvents(provider, events, log, rules) : await runPlan(provider, groups, top, log, rules);
           outcomes.push({ provider, ...result });
           s.lastCount = result.items.length;
           s.dropped = result.dropped.length;

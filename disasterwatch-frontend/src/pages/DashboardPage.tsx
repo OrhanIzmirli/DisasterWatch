@@ -34,6 +34,8 @@ type DisasterItem = {
   country?: string | null;
   /** Rich, source-faithful fields (present for live NASA/USGS items). */
   details?: EventDetails;
+  /** Only on events whose title repeats in the feed: "≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct". */
+  subtitle?: string | null;
 };
 
 type FeedStatus = "loading" | "ready" | "error";
@@ -935,6 +937,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
                     item.type === "earthquake" ? "tag-earthquake" : item.type === "flood" ? "tag-flood" : item.type === "wildfire" ? "tag-wildfire" : "tag-storm"
                   }
                   title={displayTitle(item)}
+                  subtitle={item.subtitle}
                   meta={displayMeta(item)}
                   severityLabel={getSeverityLabel(item.severity)}
                   severityClass={

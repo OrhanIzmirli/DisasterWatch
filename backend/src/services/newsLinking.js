@@ -109,6 +109,46 @@ export function parseGdeltDate(value) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+const DAY_MS = 24 * 3600 * 1000;
+
+/**
+ * Publication day written in an article URL: /2024/08/02/, 2024-08-02 or a
+ * /20240802/ path segment. Null when there is none, it is not a real date,
+ * or it lies more than a day in the future.
+ */
+export function urlDate(url, now = new Date()) {
+  let path;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  const m =
+    path.match(/\/(20\d\d)\/(\d\d)\/(\d\d)(?:\/|$)/) ??
+    path.match(/(?:^|[/_-])(20\d\d)-(\d\d)-(\d\d)(?![\d])/) ??
+    path.match(/\/(20\d\d)(\d\d)(\d\d)(?:\/|$)/);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(Date.UTC(y, mo - 1, d, 12));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
+  if (date.getTime() > now.getTime() + DAY_MS) return null;
+  return date;
+}
+
+/**
+ * GDELT's date is when GDELT saw the page (seendate), so an old page crawled
+ * again looks new. When the URL carries an earlier publication day, that day
+ * (noon UTC; the URL has no time) becomes publishedAt; otherwise the seen
+ * time stays, being the more precise of the two.
+ */
+export function withUrlDate(article, now = new Date()) {
+  const day = urlDate(article?.url, now);
+  if (!day) return article;
+  const seen = article.publishedAt ? new Date(article.publishedAt) : null;
+  if (seen && !Number.isNaN(seen.getTime()) && seen.toISOString().slice(0, 10) <= day.toISOString().slice(0, 10)) return article;
+  return { ...article, publishedAt: day.toISOString() };
+}
+
 export function normalizeArticle(raw) {
   const url = String(raw?.url ?? "").trim();
   if (!url) return null;
