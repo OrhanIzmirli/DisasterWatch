@@ -187,6 +187,18 @@ describe("(c) headlines about storms that are not current", () => {
     expect(verdict("Boxing club displaced by Hurricane Ida now trains kids for free", { storms }).keep).toBe(false);
   });
 
+  it("third review: aftermath of a current storm, place names, typhoon signals and designations are not retrospectives", () => {
+    const withMelissa = new Set(["trudy", "melissa"]);
+    expect(verdict("Jamaica begins long recovery after Hurricane Melissa", { storms: withMelissa }).keep).toBe(true);
+    // without the storm list the 'after Hurricane X' rule still applies
+    expect(verdict("Jamaica begins long recovery after Hurricane Melissa").keep).toBe(false);
+    expect(verdict("Wildfire near Hurricane Ridge forces park closures", { storms }).keep).toBe(true);
+    expect(verdict("Typhoon Signal No. 8 hoisted as winds rise in Hong Kong", { storms }).keep).toBe(true);
+    expect(verdict("Tropical Depression 22W could become a typhoon this weekend", { storms }).keep).toBe(true);
+    // one list: an action word (CURRENT_ACTION) is never read as a name
+    expect(stormNamesIn("Hurricane Strengthens off the coast; Typhoon Nears Okinawa")).toEqual([]);
+  });
+
   it("keeps a headline that names a current storm next to a past one", () => {
     expect(verdict("Hurricane Trudy follows the path of Hurricane Ida", { storms }).keep).toBe(true);
   });

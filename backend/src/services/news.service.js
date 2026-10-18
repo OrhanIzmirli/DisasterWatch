@@ -353,15 +353,8 @@ export function createNewsService({
     return cache;
   }
 
-  /** EONET's current storms plus the storms in the feed; null when EONET's list is unavailable. */
-  async function currentStorms(events) {
-    if (!stormContext) return null;
-    let names = null;
-    try {
-      names = await stormContext.names();
-    } catch (err) {
-      log.warn(`[news] storm list failed: ${err?.message || err}`);
-    }
+  /** The storm lists (EONET + GDACS) plus the open storms in the feed; null when the lists are unknown. */
+  function currentStorms(events, names) {
     if (!names) return null;
     const all = new Set(names);
     // open feed storms only: closed ones are in EONET's list when they closed within 14 days (the feed keeps 30)
@@ -389,8 +382,10 @@ export function createNewsService({
     refreshing = (async () => {
       const startedAt = now();
       try {
+        // the storm lists (EONET + GDACS) do not depend on the feed: fetched alongside it
+        const stormNames = stormContext ? stormContext.names().catch((err) => (log.warn(`[news] storm list failed: ${err?.message || err}`), null)) : Promise.resolve(null);
         const events = await loadEvents();
-        storms = await currentStorms(events);
+        storms = currentStorms(events, await stormNames);
         const rules = { now: startedAt, storms };
         const top = pickTopEvents(events, topEvents).map((ev) => ({ ...ev, locationText: eventLabel(ev) }));
         const plan = buildSearchPlan(top, { maxQueries: MAX_EVENT_QUERIES });

@@ -173,6 +173,8 @@ const STORM_NAME_STOPWORDS = new Set([
   "landfall", "alert", "alerts", "hits", "strikes", "slams", "makes", "passes", "batters", "lashes", "nears", "heads", "approaches",
   "live", "update", "updates", "insurance", "claims", "preparedness", "shelter", "shelters", "evacuation", "evacuations", "cleanup",
   "aftermath", "death", "deaths", "toll", "names", "name", "and", "the", "of", "in", "to", "as", "is", "could", "may", "will", "was", "were",
+  // places and signals named after storms ("Hurricane Ridge", "Typhoon Lagoon", Hong Kong's "Typhoon Signal No. 8")
+  "ridge", "harbor", "harbour", "lagoon", "point", "creek", "mountain", "signal", "signals",
 ]);
 
 /**
@@ -183,7 +185,8 @@ const STORM_NAME_STOPWORDS = new Set([
 function asStormName(word) {
   if (!/^(\p{Lu}|\d)/u.test(word)) return null;
   const name = word.replace(/['’]s?$/u, "").toLowerCase();
-  return name && !STORM_NAME_STOPWORDS.has(name) ? name : null;
+  // an action word ("Pummels", "Strengthens") is never a name: one list (CURRENT_ACTION) serves both rules
+  return name && !STORM_NAME_STOPWORDS.has(name) && !CURRENT_ACTION.test(name) ? name : null;
 }
 
 /** Lower-cased storm names in a title ("Hurricane Trudy, Typhoon Koguma" -> ["trudy", "koguma"]). Also used on EONET storm titles. */
@@ -271,7 +274,10 @@ export function isDisasterNews(article, { now = new Date(), storms = null } = {}
 
   // every "after/since/following <class> X" counts, not just the first ("after storm hits, a year after Hurricane Helene")
   for (const after of String(article?.title ?? "").matchAll(AFTER_NAMED_STORM)) {
-    if (!asStormName(after[1])) continue;
+    const name = asStormName(after[1]);
+    if (!name) continue;
+    // aftermath coverage of a current storm ("long recovery after Hurricane Melissa" while Melissa is open) is not a retrospective
+    if (storms && isCurrentStorm(name, storms)) continue;
     const rest = normalise(String(article.title).replace(after[0], " "));
     if (!first(rest, IMPACT) && !first(rest, STRONG)) return { keep: false, marker: true, reason: `retrospective ("${after[0].toLowerCase()}", no impact in the headline)` };
   }
@@ -280,7 +286,8 @@ export function isDisasterNews(article, { now = new Date(), storms = null } = {}
   // Without the storm list (EONET unreachable) the rule is skipped rather than guessed.
   // Skipped for headlines that report the storm acting now, and for Title Case headlines (names unreliable there).
   if (storms && !stormActsNow(article?.title) && !isTitleCase(article?.title)) {
-    const named = stormNamesIn(article?.title);
+    // basin designations (22W, 01P) are spelled differently by EONET and GDACS ("TWENTYTWO"): never decisive
+    const named = stormNamesIn(article?.title).filter((n) => !/^\d/.test(n));
     if (named.length && !named.some((n) => isCurrentStorm(n, storms))) {
       return { keep: false, marker: true, reason: `retrospective (storm "${named.join('", "')}" not active or recently closed)` };
     }
