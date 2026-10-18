@@ -34,6 +34,14 @@ export type EventDetails = {
   gdacsLevel?: "green" | "orange" | "red" | null;
   gdacsScore?: number | null;
   severity: "high" | "medium" | "low" | "unrated";
+  /**
+   * EONET events: "approximate" when GDACS's event point (the marker) and the
+   * EONET geometry lie more than 100 km apart; absent for USGS quakes.
+   */
+  locationPrecision?: "exact" | "approximate";
+  locationSource?: "gdacs" | "eonet";
+  locationReason?: string;
+  locationOffsetKm?: number | null;
   severityReason: string;
   severitySource: string;
 };
@@ -216,6 +224,9 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
               <Row label="Place">{d?.place ?? (cleanTitle(event.location) || NOT_REPORTED)}</Row>
               <Row label="Coordinates">
                 {fmtCoord(event.lat)}, {fmtCoord(event.lng)}
+                {d?.locationPrecision === "approximate" && (
+                  <div className="edd-sub edd-approx">Approximate location — sources disagree on the exact area</div>
+                )}
               </Row>
               {isQuake && (
                 <Row label="Depth">{d?.depthKm !== null && d?.depthKm !== undefined ? `${d.depthKm.toFixed(1)} km` : NOT_REPORTED}</Row>

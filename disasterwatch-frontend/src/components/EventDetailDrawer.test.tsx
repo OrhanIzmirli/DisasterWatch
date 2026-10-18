@@ -62,3 +62,21 @@ describe("EventDetailDrawer keyboard behaviour", () => {
     expect(document.activeElement).toBe(opener);
   });
 });
+
+describe("EventDetailDrawer location precision", () => {
+  const details = (locationPrecision?: "exact" | "approximate") =>
+    ({ cleanTitle: "Flood in Türkiye", sources: [], severity: "low", severityReason: "Low", severitySource: "GDACS", ...(locationPrecision ? { locationPrecision } : {}) }) as unknown as DrawerEvent["details"];
+
+  it("says so when the sources disagree on the exact area", () => {
+    render(<EventDetailDrawer event={{ ...event, details: details("approximate") }} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText("Approximate location — sources disagree on the exact area")).toBeTruthy();
+  });
+
+  it("adds nothing for an exact location or without the field (USGS)", () => {
+    render(<EventDetailDrawer event={{ ...event, details: details("exact") }} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.queryByText(/Approximate location/)).toBeNull();
+    cleanup();
+    render(<EventDetailDrawer event={{ ...event, details: details() }} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.queryByText(/Approximate location/)).toBeNull();
+  });
+});

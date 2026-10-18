@@ -112,6 +112,41 @@ export function pickBestLatLngFromGeometryArray(geometryArr) {
   return null;
 }
 
+/** Above this distance between the GDACS point and the EONET geometry, the sources disagree on where the event is. */
+export const LOCATION_DISAGREEMENT_KM = 100;
+
+function distanceKm([lng1, lat1], [lng2, lat2]) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const a = Math.sin(rad(lat2 - lat1) / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/**
+ * Where to put the marker. GDACS's own event point is the authority when the
+ * event links to GDACS (EONET copies one episode's "affected area" polygon
+ * and can keep a stale one, e.g. GDACS flood 1104230: GDACS point in
+ * Istanbul, the polygon EONET kept in south-central Türkiye). The EONET
+ * geometry (centroid of a polygon, or its point) is used only without a
+ * GDACS point. When both exist and lie more than LOCATION_DISAGREEMENT_KM
+ * apart, the location is flagged "approximate".
+ *
+ *   -> { coords: [lng, lat], precision: "exact" | "approximate", source: "gdacs" | "eonet", reason, offsetKm } or null
+ */
+export function resolveEventLocation(eonetCoords, gdacsPlace) {
+  const gdacs = Number.isFinite(gdacsPlace?.lat) && Number.isFinite(gdacsPlace?.lng) ? [gdacsPlace.lng, gdacsPlace.lat] : null;
+  const eonet = Array.isArray(eonetCoords) && eonetCoords.every(isFiniteNumber) ? eonetCoords : null;
+  if (!gdacs) return eonet ? { coords: eonet, precision: "exact", source: "eonet", reason: null, offsetKm: null } : null;
+  const offsetKm = eonet ? Math.round(distanceKm(gdacs, eonet)) : null;
+  const disagree = offsetKm !== null && offsetKm > LOCATION_DISAGREEMENT_KM;
+  return {
+    coords: gdacs,
+    precision: disagree ? "approximate" : "exact",
+    source: "gdacs",
+    reason: disagree ? "sources disagree on exact area" : null,
+    offsetKm,
+  };
+}
+
 export function normalizeNasaEvents(events) {
   const arr = Array.isArray(events) ? events : [];
   const out = [];
@@ -121,9 +156,10 @@ export function normalizeNasaEvents(events) {
     const type = mapCategoryToType(catTitle);
     if (!type) continue;
 
-    // Find best coordinates from geometry (handles Flood polygons too)
+    // Find best coordinates from geometry (handles Flood polygons too); the GDACS point wins when there is one
     const best = pickBestLatLngFromGeometryArray(ev?.geometry);
-    const coords = best?.coords;
+    const place = resolveEventLocation(best?.coords, ev?.gdacsPlace);
+    const coords = place?.coords;
 
     const lng = Array.isArray(coords) ? Number(coords[0]) : null;
     const lat = Array.isArray(coords) ? Number(coords[1]) : null;
@@ -152,7 +188,12 @@ export function normalizeNasaEvents(events) {
       lat,
       lng,
       // Rich, source-faithful fields (new; everything above is unchanged)
-      details,
+      details: {
+        ...details,
+        locationPrecision: place.precision,
+        locationSource: place.source,
+        ...(place.reason ? { locationReason: place.reason, locationOffsetKm: place.offsetKm } : {}),
+      },
     });
     // Country from the source place name only (null when it cannot be derived)
     const last = out[out.length - 1];
