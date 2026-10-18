@@ -55,3 +55,16 @@ describe("FeedRow keyboard interaction", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("FeedRow subtitle", () => {
+  it("shows the subtitle under the title and includes it in the accessible name", () => {
+    render(<ul><FeedRow {...props} subtitle="≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct" onSelect={() => {}} /></ul>);
+    expect(screen.getByText("≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct").className).toBe("disaster-subtitle");
+    expect(screen.getByRole("button", { name: "Wildfire: Wildfire in Australia, ≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct, low" })).toBeTruthy();
+  });
+
+  it("renders no subtitle line when there is none", () => {
+    const { container } = render(<ul><FeedRow {...props} subtitle={null} onSelect={() => {}} /></ul>);
+    expect(container.querySelector(".disaster-subtitle")).toBeNull();
+  });
+});

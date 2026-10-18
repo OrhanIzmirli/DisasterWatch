@@ -8,7 +8,7 @@
  * works inside one pair of parentheses, phrases are quoted.
  */
 import { createGdeltClient } from "../gdelt.js";
-import { GENERAL_QUERY, normalizeArticle, placeTokens } from "../newsLinking.js";
+import { GENERAL_QUERY, normalizeArticle, placeTokens, withUrlDate } from "../newsLinking.js";
 
 export const GDELT_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 /** Articles are searched over the last 72 h, so they are kept at most that long. */
@@ -44,7 +44,8 @@ export function buildGdeltGroupQuery(group) {
 }
 
 export function createGdeltProvider({ client = createGdeltClient(), timespan = "72h" } = {}) {
-  const normalize = (raw) => raw.map(normalizeArticle).filter(Boolean).map((a) => ({ ...a, provider: "gdelt" }));
+  // publishedAt: the URL's publication day when it is earlier than GDELT's seen date (see withUrlDate)
+  const normalize = (raw) => raw.map(normalizeArticle).filter(Boolean).map((a) => ({ ...withUrlDate(a), provider: "gdelt" }));
   return {
     name: "gdelt",
     label: "GDELT",

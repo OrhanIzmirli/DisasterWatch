@@ -3,6 +3,8 @@ export type FeedRowProps = {
   typeLabel: string;
   typeClass: string;
   title: string;
+  /** Tells apart events that share a title (backend `subtitle`); absent for most rows. */
+  subtitle?: string | null;
   meta: string;
   severityLabel: string;
   severityClass: string;
@@ -16,13 +18,13 @@ export type FeedRowProps = {
  * with the event as its name. The focus ring is drawn for keyboard focus
  * only (:focus-visible), never on a mouse click.
  */
-export default function FeedRow({ typeLabel, typeClass, title, meta, severityLabel, severityClass, onSelect }: FeedRowProps) {
+export default function FeedRow({ typeLabel, typeClass, title, subtitle, meta, severityLabel, severityClass, onSelect }: FeedRowProps) {
   return (
     <li className="disaster-row-item">
       <button
         type="button"
         className="disaster-row"
-        aria-label={`${typeLabel}: ${title}, ${severityLabel.replace(/^[^A-Za-z]+/, "").toLowerCase()}`}
+        aria-label={`${typeLabel}: ${title}${subtitle ? `, ${subtitle}` : ""}, ${severityLabel.replace(/^[^A-Za-z]+/, "").toLowerCase()}`}
         onClick={(e) => onSelect(e.currentTarget)}
       >
         <span className="disaster-row-main">
@@ -30,6 +32,7 @@ export default function FeedRow({ typeLabel, typeClass, title, meta, severityLab
             <span className={`disaster-type-tag ${typeClass}`}>{typeLabel}</span>
             <span className="disaster-location">{title}</span>
           </span>
+          {subtitle && <span className="disaster-subtitle">{subtitle}</span>}
           <span className="disaster-meta">{meta}</span>
         </span>
         <span className={`disaster-severity ${severityClass}`}>{severityLabel}</span>

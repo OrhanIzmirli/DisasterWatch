@@ -761,6 +761,13 @@
   color: #4b5563;
 }
 
+/* tells apart same-titled events ("Wildfire in Australia" x 14): coordinates, area, start date */
+.disaster-subtitle {
+  font-size: 0.75rem;
+  color: #374151;
+  font-variant-numeric: tabular-nums;
+}
+
 /* TYPE TAGS */
 
 .disaster-type-tag {
@@ -3836,7 +3843,8 @@ button.disaster-row {
     text-align: left;
   }
 
-  .disaster-meta {
+  .disaster-meta,
+  .disaster-subtitle {
     font-size: 0.7rem;
   }
 
