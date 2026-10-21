@@ -4,6 +4,7 @@ import {
   createTestApp,
   resetDb,
   registerAgent,
+  confirmAddress,
   sessionCookie,
   prisma,
   PASSWORD,
@@ -15,12 +16,11 @@ const app = createTestApp();
 describe("POST /users/register", () => {
   beforeEach(resetDb);
 
-  it("gives the admin role only to e-mails listed in ADMIN_EMAILS", async () => {
-    const listed = await request(app)
-      .post("/users/register")
-      .send({ email: "admin@example.com", password: PASSWORD });
+  it("never makes a new account an admin, not even an ADMIN_EMAILS address: registering does not prove the address", async () => {
+    const { agent, res: listed } = await registerAgent(app, "admin@example.com");
     expect(listed.status).toBe(201);
-    expect(listed.body.user).toMatchObject({ email: "admin@example.com", role: "admin" });
+    expect(listed.body.user).toMatchObject({ email: "admin@example.com", role: "user" });
+    expect((await agent.get("/admin/users")).status).toBe(403);
 
     const unlisted = await request(app)
       .post("/users/register")
@@ -29,17 +29,21 @@ describe("POST /users/register", () => {
     expect(unlisted.body.user).toMatchObject({ email: "someone@example.com", role: "user" });
 
     const rows = await prisma.user.findMany({ orderBy: { id: "asc" } });
-    expect(rows.map((u) => u.role)).toEqual(["admin", "user"]);
+    expect(rows.map((u) => u.role)).toEqual(["user", "user"]);
+
+    // once the listed address is confirmed it is an admin, in the same session
+    await confirmAddress("admin@example.com");
+    expect((await agent.get("/users/me")).body.user.role).toBe("admin");
+    expect((await agent.get("/admin/users")).status).toBe(200);
   });
 
   it("matches ADMIN_EMAILS case-insensitively and ignores whitespace", async () => {
     process.env.ADMIN_EMAILS = "  Ops@Example.COM , other@example.com ";
     try {
-      const res = await request(app)
-        .post("/users/register")
-        .send({ email: "OPS@example.com", password: PASSWORD });
+      const { agent, res } = await registerAgent(app, "OPS@example.com");
       expect(res.status).toBe(201);
-      expect(res.body.user.role).toBe("admin");
+      await confirmAddress("ops@example.com");
+      expect((await agent.get("/users/me")).body.user.role).toBe("admin");
     } finally {
       process.env.ADMIN_EMAILS = "admin@example.com";
     }
@@ -171,10 +175,11 @@ describe("POST /users/login", () => {
   });
 });
 
-describe("POST /users/login keeps the role in sync with ADMIN_EMAILS", () => {
+describe("POST /users/login keeps the role in sync with ADMIN_EMAILS and the confirmed address", () => {
   beforeEach(async () => {
     await resetDb();
     await registerAgent(app, "sync@example.com"); // not listed -> user
+    await confirmAddress("sync@example.com");
   });
 
   afterEach(() => {
@@ -194,6 +199,15 @@ describe("POST /users/login keeps the role in sync with ADMIN_EMAILS", () => {
 
     const row = await prisma.user.findUnique({ where: { email: "sync@example.com" } });
     expect(row.role).toBe("admin");
+  });
+
+  it("does not promote a listed address that was never confirmed", async () => {
+    await prisma.user.update({ where: { email: "sync@example.com" }, data: { emailVerifiedAt: null, emailConfirmedSignedInAt: null } });
+    process.env.ADMIN_EMAILS = "admin@example.com,sync@example.com";
+    const res = await login();
+    expect(res.status).toBe(200);
+    expect(res.body.user.role).toBe("user");
+    expect((await prisma.user.findUnique({ where: { email: "sync@example.com" } })).role).toBe("user");
   });
 
   it("demotes an admin whose e-mail was removed from the list", async () => {
@@ -241,17 +255,25 @@ describe("GET /users/me", () => {
     expect(new Date(res.body.user.createdAt).toString()).not.toBe("Invalid Date");
   });
 
-  it("reflects a role change made in the database without re-login", async () => {
+  it("works the role out on every request: a stored admin role alone grants nothing, a list change applies without re-login", async () => {
     const { agent } = await registerAgent(app, "promoted@example.com"); // not listed -> user
-
     expect((await agent.get("/users/me")).body.user.role).toBe("user");
 
-    await prisma.user.update({
-      where: { email: "promoted@example.com" },
-      data: { role: "admin" },
-    });
+    // a stored role (e.g. left over from before) is not enough
+    await prisma.user.update({ where: { email: "promoted@example.com" }, data: { role: "admin" } });
+    expect((await agent.get("/users/me")).body.user.role).toBe("user");
+    expect((await agent.get("/admin/users")).status).toBe(403);
 
-    expect((await agent.get("/users/me")).body.user.role).toBe("admin");
+    await confirmAddress("promoted@example.com");
+    process.env.ADMIN_EMAILS = "admin@example.com,promoted@example.com";
+    try {
+      expect((await agent.get("/users/me")).body.user.role).toBe("admin");
+      expect((await agent.get("/admin/users")).status).toBe(200);
+    } finally {
+      process.env.ADMIN_EMAILS = "admin@example.com";
+    }
+    // removed from the list: the open session loses the console at once
+    expect((await agent.get("/admin/users")).status).toBe(403);
   });
 
   it("returns 401 when the user behind a valid cookie no longer exists", async () => {

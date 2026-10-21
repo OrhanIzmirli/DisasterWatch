@@ -984,11 +984,6 @@
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
 }
 
-.channel-card h3 {
-  font-size: 0.9rem;
-  margin-bottom: 0.35rem;
-}
-
 .channel-card ul {
   padding-left: 1.1rem;
 }
@@ -2370,8 +2365,9 @@ body {
 }
 
 /* alerts info cards: keep list indentation inside the shared card */
-.channel-card h3 {
+.channel-card h2 {
   font-size: 0.9rem;
+  margin-top: 0.9rem; /* the h3 default (1em) this heading had before it became an h2 */
   margin-bottom: 0.35rem;
   color: var(--dw-cream);
 }
@@ -3944,4 +3940,87 @@ button.disaster-row {
   .disaster-sort {
     font-size: 1rem;
   }
+}
+
+/* ---- privacy page, site footer, account deletion ---- */
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.25rem 1rem 1.5rem;
+  font-size: 0.85rem;
+  color: var(--dw-text-muted);
+}
+
+.site-footer-link {
+  color: var(--dw-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.site-footer-link:hover {
+  color: var(--dw-text);
+}
+
+.privacy-note {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--dw-text-muted);
+}
+
+.privacy-section {
+  margin-bottom: 1rem;
+  line-height: 1.55;
+}
+
+.privacy-heading {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+  color: var(--dw-cream);
+}
+
+.privacy-section p,
+.privacy-section ul {
+  margin: 0 0 0.6rem;
+}
+
+.privacy-section ul {
+  padding-left: 1.2rem;
+}
+
+.privacy-section li + li {
+  margin-top: 0.35rem;
+}
+
+.auth-notice {
+  margin: 0 0 0.8rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--dw-border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--dw-text);
+}
+
+.auth-privacy {
+  margin-top: 0.9rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--dw-text-muted);
+}
+
+.account-delete {
+  margin-top: 1rem;
+}
+
+h2.card-title {
+  margin-top: 0;
+}
+
+.account-delete .channel-note {
+  margin-bottom: 0.8rem;
+}
+
+.account-delete-form .form-field {
+  max-width: 22rem;
 }

@@ -4,9 +4,11 @@ import type { AuthUser } from "../App";
 
 type Props = {
   onSignedIn: (user: AuthUser) => void;
+  /** e.g. "Your account and all its data were deleted." after DELETE /users/me */
+  notice?: string | null;
 };
 
-const SignInPage = ({ onSignedIn }: Props) => {
+const SignInPage = ({ onSignedIn, notice = null }: Props) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -55,15 +57,21 @@ const SignInPage = ({ onSignedIn }: Props) => {
   };
 
   return (
-    <div className="auth-page">
+    <main className="auth-page">
       <div className="auth-card">
         <h1 className="auth-title">Sign in</h1>
         <p className="auth-subtitle">Sign in to manage your alert subscriptions.</p>
+        {notice && (
+          <p className="auth-notice" role="status">
+            {notice}
+          </p>
+        )}
 
         <form className="auth-form" onSubmit={submit}>
           <div className="form-field">
-            <label>Email</label>
+            <label htmlFor="signin-email">Email</label>
             <input
+              id="signin-email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@example.com"
@@ -73,8 +81,9 @@ const SignInPage = ({ onSignedIn }: Props) => {
           </div>
 
           <div className="form-field">
-            <label>Password</label>
+            <label htmlFor="signin-password">Password</label>
             <input
+              id="signin-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -97,7 +106,7 @@ const SignInPage = ({ onSignedIn }: Props) => {
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 };
 

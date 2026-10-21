@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
-type State = "ready" | "working" | "done" | "invalid" | "error";
+type State = "ready" | "working" | "done" | "invalid" | "signin" | "error";
 
 type Props = {
   title: string;
@@ -26,6 +26,8 @@ type Props = {
 export default function TokenActionPage({ title, action, intro, done, invalid, endpoint }: Props) {
   const [token] = useState(() => new URLSearchParams(window.location.search).get("token") ?? "");
   const [state, setState] = useState<State>(token ? "ready" : "invalid");
+  const [signInMessage, setSignInMessage] = useState("");
+  const location = useLocation();
 
   useEffect(() => {
     const previous = document.title;
@@ -43,8 +45,10 @@ export default function TokenActionPage({ title, action, intro, done, invalid, e
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      const next = res.ok ? "done" : res.status === 404 ? "invalid" : "error";
-      if (next !== "error") window.history.replaceState(null, "", window.location.pathname); // used up: out of the address bar
+      // 403: this link needs the account's session (an address on the admin list); the token stays usable
+      const next = res.ok ? "done" : res.status === 404 ? "invalid" : res.status === 403 ? "signin" : "error";
+      if (next === "signin") setSignInMessage((await res.json().catch(() => null))?.message ?? "Sign in first, then open the link again.");
+      if (next === "done" || next === "invalid") window.history.replaceState(null, "", window.location.pathname); // used up: out of the address bar
       setState(next);
     } catch {
       setState("error");
@@ -71,6 +75,16 @@ export default function TokenActionPage({ title, action, intro, done, invalid, e
         )}
         {state === "done" && done}
         {state === "invalid" && invalid}
+        {state === "signin" && (
+          <>
+            <p>{signInMessage}</p>
+            <div className="card-actions">
+              <Link to="/signin" state={{ from: `${location.pathname}${location.search}` }} className="btn btn-primary">
+                Sign in
+              </Link>
+            </div>
+          </>
+        )}
         {state === "error" && <p>Something went wrong, nothing was changed. Please try again in a moment.</p>}
         <div className="card-actions">
           <Link to="/alerts" className="btn btn-secondary">

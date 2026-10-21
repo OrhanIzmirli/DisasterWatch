@@ -59,9 +59,10 @@ The whole stack runs on localhost with one `docker compose up`; the same images 
 - **Alert subscriptions:** hazard type (or any), minimum severity, a centre point and a radius in km. Minimum `low` means every event, including not-rated ones; `medium` and `high` never match a not-rated event.
 - **Notifications:** new events that match a subscription appear in the bell in the header (polled every 60 s).
 - **E-mail alerts (opt-in):** off by default; a switch with the consent text on the Alerts page turns them on. One summary e-mail per user per run, a daily limit, one-click unsubscribe ([E-mail alerts](#e-mail-alerts)).
+- **Privacy and deletion:** a plain-language privacy page (`/privacy`, linked from the footer of every content page and from sign-up) lists what is stored, who processes it (Render, Neon, Resend), how long it is kept and how to delete it. On *My account* a user deletes their own account after entering the password again; subscriptions and notifications go with it, the e-mail records are anonymised. An `ADMIN_EMAILS` address confirms only while signed in to its account (so whoever registered the owner's address first cannot become admin through the owner's click).
 
 ### 6) Admin console
-- Accounts whose e-mail is listed in `ADMIN_EMAILS` get the `admin` role. Admins can list, disable, enable and delete users, read the audit log (every admin action is written in the same transaction as the action), create manual disaster entries and publish a test event to Kafka.
+- Accounts whose e-mail is listed in `ADMIN_EMAILS` **and confirmed while signed in** get the `admin` role: the double opt-in link of the e-mail alerts, opened in a browser that is signed in to that account, sets `emailConfirmedSignedInAt` (password and mailbox proven together). Registering does not prove an address and a click on the link proves only the mailbox, so a new account, or one confirmed without its session, is never an admin, not even when its address is added to the list later. The role is worked out on every request, so a list change applies to open sessions at once. To become admin: register the listed address, sign in, turn e-mail alerts on, open the confirmation link in the same browser (alerts can be turned off again afterwards). Admins can list, disable, enable and delete users, read the audit log (every admin action is written in the same transaction as the action), create manual disaster entries and publish a test event to Kafka.
 
 ### 7) Event-driven architecture (Kafka)
 - The backend records new NASA/USGS events in an outbox table and publishes them to the topic `disaster-events`; the notification service consumes them and creates notifications. At-least-once delivery, at most one notification per user and event. Details in [Event-driven notification pipeline](#event-driven-notification-pipeline).
@@ -198,7 +199,7 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | `JWT_SECRET` | yes | dev placeholder | signs session tokens. **32+ characters**; with `NODE_ENV=production` the server refuses to start when it is missing, shorter, the literal `CHANGE_ME`, the `.env.example` value or anything containing "change me". Generate: `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"` |
 | `JWT_EXPIRES_IN` | no | `1d` | token lifetime; keep in line with the 24 h cookie |
 | `COOKIE_NAME` | no | `dw_session` | session cookie name |
-| `ADMIN_EMAILS` | no | empty | comma-separated e-mails that get the `admin` role (case-insensitive). Synced on every login: added → promoted, removed → demoted. There is no other way to become admin |
+| `ADMIN_EMAILS` | no | empty | comma-separated e-mails that get the `admin` role (case-insensitive) once the address is confirmed while signed in. Checked on every request: added → promoted, removed → demoted. There is no other way to become admin |
 | `NODE_ENV` | no | – | `production` enables the Secure cookie flag and the strict `JWT_SECRET` check (every deployment); Compose runs the local stack with `development`; `test` disables the background jobs |
 | `PORT` | no | `5000` | HTTP port (Render provides it) |
 | `KAFKA_BROKER` | no | `dw-kafka:9092` | broker(s), comma-separated. `KAFKA_BROKERS` and `KAFKA_BOOTSTRAP_SERVERS` are accepted as aliases |
@@ -246,6 +247,7 @@ All paths are relative to the backend (`http://localhost:5000`) or to the proxy 
 | `GET /news?type=&region=&event=` | – | cached news articles, linked to feed events and placed in a region ([News](#news)) |
 | `POST /users/register`, `POST /users/login`, `POST /users/logout` | – | `{ email, password }`; sets or clears the session cookie. Rate limited |
 | `GET /users/me` | user | the signed-in user |
+| `DELETE /users/me` | user | `{ password }`: deletes the account with its subscriptions and notifications (cascade); its e-mail delivery rows stay anonymised (no user, message or provider id; a pending one is cancelled) because the daily limit and the confirmation cap are counted from them; audit rows about it and manual entries it wrote keep only the masked address; clears the cookie. 403 wrong password; rate limited like sign-in |
 | `GET /alerts`, `POST /alerts`, `PATCH /alerts/:id`, `DELETE /alerts/:id` | user | alert subscriptions (`type`, `minSeverity`, `label`, `centerLat`, `centerLng`, `radiusKm`, `active`) |
 | `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` | user | in-app notifications of the signed-in user |
 | `GET /alerts/email`, `PUT /alerts/email` | user | e-mail alerts of the signed-in user: `{ enabled, consentAt, channel: { state, dailyLimit, sentLast24h } }`; turning on needs `{ enabled: true, consent: true }` |

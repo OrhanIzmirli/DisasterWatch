@@ -59,7 +59,7 @@ const SignUpPage = ({ onSignedIn }: Props) => {
   };
 
   return (
-    <div className="auth-page">
+    <main className="auth-page">
       <div className="auth-card">
         <h1 className="auth-title">Sign up</h1>
         <p className="auth-subtitle">
@@ -69,8 +69,9 @@ const SignUpPage = ({ onSignedIn }: Props) => {
 
         <form className="auth-form" onSubmit={submit}>
           <div className="form-field">
-            <label>Email</label>
+            <label htmlFor="signup-email">Email</label>
             <input
+              id="signup-email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@example.com"
@@ -80,8 +81,9 @@ const SignUpPage = ({ onSignedIn }: Props) => {
           </div>
 
           <div className="form-field">
-            <label>Password</label>
+            <label htmlFor="signup-password">Password</label>
             <input
+              id="signup-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 8 characters"
@@ -93,9 +95,9 @@ const SignUpPage = ({ onSignedIn }: Props) => {
           {error && (
             <div className="form-error">
               {error}{" "}
-              {error.startsWith("Bu e-posta") && (
+              {error.startsWith("This e-mail is already registered") && (
                 <Link className="auth-link" to="/signin">
-                  Giriş yap
+                  Sign in
                 </Link>
               )}
             </div>
@@ -106,6 +108,11 @@ const SignUpPage = ({ onSignedIn }: Props) => {
           </button>
         </form>
 
+        <p className="auth-privacy">
+          We store your e-mail address, your alerts and your notifications, and nothing for tracking or advertising. You can
+          delete all of it at any time. <Link to="/privacy" className="auth-link">Privacy</Link>
+        </p>
+
         <div className="auth-footer">
           <span>Already have an account?</span>{" "}
           <Link to="/signin" className="auth-link">
@@ -113,7 +120,7 @@ const SignUpPage = ({ onSignedIn }: Props) => {
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 };
 

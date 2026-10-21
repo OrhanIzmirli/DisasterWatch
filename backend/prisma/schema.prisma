@@ -33,6 +33,9 @@ model User {
   /// Double opt-in: the address is only e-mailed alerts after its owner
   /// opened the confirmation link (registration does not verify addresses).
   emailVerifiedAt       DateTime?
+  /// Set when the confirmation link was opened while signed in to this account (password and
+  /// mailbox proven together). Only then can an ADMIN_EMAILS address be an admin (utils/adminEmails.js).
+  emailConfirmedSignedInAt DateTime?
   /// Token of the confirmation link; cleared once used.
   emailConfirmToken     String?             @unique
   /// When the notification-service queued the confirmation e-mail.
@@ -139,8 +142,10 @@ model Notification {
 /// provider idempotency key and the daily limit is counted from here.
 model EmailDelivery {
   id                Int            @id @default(autoincrement())
-  userId            Int
-  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// null once the account is deleted: the row stays, anonymised, because the
+  /// daily limit and the confirmation cap are counted from it (utils/accountDeletion.js)
+  userId            Int?
+  user              User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   /// "digest" (alerts) | "confirm" (double opt-in link, no user-written text)
   kind              String         @default("digest")
   /// "pending" | "sent" | "failed" | "cancelled"

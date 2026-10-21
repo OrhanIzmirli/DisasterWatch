@@ -197,6 +197,48 @@ describe("double opt-in: the address must be confirmed (registration does not ve
     expect((await request(app).get(`/email/confirm?token=${token}`)).status).toBe(404);
     expect((await userRow()).emailVerifiedAt).toBeNull();
   });
+
+  it("an ADMIN_EMAILS address confirms only with that account's own session (someone who registered the owner's address first cannot become admin)", async () => {
+    // "admin@example.com" is on ADMIN_EMAILS (tests/setup.js); the squatter registered it before the owner
+    const squatter = await signUp("admin@example.com");
+    await squatter.put("/alerts/email").send({ enabled: true, consent: true });
+    const { emailConfirmToken: token } = await userRow("admin@example.com");
+
+    // the owner clicks the link in their inbox: no session, or their own other account's session
+    const noSession = await request(app).post("/email/confirm").send({ token });
+    expect(noSession.status).toBe(403);
+    expect(noSession.body.message).toMatch(/sign in to the account that asked for these e-mails/);
+    const other = await signUp("other@example.com");
+    expect((await other.post("/email/confirm").send({ token })).status).toBe(403);
+    expect(await userRow("admin@example.com")).toMatchObject({ emailVerifiedAt: null, emailConfirmToken: token });
+    expect((await squatter.get("/users/me")).body.user.role).toBe("user");
+
+    // with the account's own session (whoever knows its password) the same token works
+    expect((await squatter.post("/email/confirm").send({ token })).status).toBe(200);
+    expect((await squatter.get("/users/me")).body.user.role).toBe("admin");
+  });
+
+  it("an address confirmed from the e-mail alone does not become admin when it is added to ADMIN_EMAILS later", async () => {
+    const agent = await signUp("later@example.com");
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    const { emailConfirmToken: token } = await userRow("later@example.com");
+    expect((await request(app).post("/email/confirm").send({ token })).status).toBe(200); // not listed yet: no session needed
+    process.env.ADMIN_EMAILS = "admin@example.com,later@example.com";
+    try {
+      expect((await agent.get("/users/me")).body.user.role).toBe("user");
+      expect((await agent.get("/admin/users")).status).toBe(403);
+    } finally {
+      process.env.ADMIN_EMAILS = "admin@example.com";
+    }
+  });
+
+  it("an address that is not on ADMIN_EMAILS still confirms from the e-mail alone", async () => {
+    const agent = await signUp("plain@example.com");
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    const { emailConfirmToken: token } = await userRow("plain@example.com");
+    expect((await request(app).post("/email/confirm").send({ token })).status).toBe(200);
+    expect((await agent.get("/users/me")).body.user.role).toBe("user");
+  });
 });
 
 describe("daily limit counting", () => {

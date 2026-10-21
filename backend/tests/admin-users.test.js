@@ -9,12 +9,12 @@ vi.mock("../src/services/kafkaProducer.js", () => ({
   producerStatus: vi.fn(() => "disconnected"),
 }));
 
-const { createTestApp, resetDb, registerAgent, sessionCookie, prisma, PASSWORD, COOKIE_NAME } = await import("./helpers.js");
+const { createTestApp, resetDb, registerAgent, confirmAddress, sessionCookie, prisma, PASSWORD, COOKIE_NAME } = await import("./helpers.js");
 const { maskEmail } = await import("../src/utils/audit.js");
 
 const app = createTestApp();
 
-const ADMIN = "admin@example.com"; // listed in ADMIN_EMAILS by tests/setup.js
+const ADMIN = "admin@example.com"; // listed in ADMIN_EMAILS by tests/setup.js, confirmed in beforeEach
 const ALICE = "alice@example.com";
 const BOB = "bob@example.com";
 
@@ -32,6 +32,7 @@ const SUBSCRIPTION = { label: "Home", type: "any", minSeverity: "low", centerLat
 beforeEach(async () => {
   await resetDb();
   admin = (await registerAgent(app, ADMIN)).agent;
+  await confirmAddress(ADMIN);
   alice = (await registerAgent(app, ALICE)).agent;
   await registerAgent(app, BOB);
   aliceId = await idOf(ALICE);
@@ -165,17 +166,25 @@ describe("disable / enable", () => {
     expect(row.tokenVersion).toBe(1); // bumped once by the disable
   });
 
-  it("refuses to disable yourself or another ADMIN_EMAILS account", async () => {
+  it("refuses to disable yourself or another admin (listed in ADMIN_EMAILS, address confirmed)", async () => {
     const adminId = await idOf(ADMIN);
     const self = await admin.post(`/admin/users/${adminId}/disable`);
     expect(self.status).toBe(403);
 
     process.env.ADMIN_EMAILS = `${ADMIN}, ${BOB}`; // bob is now an admin by e-mail
+    await confirmAddress(BOB);
     const other = await admin.post(`/admin/users/${bobId}/disable`);
     expect(other.status).toBe(403);
 
     expect((await prisma.user.findMany({ where: { disabledAt: { not: null } } })).length).toBe(0);
     expect(await prisma.adminAuditLog.count()).toBe(0);
+  });
+
+  it("can disable an unconfirmed account that registered an ADMIN_EMAILS address (it is not an admin)", async () => {
+    process.env.ADMIN_EMAILS = `${ADMIN}, ${BOB}`; // bob registered the address but never confirmed it
+    const res = await admin.post(`/admin/users/${bobId}/disable`);
+    expect(res.status).toBe(200);
+    expect((await prisma.user.findUnique({ where: { id: bobId } })).disabledAt).not.toBeNull();
   });
 
   it("rejects tokens from before a tokenVersion bump even when the account is enabled again", async () => {
@@ -208,13 +217,20 @@ describe("DELETE /admin/users/:id", () => {
     expect((await alice.get("/users/me")).status).toBe(401); // session gone with the account
   });
 
-  it("refuses to delete yourself or another ADMIN_EMAILS account", async () => {
+  it("refuses to delete yourself or another admin (listed in ADMIN_EMAILS, address confirmed)", async () => {
     const adminId = await idOf(ADMIN);
     expect((await admin.delete(`/admin/users/${adminId}`).send({ confirmEmail: ADMIN })).status).toBe(403);
 
     process.env.ADMIN_EMAILS = `${ADMIN}, ${BOB}`;
+    await confirmAddress(BOB);
     expect((await admin.delete(`/admin/users/${bobId}`).send({ confirmEmail: BOB })).status).toBe(403);
     expect(await prisma.user.count()).toBe(3);
+  });
+
+  it("can delete an unconfirmed account that registered an ADMIN_EMAILS address, so the owner can register it", async () => {
+    process.env.ADMIN_EMAILS = `${ADMIN}, ${BOB}`;
+    expect((await admin.delete(`/admin/users/${bobId}`).send({ confirmEmail: BOB })).status).toBe(200);
+    expect(await prisma.user.count()).toBe(2);
   });
 });
 

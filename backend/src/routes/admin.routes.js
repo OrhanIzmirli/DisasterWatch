@@ -3,7 +3,8 @@
  *
  * Design decisions (fixed):
  *  - no user creation here (invitations arrive with the e-mail PR);
- *  - roles are never changed here, ADMIN_EMAILS is the single source;
+ *  - roles are never changed here: ADMIN_EMAILS plus a confirmed address
+ *    decide (utils/adminEmails.js roleFor);
  *  - disable and delete take effect immediately: disable bumps tokenVersion
  *    so every session of that user is rejected on its next request.
  *
@@ -13,8 +14,9 @@ import express from "express";
 import { z } from "zod";
 import prisma from "../prisma.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
-import { isAdminEmail } from "../utils/adminEmails.js";
+import { roleFor } from "../utils/adminEmails.js";
 import { maskEmail, writeAudit } from "../utils/audit.js";
+import { eraseAccount } from "../utils/accountDeletion.js";
 
 const router = express.Router();
 
@@ -28,7 +30,7 @@ const pageParam = z.coerce.number().int().positive().catch(1);
 const userListSelect = {
   id: true,
   email: true,
-  role: true,
+  emailConfirmedSignedInAt: true,
   createdAt: true,
   lastLoginAt: true,
   disabledAt: true,
@@ -53,18 +55,23 @@ const userDetailSelect = {
 };
 
 function publicUser(u) {
-  const { _count, subscriptions, ...rest } = u;
+  const { _count, subscriptions, emailConfirmedSignedInAt, ...rest } = u;
   return {
     ...rest,
+    role: roleFor(u),
     subscriptionCount: _count?.subscriptions ?? 0,
     ...(subscriptions ? { subscriptions, notificationCount: _count?.notifications ?? 0 } : {}),
   };
 }
 
-/** Accounts that must not be disabled or deleted: the actor and anyone on ADMIN_EMAILS. */
+/**
+ * Accounts that must not be disabled or deleted: the actor and the admins (listed in
+ * ADMIN_EMAILS with a confirmed address). An unconfirmed account that registered a
+ * listed address is an ordinary account and can be removed.
+ */
 function protectedReason(actor, target) {
   if (target.id === actor.id) return "You cannot change your own account";
-  if (isAdminEmail(target.email)) return "Admin accounts are managed through ADMIN_EMAILS";
+  if (roleFor(target) === "admin") return "Admin accounts are managed through ADMIN_EMAILS";
   return null;
 }
 
@@ -127,7 +134,7 @@ async function setDisabled(req, res, disabled) {
   if (!id.success) return res.status(400).json({ message: "Invalid user id" });
 
   try {
-    const target = await prisma.user.findUnique({ where: { id: id.data }, select: { id: true, email: true, disabledAt: true } });
+    const target = await prisma.user.findUnique({ where: { id: id.data }, select: { id: true, email: true, emailConfirmedSignedInAt: true, disabledAt: true } });
     if (!target) return res.status(404).json({ message: "User not found" });
 
     if (disabled) {
@@ -174,7 +181,7 @@ router.delete("/users/:id", async (req, res) => {
   try {
     const target = await prisma.user.findUnique({
       where: { id: id.data },
-      select: { id: true, email: true, _count: { select: { subscriptions: true, notifications: true } } },
+      select: { id: true, email: true, emailConfirmedSignedInAt: true, _count: { select: { subscriptions: true, notifications: true } } },
     });
     if (!target) return res.status(404).json({ message: "User not found" });
 
@@ -186,8 +193,8 @@ router.delete("/users/:id", async (req, res) => {
     }
 
     await prisma.$transaction(async (tx) => {
-      // Subscriptions and notifications go with the user (onDelete: Cascade)
-      await tx.user.delete({ where: { id: target.id } });
+      // subscriptions and notifications go with the user, e-mail records are anonymised
+      await eraseAccount(tx, target);
       await writeAudit(tx, {
         actor: req.user,
         action: "user.delete",
