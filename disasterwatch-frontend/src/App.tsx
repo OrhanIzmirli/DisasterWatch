@@ -15,6 +15,7 @@ import StatusBar from "./components/StatusBar";
 import NotificationBell from "./components/NotificationBell";
 import NotFoundPage from "./pages/NotFoundPage";
 import SkipLink from "./components/SkipLink";
+import SiteFooter from "./components/SiteFooter";
 import { readSessionHint, shouldCheckSession, writeSessionHint } from "./utils/sessionHint";
 
 // Pages other than the dashboard load on demand (smaller first download).
@@ -25,6 +26,7 @@ const SignInPage = lazy(() => import("./pages/SignInPage"));
 const SignUpPage = lazy(() => import("./pages/SignUpPage"));
 const UnsubscribePage = lazy(() => import("./pages/UnsubscribePage"));
 const ConfirmEmailPage = lazy(() => import("./pages/ConfirmEmailPage"));
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 
 export type AuthUser = {
   email: string;
@@ -149,6 +151,18 @@ export default function App() {
     }
   }, [navigate]);
 
+  // Shown once on the sign-in page. Kept here, not in route state: clearing the user sends
+  // /account through ProtectedRoute's own redirect to /signin, which would replace that state.
+  const [signInNotice, setSignInNotice] = useState<string | null>(null);
+
+  // the server already ended the session and cleared the cookie
+  const onAccountDeleted = useCallback(() => {
+    writeSessionHint("out");
+    setSignInNotice("Your account and all its data were deleted.");
+    setUser(null);
+    navigate("/signin", { replace: true });
+  }, [navigate]);
+
   const isAdmin = user?.role === "admin";
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -243,19 +257,32 @@ export default function App() {
               path="/account"
               element={
                 <ProtectedRoute user={user} authLoading={authLoading}>
-                  <AccountPage user={user} onSignOut={signOut} />
+                  <AccountPage user={user} onSignOut={signOut} onAccountDeleted={onAccountDeleted} />
                 </ProtectedRoute>
               }
             />
 
-            <Route path="/signin" element={<SignInPage onSignedIn={onSignedIn} />} />
+            <Route
+              path="/signin"
+              element={
+                <SignInPage
+                  notice={signInNotice}
+                  onSignedIn={(u) => {
+                    setSignInNotice(null);
+                    onSignedIn(u);
+                  }}
+                />
+              }
+            />
             <Route path="/signup" element={<SignUpPage onSignedIn={onSignedIn} />} />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route path="/confirm-email" element={<ConfirmEmailPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
 
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
+        {pathname !== "/" && <SiteFooter />}
       </div>
 
       <NewsPanel isOpen={isNewsOpen} onClose={() => setIsNewsOpen(false)} />

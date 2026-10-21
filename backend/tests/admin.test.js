@@ -9,7 +9,7 @@ vi.mock("../src/services/kafkaProducer.js", () => ({
 }));
 
 const { publishDisasterEvent } = await import("../src/services/kafkaProducer.js");
-const { createTestApp, resetDb, registerAgent, prisma } = await import("./helpers.js");
+const { createTestApp, resetDb, registerAgent, confirmAddress, prisma } = await import("./helpers.js");
 
 const app = createTestApp();
 
@@ -30,6 +30,7 @@ beforeEach(async () => {
   await resetDb();
   vi.clearAllMocks();
   admin = (await registerAgent(app, "admin@example.com")).agent; // listed in ADMIN_EMAILS
+  await confirmAddress("admin@example.com");
   user = (await registerAgent(app, "user@example.com")).agent;
 });
 

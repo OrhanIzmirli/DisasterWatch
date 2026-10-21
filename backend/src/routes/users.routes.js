@@ -4,7 +4,8 @@ import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import prisma from "../prisma.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
-import { roleForEmail } from "../utils/adminEmails.js";
+import { roleFor } from "../utils/adminEmails.js";
+import { forgetAuditAddress } from "../utils/audit.js";
 import { setSessionCookie, clearSessionCookie } from "../utils/session.js";
 
 // Brute-force protection for credential endpoints: 10 attempts per IP per 15 minutes
@@ -24,7 +25,7 @@ const withSubscriptionCount = { _count: { select: { subscriptions: true } } };
 function publicUser(user) {
   return {
     email: user.email,
-    role: user.role,
+    role: roleFor(user),
     createdAt: user.createdAt,
     subscriptionCount: user._count?.subscriptions ?? 0,
   };
@@ -35,7 +36,7 @@ function publicUser(user) {
  *
  * @param {object} [options]
  * @param {false | { windowMs?: number, limit?: number }} [options.authRateLimit]
- *   Rate limit applied to /login and /register. Defaults to production
+ *   Rate limit applied to /login, /register and DELETE /me. Defaults to production
  *   settings; `false` disables it (used by tests that need many sign-ins).
  */
 export function createUsersRouter(options = {}) {
@@ -76,11 +77,10 @@ export function createUsersRouter(options = {}) {
 
       const passwordHash = await bcrypt.hash(password, 10);
 
-      // Role comes from the ADMIN_EMAILS env list; everyone else is a regular user.
-      const role = roleForEmail(email);
-
+      // A new account is never an admin, even for an address on ADMIN_EMAILS:
+      // registering does not prove the address (see utils/adminEmails.js).
       const user = await prisma.user.create({
-        data: { email, password: passwordHash, role },
+        data: { email, password: passwordHash, role: "user" },
       });
 
       setSessionCookie(res, user);
@@ -129,11 +129,11 @@ export function createUsersRouter(options = {}) {
         return res.status(403).json({ message: "Account disabled" });
       }
 
-      // Keep the stored role in sync with ADMIN_EMAILS (promote if listed,
-      // demote if not) and record the sign-in.
+      // Keep the stored role in sync with ADMIN_EMAILS and the confirmed
+      // address (promote or demote) and record the sign-in.
       user = await prisma.user.update({
         where: { id: user.id },
-        data: { role: roleForEmail(user.email), lastLoginAt: new Date() },
+        data: { role: roleFor(user), lastLoginAt: new Date() },
         include: withSubscriptionCount,
       });
 
@@ -163,7 +163,7 @@ export function createUsersRouter(options = {}) {
         where: { id: req.user.id },
         select: {
           email: true,
-          role: true,
+          emailVerifiedAt: true,
           createdAt: true,
           _count: { select: { subscriptions: true } },
         },
@@ -177,6 +177,53 @@ export function createUsersRouter(options = {}) {
       res.json({ user: publicUser(user) });
     } catch (err) {
       console.error("ME ERROR:", err?.message || err);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  /* ===========================
+     DELETE /users/me   body: { password }
+     The signed-in user deletes their own account. Their alert subscriptions,
+     notifications and e-mail delivery records go with it (onDelete: Cascade).
+  =========================== */
+  router.delete("/me", authLimiter, requireAuth, async (req, res) => {
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    if (!password) return res.status(400).json({ message: "Enter your password to delete the account." });
+
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { id: true, email: true, password: true, _count: { select: { subscriptions: true, notifications: true, emailDeliveries: true } } },
+      });
+      if (!user) {
+        clearSessionCookie(res);
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      // 403, not 401: the session is valid, only the confirmation failed
+      if (!(await bcrypt.compare(password, user.password))) {
+        return res.status(403).json({ message: "The password is not correct." });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.user.delete({ where: { id: user.id } });
+        await forgetAuditAddress(tx, user);
+      });
+      clearSessionCookie(res);
+      res.json({
+        ok: true,
+        deleted: {
+          subscriptions: user._count.subscriptions,
+          notifications: user._count.notifications,
+          emailDeliveries: user._count.emailDeliveries,
+        },
+      });
+    } catch (err) {
+      // already deleted by a concurrent request (or by an admin)
+      if (err?.code === "P2025") {
+        clearSessionCookie(res);
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      console.error("DELETE ACCOUNT ERROR:", err?.message || err);
       res.status(500).json({ message: "Server error" });
     }
   });

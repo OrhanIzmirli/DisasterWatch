@@ -24,6 +24,11 @@ export async function registerAgent(app, email, password = PASSWORD) {
   return { agent, res };
 }
 
+/** Marks the address as confirmed, as the double opt-in link does; an ADMIN_EMAILS address is an admin only then. */
+export async function confirmAddress(email) {
+  await prisma.user.update({ where: { email }, data: { emailVerifiedAt: new Date() } });
+}
+
 /** Returns the Set-Cookie entry for the session cookie, or undefined. */
 export function sessionCookie(res) {
   const header = res.headers["set-cookie"];

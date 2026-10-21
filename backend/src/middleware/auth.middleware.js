@@ -1,6 +1,7 @@
 import prisma from "../prisma.js";
 import { verifyAccessToken } from "../utils/jwt.js";
 import { COOKIE_NAME, clearSessionCookie } from "../utils/session.js";
+import { roleFor } from "../utils/adminEmails.js";
 
 /**
  * Signed-in users only. The token is only the lookup key: the user is
@@ -8,8 +9,9 @@ import { COOKIE_NAME, clearSessionCookie } from "../utils/session.js";
  *   - a deleted account,
  *   - a disabled account (disabledAt set), or
  *   - a token issued before the account's tokenVersion was bumped
- * all get 401 and a cleared cookie immediately. The role comes from the
- * database too; the role baked into an old token is never used.
+ * all get 401 and a cleared cookie immediately. The role is worked out on
+ * every request from ADMIN_EMAILS and the confirmed address (roleFor), so a
+ * stored or token role never outlives a change to either.
  */
 export async function requireAuth(req, res, next) {
   const token = req.cookies?.[COOKIE_NAME];
@@ -34,7 +36,7 @@ export async function requireAuth(req, res, next) {
   try {
     const user = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, role: true, disabledAt: true, tokenVersion: true },
+      select: { id: true, email: true, emailVerifiedAt: true, disabledAt: true, tokenVersion: true },
     });
 
     const tokenVersion = Number(decoded.tokenVersion ?? 0);
@@ -43,7 +45,7 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ message: "Not authenticated" });
     }
 
-    req.user = { id: user.id, email: user.email, role: user.role };
+    req.user = { id: user.id, email: user.email, role: roleFor(user) };
     next();
   } catch (err) {
     console.error("AUTH ERROR:", err?.message || err);
@@ -51,7 +53,7 @@ export async function requireAuth(req, res, next) {
   }
 }
 
-/** Admins only; always used after requireAuth, so the role is the database's current one. */
+/** Admins only; always used after requireAuth, so the role is the current one. */
 export function requireAdmin(req, res, next) {
   if (req.user?.role !== "admin") {
     return res.status(403).json({ message: "Admin access required" });

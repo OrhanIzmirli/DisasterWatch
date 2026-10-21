@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { isEmailSettings, type EmailSettings } from "../utils/emailSettings";
 
 /** What happened to the confirmation e-mail of the current opt-in (double opt-in). */
@@ -65,7 +66,10 @@ const EmailAlerts = ({ email, settings, onChange }: Props) => {
           ? confirmationText(settings?.confirmation?.status, email)
           : enabled
           ? `On: a summary goes to ${email} when new events match your alerts. Turn it off here at any time, or use the unsubscribe link in any of the e-mails.`
-          : `Off. By turning this on you agree that DisasterWatch sends a summary e-mail to ${email} when new events match your alerts (at most one per check, about once an hour). We first send a link to confirm the address. You can turn it off here at any time, or with the unsubscribe link in every e-mail.`}
+          : `Off. By turning this on you agree that DisasterWatch sends a summary e-mail to ${email} when new events match your alerts (at most one per check, about once an hour). We first send a link to confirm the address. You can turn it off here at any time, or with the unsubscribe link in every e-mail.`}{" "}
+        <Link to="/privacy" className="text-link">
+          Privacy
+        </Link>
       </p>
       {error && <div className="form-error">{error}</div>}
     </div>

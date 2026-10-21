@@ -210,7 +210,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
   /* ---------- Signed-out view ---------- */
   if (!authLoading && !user) {
     return (
-      <div className="page alerts-page">
+      <main className="page alerts-page">
         <header className="page-header page-header-row">
           <div>
             <h1 className="page-title">Alert center</h1>
@@ -236,13 +236,13 @@ const AlertsPage = ({ user, authLoading }: Props) => {
             </Link>
           </div>
         </section>
-      </div>
+      </main>
     );
   }
 
   /* ---------- Signed-in view ---------- */
   return (
-    <div className="page alerts-page">
+    <main className="page alerts-page">
       <header className="page-header page-header-row">
         <div>
           <h1 className="page-title">Alert center</h1>
@@ -389,7 +389,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
 
       <section className="alerts-channels">
         <article className="card card-compact channel-card">
-          <h3>My subscriptions</h3>
+          <h2>My subscriptions</h2>
           <ul>
             <li>
               {items.length} configured, {items.filter((s) => s.active).length} active
@@ -399,7 +399,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
         </article>
 
         <article className="card card-compact channel-card">
-          <h3>Delivery channels</h3>
+          <h2>Delivery channels</h2>
           <ul>
             <li>In-app notifications: active</li>
             <li>{emailChannelText(email.settings, email.failed)}</li>
@@ -436,7 +436,9 @@ const AlertsPage = ({ user, authLoading }: Props) => {
                 <th>Location</th>
                 <th>Radius</th>
                 <th>Status</th>
-                <th></th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -483,7 +485,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
           </div>
         )}
       </section>
-    </div>
+    </main>
   );
 };
 
