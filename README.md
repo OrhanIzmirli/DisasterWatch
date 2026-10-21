@@ -366,7 +366,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 
 ### Scheduled wake-up
 
-The services are not kept awake (the free plan has 750 instance hours a month per workspace); a GitHub Actions workflow (`.github/workflows/wake.yml`) wakes them once an hour, at minute 17:
+The services are not kept awake (the free plan has 750 instance hours a month per workspace); an external cron service (cron-job.org) wakes them once an hour, at minute 17, and a GitHub Actions workflow (`.github/workflows/wake.yml`) makes the same two calls at minute 22 as a backup (GitHub delays or skips scheduled runs under load; at :22 the services are still awake from the :17 call, so the backup usually costs no extra instance hours; a delayed run can open a short second awake window). Both send:
 
 1. `POST <backend>/internal/ingest` with `Authorization: Bearer <INGEST_WAKE_SECRET>`: a sleeping backend wakes (and ingests on start), an awake one ingests unless a run worked in the last 10 minutes (it ingests every 5 minutes anyway); new events are published to Kafka. Idempotent: a run in progress is joined, a failed recent run is retried. The secret is compared in constant time and the endpoint is rate limited (10 requests per 15 minutes per client). The answer carries counts only; `ok: false` (a failed source fetch or Kafka publish, e.g. a powered-off Aiven broker) fails the workflow run, so GitHub reports it.
 2. `GET <notification service>/health`: the consumer wakes and processes what waits in Kafka.
