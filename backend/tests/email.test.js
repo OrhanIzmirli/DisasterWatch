@@ -218,6 +218,20 @@ describe("double opt-in: the address must be confirmed (registration does not ve
     expect((await squatter.get("/users/me")).body.user.role).toBe("admin");
   });
 
+  it("an address confirmed from the e-mail alone does not become admin when it is added to ADMIN_EMAILS later", async () => {
+    const agent = await signUp("later@example.com");
+    await agent.put("/alerts/email").send({ enabled: true, consent: true });
+    const { emailConfirmToken: token } = await userRow("later@example.com");
+    expect((await request(app).post("/email/confirm").send({ token })).status).toBe(200); // not listed yet: no session needed
+    process.env.ADMIN_EMAILS = "admin@example.com,later@example.com";
+    try {
+      expect((await agent.get("/users/me")).body.user.role).toBe("user");
+      expect((await agent.get("/admin/users")).status).toBe(403);
+    } finally {
+      process.env.ADMIN_EMAILS = "admin@example.com";
+    }
+  });
+
   it("an address that is not on ADMIN_EMAILS still confirms from the e-mail alone", async () => {
     const agent = await signUp("plain@example.com");
     await agent.put("/alerts/email").send({ enabled: true, consent: true });

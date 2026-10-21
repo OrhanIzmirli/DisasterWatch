@@ -101,7 +101,7 @@ export default function PrivacyPage() {
         <p>
           The site owner can see the list of accounts (e-mail, sign-up and last sign-in time, subscriptions) to run the service,
           and can disable or delete an account. Those actions are logged; once an account is deleted, the log keeps only a
-          shortened form of its address.
+          shortened form of its address. What an admin did stays logged under the admin's own address.
         </p>
       </section>
 

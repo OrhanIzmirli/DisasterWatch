@@ -30,7 +30,7 @@ const pageParam = z.coerce.number().int().positive().catch(1);
 const userListSelect = {
   id: true,
   email: true,
-  emailVerifiedAt: true,
+  emailConfirmedSignedInAt: true,
   createdAt: true,
   lastLoginAt: true,
   disabledAt: true,
@@ -55,7 +55,7 @@ const userDetailSelect = {
 };
 
 function publicUser(u) {
-  const { _count, subscriptions, emailVerifiedAt, ...rest } = u;
+  const { _count, subscriptions, emailConfirmedSignedInAt, ...rest } = u;
   return {
     ...rest,
     role: roleFor(u),
@@ -134,7 +134,7 @@ async function setDisabled(req, res, disabled) {
   if (!id.success) return res.status(400).json({ message: "Invalid user id" });
 
   try {
-    const target = await prisma.user.findUnique({ where: { id: id.data }, select: { id: true, email: true, emailVerifiedAt: true, disabledAt: true } });
+    const target = await prisma.user.findUnique({ where: { id: id.data }, select: { id: true, email: true, emailConfirmedSignedInAt: true, disabledAt: true } });
     if (!target) return res.status(404).json({ message: "User not found" });
 
     if (disabled) {
@@ -181,7 +181,7 @@ router.delete("/users/:id", async (req, res) => {
   try {
     const target = await prisma.user.findUnique({
       where: { id: id.data },
-      select: { id: true, email: true, emailVerifiedAt: true, _count: { select: { subscriptions: true, notifications: true } } },
+      select: { id: true, email: true, emailConfirmedSignedInAt: true, _count: { select: { subscriptions: true, notifications: true } } },
     });
     if (!target) return res.status(404).json({ message: "User not found" });
 

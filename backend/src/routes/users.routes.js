@@ -163,7 +163,7 @@ export function createUsersRouter(options = {}) {
         where: { id: req.user.id },
         select: {
           email: true,
-          emailVerifiedAt: true,
+          emailConfirmedSignedInAt: true,
           createdAt: true,
           _count: { select: { subscriptions: true } },
         },

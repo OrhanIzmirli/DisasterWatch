@@ -350,6 +350,22 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
     expect(await d.runOnce()).toMatchObject({ cancelled: 0, sent: 0 }); // not picked up again
   });
 
+  it("an account deleted while its e-mail is being sent: the row counts as sent but keeps no message and no provider id", async () => {
+    const a = await user("mid@example.com");
+    await notification(a);
+    const provider = fakeProvider();
+    const send = provider.send.getMockImplementation();
+    provider.send.mockImplementation(async (msg) => {
+      // the backend's eraseAccount commits between the payload write and the provider's answer
+      await q(`UPDATE "EmailDelivery" SET "payload" = NULL WHERE "userId" = $1`, [a]);
+      await q(`DELETE FROM "User" WHERE "id" = $1`, [a]);
+      return send(msg);
+    });
+    expect(await createEmailDispatcher({ pool, config: config(), sender: provider, log: quietLog() }).runOnce()).toMatchObject({ sent: 1 });
+    const { rows } = await q(`SELECT "userId", "status", "payload", "providerMessageId" FROM "EmailDelivery"`);
+    expect(rows).toEqual([{ userId: null, status: "sent", payload: null, providerMessageId: null }]);
+  });
+
   it("two instances at once (deploy overlap): the lease lets one send each delivery, the other skips it", async () => {
     const a = await user("twice@example.com");
     await notification(a);

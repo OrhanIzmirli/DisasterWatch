@@ -63,7 +63,8 @@ export function createEmailRouter({ limit = { windowMs: 15 * 60 * 1000, limit: 3
     try {
       const owner = await prisma.user.findUnique({ where: { emailConfirmToken: token }, select: { id: true, email: true } });
       if (!owner) return res.status(404).json({ message: "This confirmation link is not valid or was already used." });
-      if (isAdminEmail(owner.email) && (await sessionUserId(req)) !== owner.id) {
+      const signedIn = (await sessionUserId(req)) === owner.id;
+      if (isAdminEmail(owner.email) && !signedIn) {
         return res.status(403).json({
           message: "This address needs one more step: sign in to the account that asked for these e-mails, then open the link again.",
         });
@@ -71,7 +72,8 @@ export function createEmailRouter({ limit = { windowMs: 15 * 60 * 1000, limit: 3
       // the token in the condition: a second press, or a new token issued meanwhile, changes nothing
       const result = await prisma.user.updateMany({
         where: { id: owner.id, emailConfirmToken: token },
-        data: { emailVerifiedAt: new Date(), emailConfirmToken: null },
+        // signed in to this account: password and mailbox proven together (needed for admin, see utils/adminEmails.js)
+        data: { emailVerifiedAt: new Date(), emailConfirmToken: null, ...(signedIn ? { emailConfirmedSignedInAt: new Date() } : {}) },
       });
       if (result.count === 0) return res.status(404).json({ message: "This confirmation link is not valid or was already used." });
       res.json({ ok: true, message: "Your address is confirmed." });

@@ -257,7 +257,8 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
         return "cancelled";
       }
       // stored before the first attempt: a retry sends the identical message under the same key
-      await pool.query(`UPDATE "EmailDelivery" SET "payload" = $2 WHERE "id" = $1`, [d.id, payload]);
+      // not onto a row whose account was deleted meanwhile (anonymised: it must stay without the message)
+      await pool.query(`UPDATE "EmailDelivery" SET "payload" = $2 WHERE "id" = $1 AND "userId" IS NOT NULL`, [d.id, payload]);
     }
 
     const to = maskEmail(d.email);
@@ -266,7 +267,8 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
       await tx(async (db) => {
         await db.query(
           `UPDATE "EmailDelivery" SET "status" = 'sent', "sentAt" = $2, "lastAttemptAt" = $2, "attempts" = "attempts" + 1,
-                  "providerMessageId" = $3, "lastError" = NULL, "leaseUntil" = NULL WHERE "id" = $1`,
+                  "providerMessageId" = CASE WHEN "userId" IS NULL THEN NULL ELSE $3 END, "lastError" = NULL, "leaseUntil" = NULL
+            WHERE "id" = $1`, // an account deleted during the send: the row still counts as sent, without the provider id
           [d.id, t, messageId]
         );
         await db.query(`UPDATE "Notification" SET "emailSentAt" = $2 WHERE "emailDeliveryId" = $1`, [d.id, t]);

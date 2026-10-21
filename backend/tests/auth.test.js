@@ -202,7 +202,7 @@ describe("POST /users/login keeps the role in sync with ADMIN_EMAILS and the con
   });
 
   it("does not promote a listed address that was never confirmed", async () => {
-    await prisma.user.update({ where: { email: "sync@example.com" }, data: { emailVerifiedAt: null } });
+    await prisma.user.update({ where: { email: "sync@example.com" }, data: { emailVerifiedAt: null, emailConfirmedSignedInAt: null } });
     process.env.ADMIN_EMAILS = "admin@example.com,sync@example.com";
     const res = await login();
     expect(res.status).toBe(200);

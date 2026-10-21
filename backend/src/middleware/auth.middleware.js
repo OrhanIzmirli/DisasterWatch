@@ -36,7 +36,7 @@ export async function requireAuth(req, res, next) {
   try {
     const user = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, emailVerifiedAt: true, disabledAt: true, tokenVersion: true },
+      select: { id: true, email: true, emailConfirmedSignedInAt: true, disabledAt: true, tokenVersion: true },
     });
 
     const tokenVersion = Number(decoded.tokenVersion ?? 0);
