@@ -107,7 +107,7 @@ export function createApp(options = {}) {
   // Admin console: user management and audit log (frontend /api/admin -> backend /admin)
   app.use("/admin", adminRoutes);
 
-  // Scheduled wake-up (GitHub Actions): POST /internal/ingest with a shared secret
+  // Scheduled wake-up (external cron + GitHub Actions backup): POST /internal/ingest with a shared secret
   app.use("/internal", createInternalRouter(options.internal));
 
   // Unknown routes and every error, including body-parser failures, answer JSON: never Express's HTML pages.

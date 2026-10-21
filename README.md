@@ -211,7 +211,7 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | `CORS_ORIGINS` | no | live frontend + `localhost:8080/5173/4173` | browser origins allowed to call the API directly; the `/api` proxy never needs it |
 | `DISABLE_NEWS_JOB` | no | – | `1` switches off the background news refresh |
 | `DISABLE_INGESTION` | no | – | `1` switches off the NASA/USGS ingestion job (no events reach Kafka) |
-| `INGEST_WAKE_SECRET` | cloud | empty | shared secret of the hourly wake-up (`POST /internal/ingest`, [Scheduled wake-up](#scheduled-wake-up)); **32+ characters**, same value as the GitHub Actions secret of the same name. Without it the endpoint does not exist |
+| `INGEST_WAKE_SECRET` | cloud | empty | shared secret of the hourly wake-up (`POST /internal/ingest`, [Scheduled wake-up](#scheduled-wake-up)); **32+ characters**, same value as the GitHub Actions secret of the same name and the `Authorization` header of the external cron job. Without it the endpoint does not exist |
 | `TEST_DATABASE_URL` | tests | – | throwaway database for `npm test` ([Tests and CI](#tests-and-ci)) |
 
 ### Notification service (`notification-service/.env.example`)
@@ -366,7 +366,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 
 ### Scheduled wake-up
 
-The services are not kept awake (the free plan has 750 instance hours a month per workspace); an external cron service (cron-job.org) wakes them once an hour, at minute 17, and a GitHub Actions workflow (`.github/workflows/wake.yml`) makes the same two calls at minute 22 as a backup (GitHub delays or skips scheduled runs under load; at :22 the services are still awake from the :17 call, so the backup usually costs no extra instance hours; a delayed run can open a short second awake window). Both send:
+The services are not kept awake (the free plan has 750 instance hours a month per workspace); an external cron service (cron-job.org) wakes them once an hour, at minute 17, and a GitHub Actions workflow (`.github/workflows/wake.yml`) makes the same two calls at minute 22 as a backup (GitHub delays or skips scheduled runs under load). At :22 the services are still awake from the :17 call, so the backup opens no second awake window, but as a new request it restarts Render's 15-minute idle timer and extends that window by about 5 minutes: roughly 60 instance hours a month per service, about 22 of every 60 minutes awake instead of 17; a run delayed past about :32 opens a short second window. Both send:
 
 1. `POST <backend>/internal/ingest` with `Authorization: Bearer <INGEST_WAKE_SECRET>`: a sleeping backend wakes (and ingests on start), an awake one ingests unless a run worked in the last 10 minutes (it ingests every 5 minutes anyway); new events are published to Kafka. Idempotent: a run in progress is joined, a failed recent run is retried. The secret is compared in constant time and the endpoint is rate limited (10 requests per 15 minutes per client). The answer carries counts only; `ok: false` (a failed source fetch or Kafka publish, e.g. a powered-off Aiven broker) fails the workflow run, so GitHub reports it.
 2. `GET <notification service>/health`: the consumer wakes and processes what waits in Kafka.

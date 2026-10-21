@@ -20,8 +20,8 @@ name: Scheduled wake
 on:
   schedule:
     # backup at :22, five minutes after the primary :17 call: the services are still awake from
-    # that call, so the backup usually adds no second awake window to the free plan's instance hours, and
-    # it wakes them if the primary call did not arrive (GitHub also drops fewer runs off :00)
+    # that call, so it opens no second awake window, only extends the existing one by ~5 min
+    # (Render's idle timer restarts); it wakes them if the primary call did not arrive
     - cron: "22 * * * *"
   workflow_dispatch:
 
