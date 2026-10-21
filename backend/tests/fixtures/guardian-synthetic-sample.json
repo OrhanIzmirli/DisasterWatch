@@ -21,8 +21,8 @@
     },
     {
       "type": "article",
-      "webTitle": "Total fire ban declared across Sydney’s west as heat and dry lightning raise the bushfire risk",
-      "webUrl": "https://example.com/australia-news/2026/oct/12/total-fire-ban-sydney-west-heat-dry-lightning",
+      "webTitle": "Bushfire warning for Sydney’s north-west as hot winds return",
+      "webUrl": "https://example.com/australia-news/2026/oct/12/bushfire-warning-sydney-north-west-hot-winds",
       "webPublicationDate": "2026-10-12T09:00:00Z"
     }
   ],
@@ -35,8 +35,8 @@
     },
     {
       "type": "liveblog",
-      "webTitle": "Fuel prices expected to stay high into next year – business live",
-      "webUrl": "https://example.com/business/live/2026/oct/14/fuel-prices-high-next-year-markets",
+      "webTitle": "Shipping costs climb as port talks stall – business live",
+      "webUrl": "https://example.com/business/live/2026/oct/14/shipping-costs-port-talks-stall",
       "webPublicationDate": "2026-10-14T10:00:00Z"
     },
     {
@@ -47,26 +47,26 @@
     },
     {
       "type": "article",
-      "webTitle": "I work in insurance and my industry underplays climate risk | Anonymous",
-      "webUrl": "https://example.com/commentisfree/2026/oct/14/insurance-industry-climate-risk",
+      "webTitle": "Our town keeps rebuilding in the wrong places | Letter from a planner",
+      "webUrl": "https://example.com/commentisfree/2026/oct/14/town-rebuilding-wrong-places-planner",
       "webPublicationDate": "2026-10-14T06:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Inside an abandoned theme park, empty since the flooding",
-      "webUrl": "https://example.com/world/ng-interactive/2026/oct/14/abandoned-theme-park-flooded",
+      "webTitle": "A market town learns to live with the flooding",
+      "webUrl": "https://example.com/world/ng-interactive/2026/oct/14/market-town-living-with-flooding",
       "webPublicationDate": "2026-10-14T04:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Huge surf and floods damage beachfront homes and piers on the central coast",
-      "webUrl": "https://example.com/us-news/2026/oct/13/central-coast-storm-floods",
+      "webTitle": "Floods and high tides damage harbour homes and a ferry pier in Maine",
+      "webUrl": "https://example.com/us-news/2026/oct/13/maine-floods-harbour-homes-ferry-pier",
       "webPublicationDate": "2026-10-13T22:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Wildfire driven by El Niño drought destroys nearly 300 homes on a southern island",
-      "webUrl": "https://example.com/world/2026/oct/13/wildfire-drought-destroys-homes-southern-island",
+      "webTitle": "Wildfire fanned by El Niño heat burns 120 farms in the highlands",
+      "webUrl": "https://example.com/world/2026/oct/13/wildfire-el-nino-highland-farms",
       "webPublicationDate": "2026-10-13T15:00:00Z"
     },
     {
@@ -77,26 +77,26 @@
     },
     {
       "type": "article",
-      "webTitle": "Coastal erosion has taken more than 150 homes along one coastline in 15 years",
-      "webUrl": "https://example.com/environment/2026/oct/13/coastal-erosion-homes-lost",
+      "webTitle": "Seawall plan approved for a village losing its gardens to the sea",
+      "webUrl": "https://example.com/environment/2026/oct/13/seawall-plan-village-gardens",
       "webPublicationDate": "2026-10-13T11:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Hurricane Omar and Tropical Storm Lena leave five dead along Mexico's Pacific coast",
-      "webUrl": "https://example.com/world/2026/oct/13/hurricane-omar-tropical-storm-lena-five-dead",
+      "webTitle": "Hurricane Kestrel makes landfall in Mexico's Oaxaca state, three dead",
+      "webUrl": "https://example.com/world/2026/oct/13/hurricane-kestrel-oaxaca-landfall",
       "webPublicationDate": "2026-10-13T09:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "A 20-year walk home across deserts and ice: one traveller's story",
-      "webUrl": "https://example.com/lifeandstyle/2026/oct/13/twenty-year-walk-home-deserts-ice",
+      "webTitle": "I learned to bake bread at 70: here is what changed",
+      "webUrl": "https://example.com/lifeandstyle/2026/oct/13/learned-to-bake-bread-at-70",
       "webPublicationDate": "2026-10-13T07:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "After three years in captivity: what forgiveness looks like",
-      "webUrl": "https://example.com/news/ng-interactive/2026/oct/13/three-years-captivity-forgiveness",
+      "webTitle": "Life after prison: a former inmate's new start",
+      "webUrl": "https://example.com/news/ng-interactive/2026/oct/13/life-after-prison-new-start",
       "webPublicationDate": "2026-10-13T05:00:00Z"
     },
     {
@@ -107,14 +107,14 @@
     },
     {
       "type": "article",
-      "webTitle": "Temperatures swing across the region as heavy rain moves south",
-      "webUrl": "https://example.com/environment/2026/oct/12/temperatures-swing-heavy-rain-south",
+      "webTitle": "Heavy rain expected across the north this weekend",
+      "webUrl": "https://example.com/environment/2026/oct/12/heavy-rain-north-weekend",
       "webPublicationDate": "2026-10-12T12:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Cleaner seas, new jobs: a university's maritime innovation push",
-      "webUrl": "https://example.com/uni-innovation-series/2026/oct/12/university-maritime-innovation-push",
+      "webTitle": "Students design a solar ferry for the harbour | Partner content",
+      "webUrl": "https://example.com/uni-innovation-series/2026/oct/12/students-solar-ferry-harbour",
       "webPublicationDate": "2026-10-12T08:00:00Z"
     }
   ]

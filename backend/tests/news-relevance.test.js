@@ -53,10 +53,10 @@ describe("general search: headline or standfirst must name a hazard", () => {
     const articles = live.general.map(normalizeGuardianResult).filter(Boolean); // live blogs already gone
     const kept = articles.filter(mentionsDisaster);
     expect(titled(kept)).toEqual([
-      "Inside an abandoned theme park, empty since the flooding",
-      "Huge surf and floods damage beachfront homes and piers on the central coast",
-      "Wildfire driven by El Niño drought destroys nearly 300 homes on a southern island",
-      "Hurricane Omar and Tropical Storm Lena leave five dead along Mexico's Pacific coast",
+      "A market town learns to live with the flooding",
+      "Floods and high tides damage harbour homes and a ferry pier in Maine",
+      "Wildfire fanned by El Niño heat burns 120 farms in the highlands",
+      "Hurricane Kestrel makes landfall in Mexico's Oaxaca state, three dead",
     ]);
     const dropped = titled(articles.filter((a) => !mentionsDisaster(a)));
     expect(dropped).toContain("Arctic shipping routes draw new interest from trading nations");
@@ -97,18 +97,18 @@ describe("linking by headline and story slug only (section segments ignored)", (
     expect(slugWords("not a url")).toEqual([]);
   });
 
-  it("does not link the australia-news live blogs to 'Wildfire in Australia', but keeps the Sydney fire-ban article linked", () => {
+  it("does not link the australia-news live blogs to 'Wildfire in Australia', but keeps the Sydney bushfire article linked", () => {
     const event = live.event;
     // even if a live blog slipped past the provider guard, the section path must not link it
-    const [councilBlog, budgetBlog, fireBan] = live.group.map((r) => ({ title: r.webTitle, url: r.webUrl }));
-    const linked = linkArticlesToEvents([councilBlog, budgetBlog, fireBan], [event, { id: 9, type: "wildfire", locationText: "Wildfire in Botswana" }]);
+    const [councilBlog, budgetBlog, bushfire] = live.group.map((r) => ({ title: r.webTitle, url: r.webUrl }));
+    const linked = linkArticlesToEvents([councilBlog, budgetBlog, bushfire], [event, { id: 9, type: "wildfire", locationText: "Wildfire in Botswana" }]);
     expect(linked.map((a) => a.event?.id ?? null)).toEqual([null, null, null]); // multi-event group: no place word in headline/slug
 
-    // the real pipeline: live blogs removed by the provider, the fire-ban article linked as the single event of its group
+    // the real pipeline: live blogs removed by the provider, the bushfire article linked as the single event of its group
     const normalized = live.group.map(normalizeGuardianResult).filter(Boolean);
-    expect(titled(normalized)).toEqual(["Total fire ban declared across Sydney’s west as heat and dry lightning raise the bushfire risk"]);
-    const [fireBanArticle] = linkArticlesToEvents(normalized, [event], { single: true });
-    expect(fireBanArticle.event?.id).toBe(event.id);
+    expect(titled(normalized)).toEqual(["Bushfire warning for Sydney’s north-west as hot winds return"]);
+    const [bushfireArticle] = linkArticlesToEvents(normalized, [event], { single: true });
+    expect(bushfireArticle.event?.id).toBe(event.id);
   });
 
   it("still links by real slug words (GDELT-style urls)", () => {

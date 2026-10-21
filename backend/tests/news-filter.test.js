@@ -32,10 +32,10 @@ describe("relevance filter on the cases seen on the live panel (synthetic sample
       .filter((a) => isDisasterNews(a).keep)
       .map((a) => a.title);
     expect(shown).toEqual([
-      "Total fire ban declared across Sydney’s west as heat and dry lightning raise the bushfire risk",
-      "Huge surf and floods damage beachfront homes and piers on the central coast",
-      "Wildfire driven by El Niño drought destroys nearly 300 homes on a southern island",
-      "Hurricane Omar and Tropical Storm Lena leave five dead along Mexico's Pacific coast",
+      "Bushfire warning for Sydney’s north-west as hot winds return",
+      "Floods and high tides damage harbour homes and a ferry pier in Maine",
+      "Wildfire fanned by El Niño heat burns 120 farms in the highlands",
+      "Hurricane Kestrel makes landfall in Mexico's Oaxaca state, three dead",
     ]);
   });
 });
@@ -102,9 +102,9 @@ describe("idioms, names and non-news sections", () => {
   it("drops non-news sections and formats, even with a hazard word", () => {
     expect(excludedSection("https://news.example.com/sport/2026/oct/16/hurricanes-win")).toBe("sport");
     expect(excludedSection("https://news.example.com/world/2026/oct/16/quake")).toBeNull();
-    expect(isDisasterNews({ title: "Insurers count the cost of Hurricane Simon", url: "https://news.example.com/business/2026/oct/16/insurers" }).keep).toBe(false);
+    expect(isDisasterNews({ title: "Insurers count the cost of Hurricane Kestrel", url: "https://news.example.com/business/2026/oct/16/insurers" }).keep).toBe(false);
     expect(isDisasterNews({ title: "The floods were a warning we ignored", url: "https://news.example.com/commentisfree/2026/oct/16/floods" }).keep).toBe(false);
-    expect(isDisasterNews({ title: "Inside an abandoned theme park, empty since the flooding", url: "https://news.example.com/world/ng-interactive/2026/oct/14/park" }).keep).toBe(false);
+    expect(isDisasterNews({ title: "A market town learns to live with the flooding", url: "https://news.example.com/world/ng-interactive/2026/oct/14/park" }).keep).toBe(false);
   });
 
   it("drops GDELT body-text matches whose headline names no hazard", () => {
@@ -162,13 +162,13 @@ describe("the service filters every search, not only the general one", () => {
       retentionMs: null,
       searchGroup: async () => [
         mk("Firms that raced into AI are now scaling back", "https://news.example.com/technology/2026/oct/13/firms-scale-back-ai"),
-        mk("Hurricane Simon kills five in Mexico", "https://news.example.com/world/2026/oct/13/simon"),
+        mk("Hurricane Kestrel kills five in Mexico", "https://news.example.com/world/2026/oct/13/kestrel"),
       ],
       searchGeneral: async () => [],
     };
-    const events = [{ id: 1, type: "storm", severity: "high", location: "Hurricane Simon", timeMinutesAgo: 60, details: { cleanTitle: "Hurricane Simon" } }];
+    const events = [{ id: 1, type: "storm", severity: "high", location: "Hurricane Kestrel", timeMinutesAgo: 60, details: { cleanTitle: "Hurricane Kestrel" } }];
     const svc = createNewsService({ providers: [provider], store: createMemoryNewsStore(), loadEvents: async () => events, now: () => new Date("2026-10-16T12:00:00Z"), log: quiet });
     await svc.refresh();
-    expect(svc.getNews().items.map((a) => a.title)).toEqual(["Hurricane Simon kills five in Mexico"]);
+    expect(svc.getNews().items.map((a) => a.title)).toEqual(["Hurricane Kestrel kills five in Mexico"]);
   });
 });
