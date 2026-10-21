@@ -33,16 +33,16 @@ const USGS_MIN_MAG = 4.5; // same threshold as the public feed; micro-quakes are
  * Inserts events and returns the subset that was newly inserted.
  * One round trip per chunk thanks to RETURNING.
  */
-export async function recordNewEvents(events, { prisma = defaultPrisma } = {}) {
+export async function recordNewEvents(events, { prisma = defaultPrisma, approximate = new Set() } = {}) {
   const inserted = [];
   for (let i = 0; i < events.length; i += INSERT_CHUNK) {
     const chunk = events.slice(i, i + INSERT_CHUNK);
     const rows = await prisma.$queryRaw`
-      INSERT INTO "IngestedEvent" ("eventId", "source", "type", "severity", "title", "lat", "lng", "occurredAt")
+      INSERT INTO "IngestedEvent" ("eventId", "source", "type", "severity", "title", "lat", "lng", "occurredAt", "locationPrecision")
       VALUES ${Prisma.join(
         chunk.map(
           (e) =>
-            Prisma.sql`(${e.eventId}, ${e.source}, ${e.type}, ${e.severity}, ${e.title}, ${e.lat}, ${e.lng}, ${new Date(e.occurredAt)})`
+            Prisma.sql`(${e.eventId}, ${e.source}, ${e.type}, ${e.severity}, ${e.title}, ${e.lat}, ${e.lng}, ${new Date(e.occurredAt)}, ${approximate.has(e.eventId) ? "approximate" : "exact"})`
         )
       )}
       ON CONFLICT ("eventId") DO NOTHING
@@ -132,6 +132,7 @@ export async function ingestOnce({
 } = {}) {
   const events = [];
   const fallback = new Set(); // eventIds placed on the EONET geometry because GDACS was unreachable
+  const approximate = new Set(); // eventIds whose location the map marks "approximate"
   const stats = { fetched: 0, dropped: 0, inserted: 0, eonetFallback: 0, published: 0, pending: 0, errors: [] };
 
   const sources = [
@@ -141,9 +142,10 @@ export async function ingestOnce({
 
   for (const [name, load] of sources) {
     try {
-      const { events: mapped, dropped, eonetFallback = [] } = await load();
+      const { events: mapped, dropped, eonetFallback = [], approximate: approx = [] } = await load();
       events.push(...mapped);
       for (const id of eonetFallback) fallback.add(id);
+      for (const id of approx) approximate.add(id);
       stats.fetched += mapped.length;
       stats.dropped += dropped;
     } catch (err) {
@@ -153,7 +155,7 @@ export async function ingestOnce({
   }
 
   if (events.length > 0) {
-    const fresh = await recordNewEvents(events, { prisma });
+    const fresh = await recordNewEvents(events, { prisma, approximate });
     stats.inserted = fresh.length;
     // recorded once and for good (insert-once): these keep the EONET point even after GDACS is back
     const ids = fresh.filter((e) => fallback.has(e.eventId)).map((e) => e.eventId);

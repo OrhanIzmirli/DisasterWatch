@@ -16,6 +16,8 @@ import { producerStatus } from "./services/kafkaProducer.js";
 import { countPendingOutbox, ingestRunner } from "./jobs/ingest.js";
 import { createInternalRouter } from "./routes/internal.routes.js";
 import { gdacsClient } from "./services/gdacs.js";
+import { createEmailRouter } from "./routes/email.routes.js";
+import { emailChannelStatus } from "./services/emailChannel.js";
 
 /**
  * Build the Express app without starting a server or touching Kafka,
@@ -73,6 +75,13 @@ export function createApp(options = {}) {
     } catch {
       outboxPending = null;
     }
+    // e-mail alert channel as the notification-service last reported it (counts, times, masked error; no addresses)
+    let email = null;
+    try {
+      email = await emailChannelStatus();
+    } catch {
+      email = null;
+    }
     res.json({
       ok: true,
       service: "backend",
@@ -82,6 +91,7 @@ export function createApp(options = {}) {
       ingest: ingestRunner.status(),
       news: newsStatus(),
       gdacs: gdacsClient.status(),
+      email,
       time: new Date().toISOString(),
     });
   });
@@ -106,6 +116,9 @@ export function createApp(options = {}) {
 
   // Admin console: user management and audit log (frontend /api/admin -> backend /admin)
   app.use("/admin", adminRoutes);
+
+  // E-mail unsubscribe links (public, token-based; frontend /api/email -> backend /email)
+  app.use("/email", createEmailRouter(options.email));
 
   // Scheduled wake-up (external cron + GitHub Actions backup): POST /internal/ingest with a shared secret
   app.use("/internal", createInternalRouter(options.internal));

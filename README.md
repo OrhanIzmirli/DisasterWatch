@@ -57,7 +57,8 @@ The whole stack runs on localhost with one `docker compose up`; the same images 
 ### 5) Accounts, alerts and notifications
 - Cookie-based sessions (JWT in an `httpOnly` cookie), registration and login with rate limiting.
 - **Alert subscriptions:** hazard type (or any), minimum severity, a centre point and a radius in km. Minimum `low` means every event, including not-rated ones; `medium` and `high` never match a not-rated event.
-- **Notifications:** new events that match a subscription appear in the bell in the header (polled every 60 s). Delivery is in-app only.
+- **Notifications:** new events that match a subscription appear in the bell in the header (polled every 60 s).
+- **E-mail alerts (opt-in):** off by default; a switch with the consent text on the Alerts page turns them on. One summary e-mail per user per run, a daily limit, one-click unsubscribe ([E-mail alerts](#e-mail-alerts)).
 
 ### 6) Admin console
 - Accounts whose e-mail is listed in `ADMIN_EMAILS` get the `admin` role. Admins can list, disable, enable and delete users, read the audit log (every admin action is written in the same transaction as the action), create manual disaster entries and publish a test event to Kafka.
@@ -223,6 +224,10 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`, `KAFKA_SASL_MECHANISM`, `KAFKA_SSL_CA` | cloud | – | as for the backend |
 | `PORT` | no | `3000` | health-check port (`GET /health`) |
 | `NODE_ENV` | no | – | informational |
+| `RESEND_API_KEY` | for e-mail | – | [Resend](https://resend.com) API key (secret). E-mail stays off unless this, `RESEND_FROM` and `APP_URL` are set |
+| `RESEND_FROM` | for e-mail | – | sender; without an own domain (Resend test mode) `DisasterWatch <onboarding@resend.dev>`, which delivers only to the Resend account owner's address |
+| `APP_URL` | for e-mail | – | public site URL for the links in the e-mail, no trailing slash |
+| `EMAIL_DAILY_LIMIT` | no | `90` | e-mails per rolling 24 hours (Resend free plan: 100 per day) |
 
 ### Frontend (`disasterwatch-frontend/.env.example`)
 
@@ -243,6 +248,9 @@ All paths are relative to the backend (`http://localhost:5000`) or to the proxy 
 | `GET /users/me` | user | the signed-in user |
 | `GET /alerts`, `POST /alerts`, `PATCH /alerts/:id`, `DELETE /alerts/:id` | user | alert subscriptions (`type`, `minSeverity`, `label`, `centerLat`, `centerLng`, `radiusKm`, `active`) |
 | `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` | user | in-app notifications of the signed-in user |
+| `GET /alerts/email`, `PUT /alerts/email` | user | e-mail alerts of the signed-in user: `{ enabled, consentAt, channel: { state, dailyLimit, sentLast24h } }`; turning on needs `{ enabled: true, consent: true }` |
+| `POST /email/unsubscribe` | – (token) | one-click unsubscribe: `?token=` (RFC 8058 form post from the mail client) or `{ token }`. Rate limited |
+| `POST /email/confirm` | – (token) | double opt-in: `{ token }` from the confirmation e-mail confirms the address (single use) |
 | `GET /disasters/manual`, `POST /disasters` | user / admin | manual disaster entries (stored, not published to Kafka) |
 | `POST /events` | admin | validates the body against the event contract and publishes it to Kafka |
 | `GET /admin/users`, `GET /admin/users/:id`, `POST /admin/users/:id/disable`, `POST /admin/users/:id/enable`, `DELETE /admin/users/:id`, `GET /admin/audit` | admin | user management and the audit log |
@@ -382,11 +390,23 @@ Setup, values never in the repository:
 
 `/health` → `ingest` shows the last run (time, trigger, counts, which part failed) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`). `ingest.eonetFallbackRecorded` counts the events recorded with the EONET point because GDACS could not be reached (`total` since the process started; `lastStats.eonetFallback` for the last run); events are recorded once, so these keep that point (and the severity from the EONET measurement), and their ids are in the `[ingest] ... recorded with the EONET point` log line. GitHub delays scheduled runs under load and disables a schedule after 60 days without repository activity: check `lastWakeAt`, and optionally let a second scheduler (e.g. cron-job.org) call the same endpoint; it is idempotent.
 
+### E-mail alerts
+
+Opt-in per user: `User.emailAlertsEnabled` is `false` until the user turns the switch on the Alerts page on; the request must carry `consent: true` and the consent time is stored. **Double opt-in:** registration does not verify addresses, so the first e-mail to an address is a confirmation link only (fixed text, nothing a user typed); alert e-mails start after its owner opened `/confirm-email` and pressed the button (`User.emailVerifiedAt`). Only notifications created after the consent are e-mailed, at most 24 hours after they were created.
+
+The notification service (`src/email/`) sends, after a burst of new notifications (20 s debounce, at most 2 minutes) and every 10 minutes for retries, **one summary e-mail per user** with all of that user's new notifications (a user whose previous digest is still being retried waits for it). Claims run in one transaction under a transaction-level advisory lock (it also works through the Neon pooler); each send takes a short lease on its delivery row, so two instances never send the same digest.
+
+- **Daily limit** (`EMAIL_DAILY_LIMIT`, default 90 per rolling 24 h; Resend free: 100/day; confirmation e-mails count too) counted from the `EmailDelivery` table (sent, pending, and failed ones that reached the provider), not from memory, since the service sleeps and restarts. Over the limit the notification is marked `emailSkipReason = "daily-limit"`; the in-app notification exists anyway.
+- **Never twice:** a digest is a `pending` `EmailDelivery` row before the send; a notification belongs to at most one digest. `emailSentAt` is written only after Resend accepted the e-mail. The message is rendered once and stored with the delivery; a transient failure (network, 429, 5xx, Resend's 409 "concurrent request") leaves it pending and the next run sends the identical payload with the same `Idempotency-Key`, so a send that did go out is not repeated; other 4xx, 5 failures or 23 hours (Resend keeps keys 24 h) mark it failed (`send-failed`).
+- **Content:** per event the title, type, severity, source, time (UTC), location with the map's "approximate" note, and a link to the event on the map; below, which alert matched, the alert settings link and the unsubscribe link. Plain text + HTML, only data from our database: no third-party text, no images, no tracking pixel.
+- **Unsubscribe:** every e-mail has a link to `/unsubscribe?token=…` (no sign-in; one button press switches e-mail off and the page confirms it; opening the page changes nothing, so link scanners, even ones that run JavaScript, cannot unsubscribe anyone) and the headers `List-Unsubscribe: <APP_URL/api/email/unsubscribe?token=…>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058). The token is 32 random bytes, kept across opt-ins.
+- **Honest status:** the service writes `EmailChannelStatus` on start and after every run; the Alerts page shows e-mail as "active" only when the service reports it configured (within 3 hours), and says when the daily limit is used up. `/health` of both services shows the e-mail status (configured, sent in the last 24 h, last error); no addresses. Logs mask addresses (`som***@example.com`).
+
 ### Known limitations
 
 - **Render free tier sleeps** after ~15 minutes without traffic. While the backend sleeps no ingestion runs and nothing is published; while the notification service sleeps nothing is consumed. Both catch up when they wake: Kafka keeps the messages, so the consumer resumes from its committed offset. The [scheduled wake-up](#scheduled-wake-up) wakes both once an hour, so an alert arrives at most about an hour after the event is reported.
 - **Aiven free Kafka powers off** after a period without traffic and has to be started from the Aiven console. The backend keeps serving the public feed without Kafka; events recorded meanwhile wait in the outbox and are published once the broker is back.
-- Notifications are **in-app only**; there is no e-mail, SMS or push channel.
+- Notifications are in-app and, opt-in, by **e-mail** (Resend); there is no SMS or push channel. Without an own domain Resend's test mode delivers only to the account owner's address.
 - Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
 - **GDELT rate limits by source IP.** Render's shared egress IP can be throttled (HTTP 429) by other tenants' traffic. The news job then backs off and keeps serving GDELT's last articles (72 h) next to The Guardian and GDACS media; `/health` → `news.providers.gdelt` shows the last success and error.
 - **Deploy order: notification-service first, then the backend.** A consumer running an older build rejects messages with a value it does not know (such as `severity: "unrated"`) and commits their offsets, so those events never produce notifications unless the group offset is reset. On Render: 1) deploy the `notification-service` web service and wait for its `/health` to answer with `kafka: "connected"`; 2) only then deploy the backend. With auto-deploy from `main` on both services, suspend the backend's auto-deploy before merging a contract change, merge, let the notification-service build finish, then deploy the backend manually.
@@ -397,7 +417,7 @@ Setup, values never in the repository:
 - Pre-filter subscriptions in SQL with a bounding box around the event before the haversine check, instead of loading every active subscription per message.
 - Frontend lint: `npm run lint` reports 5 errors (setState inside effects in `NewsPanel` and `RelatedNews`, non-component exports in `NewsPanel`, an impure call during render in `MapView`); fix them and add `npm run lint` to CI.
 - News: when the cache is empty and every provider failed, retry after a couple of minutes instead of waiting the full refresh interval; keep the first real provider error in `lastError` instead of the local backoff refusal that follows it.
-- WebSocket live updates, e-mail / SMS / push channels, metrics and tracing.
+- WebSocket live updates, SMS / push channels, metrics and tracing.
 
 ---
 
