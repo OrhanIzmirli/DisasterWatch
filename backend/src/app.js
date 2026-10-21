@@ -120,7 +120,7 @@ export function createApp(options = {}) {
   // E-mail unsubscribe links (public, token-based; frontend /api/email -> backend /email)
   app.use("/email", createEmailRouter(options.email));
 
-  // Scheduled wake-up (GitHub Actions): POST /internal/ingest with a shared secret
+  // Scheduled wake-up (external cron + GitHub Actions backup): POST /internal/ingest with a shared secret
   app.use("/internal", createInternalRouter(options.internal));
 
   // Unknown routes and every error, including body-parser failures, answer JSON: never Express's HTML pages.

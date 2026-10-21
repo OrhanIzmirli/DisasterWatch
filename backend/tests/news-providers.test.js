@@ -198,18 +198,18 @@ describe("linkArticlesToEvents (article-event matching on our side)", () => {
 
 describe("The Guardian provider", () => {
   const result = {
-    id: "world/2026/oct/13/nepal-floods",
-    webTitle: "Nepal floods: death toll rises as monsoon rains continue  ",
-    webUrl: "https://www.theguardian.com/world/2026/oct/13/nepal-floods",
+    id: "world/2026/oct/13/valley-floods-death-toll",
+    webTitle: "Valley floods: death toll rises as monsoon rains keep falling  ",
+    webUrl: "https://example.com/world/2026/oct/13/valley-floods-death-toll",
     webPublicationDate: "2026-10-13T10:15:00Z",
-    fields: { thumbnail: "https://media.guim.co.uk/x.jpg" },
+    fields: { thumbnail: "https://media.example.com/x.jpg" },
   };
 
   it("keeps the headline and link exactly as supplied, sets the domain and never an image", () => {
     const a = normalizeGuardianResult(result);
     expect(a).toEqual({
-      title: "Nepal floods: death toll rises as monsoon rains continue  ",
-      url: "https://www.theguardian.com/world/2026/oct/13/nepal-floods",
+      title: "Valley floods: death toll rises as monsoon rains keep falling  ",
+      url: "https://example.com/world/2026/oct/13/valley-floods-death-toll",
       domain: "theguardian.com",
       publishedAt: "2026-10-13T10:15:00.000Z",
       image: null,

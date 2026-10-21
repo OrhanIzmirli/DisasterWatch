@@ -88,7 +88,7 @@ describe("NewsCache persistence", () => {
 
   it("expires Guardian rows 24 hours after the fetch and deletes them from the table", async () => {
     const guardian = provider("guardian", {
-      general: async () => [article("Floods in Nepal", "https://www.theguardian.com/world/floods", "guardian")],
+      general: async () => [article("Floods in Nepal", "https://guardian.example.com/world/floods", "guardian")],
       refreshIntervalMs: 30 * 60_000,
       retentionMs: 24 * 3600_000,
     });

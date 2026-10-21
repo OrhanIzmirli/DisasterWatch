@@ -1,0 +1,121 @@
+{
+  "note": "Synthetic sample in the shape of a Guardian content-search response, BEFORE the relevance rules. Headlines and URLs are invented (example.com); the URL paths keep the section/format/date/slug structure the section and slug rules read. Each entry stands for one case seen in the live results of 2026-10-14: live blogs, off-topic news, opinion, interactives, reviews, obituaries, sponsored content and four disaster stories. The first three play the results of a search for the feed event 'Wildfire in Australia'; the rest play the general query.",
+  "event": {
+    "id": 1,
+    "type": "wildfire",
+    "severity": "high",
+    "locationText": "Wildfire in Australia"
+  },
+  "group": [
+    {
+      "type": "liveblog",
+      "webTitle": "Senate committee hears from regional councils on water rights – as it happened",
+      "webUrl": "https://example.com/australia-news/live/2026/oct/14/senate-committee-regional-councils-water-rights-qx7wpk",
+      "webPublicationDate": "2026-10-14T07:20:00Z"
+    },
+    {
+      "type": "liveblog",
+      "webTitle": "Late sitting as the budget bill clears the lower house – as it happened",
+      "webUrl": "https://example.com/australia-news/live/2026/oct/13/late-sitting-budget-bill-lower-house",
+      "webPublicationDate": "2026-10-13T07:30:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Bushfire warning for Sydney’s north-west as hot winds return",
+      "webUrl": "https://example.com/australia-news/2026/oct/12/bushfire-warning-sydney-north-west-hot-winds",
+      "webPublicationDate": "2026-10-12T09:00:00Z"
+    }
+  ],
+  "general": [
+    {
+      "type": "article",
+      "webTitle": "Arctic shipping routes draw new interest from trading nations",
+      "webUrl": "https://example.com/world/2026/oct/11/arctic-shipping-routes-trading-nations",
+      "webPublicationDate": "2026-10-11T12:00:00Z"
+    },
+    {
+      "type": "liveblog",
+      "webTitle": "Shipping costs climb as port talks stall – business live",
+      "webUrl": "https://example.com/business/live/2026/oct/14/shipping-costs-port-talks-stall",
+      "webPublicationDate": "2026-10-14T10:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Hospital staffing, transit funding and a new school calendar | First Thing",
+      "webUrl": "https://example.com/us-news/2026/oct/14/first-thing-hospital-staffing-transit-funding",
+      "webPublicationDate": "2026-10-14T10:30:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Our town keeps rebuilding in the wrong places | Letter from a planner",
+      "webUrl": "https://example.com/commentisfree/2026/oct/14/town-rebuilding-wrong-places-planner",
+      "webPublicationDate": "2026-10-14T06:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "A market town learns to live with the flooding",
+      "webUrl": "https://example.com/world/ng-interactive/2026/oct/14/market-town-living-with-flooding",
+      "webPublicationDate": "2026-10-14T04:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Floods and high tides damage harbour homes and a ferry pier in Maine",
+      "webUrl": "https://example.com/us-news/2026/oct/13/maine-floods-harbour-homes-ferry-pier",
+      "webPublicationDate": "2026-10-13T22:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Wildfire fanned by El Niño heat burns 120 farms in the highlands",
+      "webUrl": "https://example.com/world/2026/oct/13/wildfire-el-nino-highland-farms",
+      "webPublicationDate": "2026-10-13T15:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Documentary review – a portrait of a retired party leader",
+      "webUrl": "https://example.com/film/2026/oct/13/documentary-review-retired-party-leader",
+      "webPublicationDate": "2026-10-13T14:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Seawall plan approved for a village losing its gardens to the sea",
+      "webUrl": "https://example.com/environment/2026/oct/13/seawall-plan-village-gardens",
+      "webPublicationDate": "2026-10-13T11:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Hurricane Kestrel makes landfall in Mexico's Oaxaca state, three dead",
+      "webUrl": "https://example.com/world/2026/oct/13/hurricane-kestrel-oaxaca-landfall",
+      "webPublicationDate": "2026-10-13T09:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "I learned to bake bread at 70: here is what changed",
+      "webUrl": "https://example.com/lifeandstyle/2026/oct/13/learned-to-bake-bread-at-70",
+      "webPublicationDate": "2026-10-13T07:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Life after prison: a former inmate's new start",
+      "webUrl": "https://example.com/news/ng-interactive/2026/oct/13/life-after-prison-new-start",
+      "webPublicationDate": "2026-10-13T05:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Folk musician obituary",
+      "webUrl": "https://example.com/music/2026/oct/12/folk-musician-obituary",
+      "webPublicationDate": "2026-10-12T18:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Heavy rain expected across the north this weekend",
+      "webUrl": "https://example.com/environment/2026/oct/12/heavy-rain-north-weekend",
+      "webPublicationDate": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Students design a solar ferry for the harbour | Partner content",
+      "webUrl": "https://example.com/uni-innovation-series/2026/oct/12/students-solar-ferry-harbour",
+      "webPublicationDate": "2026-10-12T08:00:00Z"
+    }
+  ]
+}
