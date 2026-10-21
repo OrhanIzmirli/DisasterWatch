@@ -24,18 +24,18 @@ describe("relevance filter on the cases seen on the live panel (synthetic sample
     expect(reason("Documentary about a wildfire")).toBe('feature/listing ("documentary")');
   });
 
-  it("keeps only the disaster stories of the 2026-10-14 Guardian sample", () => {
-    const live = fixture("guardian-live-2026-10-14.json");
+  it("keeps only the disaster stories of the synthetic Guardian sample", () => {
+    const live = fixture("guardian-synthetic-sample.json");
     const shown = [...live.group, ...live.general]
       .map(normalizeGuardianResult)
       .filter(Boolean)
       .filter((a) => isDisasterNews(a).keep)
       .map((a) => a.title);
     expect(shown).toEqual([
-      "Total fire ban declared for Sydney as heat and dry lightning raise the bushfire risk",
-      "Huge surf and floods damage California beachfront homes and piers",
-      "Wildfire driven by El Niño destroys nearly 300 homes in Indonesia",
-      "Hurricane Simon and Tropical Storm Rachel leave five dead on Mexico's Pacific coast",
+      "Bushfire warning for Sydney’s north-west as hot winds return",
+      "Floods and high tides damage harbour homes and a ferry pier in Maine",
+      "Wildfire fanned by El Niño heat burns 120 farms in the highlands",
+      "Hurricane Kestrel makes landfall in Mexico's Oaxaca state, three dead",
     ]);
   });
 });
@@ -102,9 +102,9 @@ describe("idioms, names and non-news sections", () => {
   it("drops non-news sections and formats, even with a hazard word", () => {
     expect(excludedSection("https://news.example.com/sport/2026/oct/16/hurricanes-win")).toBe("sport");
     expect(excludedSection("https://news.example.com/world/2026/oct/16/quake")).toBeNull();
-    expect(isDisasterNews({ title: "Insurers count the cost of Hurricane Simon", url: "https://news.example.com/business/2026/oct/16/insurers" }).keep).toBe(false);
+    expect(isDisasterNews({ title: "Insurers count the cost of Hurricane Kestrel", url: "https://news.example.com/business/2026/oct/16/insurers" }).keep).toBe(false);
     expect(isDisasterNews({ title: "The floods were a warning we ignored", url: "https://news.example.com/commentisfree/2026/oct/16/floods" }).keep).toBe(false);
-    expect(isDisasterNews({ title: "Inside an abandoned Thai theme park, empty since the flooding", url: "https://news.example.com/world/ng-interactive/2026/oct/14/park" }).keep).toBe(false);
+    expect(isDisasterNews({ title: "A market town learns to live with the flooding", url: "https://news.example.com/world/ng-interactive/2026/oct/14/park" }).keep).toBe(false);
   });
 
   it("drops GDELT body-text matches whose headline names no hazard", () => {
@@ -162,13 +162,13 @@ describe("the service filters every search, not only the general one", () => {
       retentionMs: null,
       searchGroup: async () => [
         mk("Firms that raced into AI are now scaling back", "https://news.example.com/technology/2026/oct/13/firms-scale-back-ai"),
-        mk("Hurricane Simon kills five in Mexico", "https://news.example.com/world/2026/oct/13/simon"),
+        mk("Hurricane Kestrel kills five in Mexico", "https://news.example.com/world/2026/oct/13/kestrel"),
       ],
       searchGeneral: async () => [],
     };
-    const events = [{ id: 1, type: "storm", severity: "high", location: "Hurricane Simon", timeMinutesAgo: 60, details: { cleanTitle: "Hurricane Simon" } }];
+    const events = [{ id: 1, type: "storm", severity: "high", location: "Hurricane Kestrel", timeMinutesAgo: 60, details: { cleanTitle: "Hurricane Kestrel" } }];
     const svc = createNewsService({ providers: [provider], store: createMemoryNewsStore(), loadEvents: async () => events, now: () => new Date("2026-10-16T12:00:00Z"), log: quiet });
     await svc.refresh();
-    expect(svc.getNews().items.map((a) => a.title)).toEqual(["Hurricane Simon kills five in Mexico"]);
+    expect(svc.getNews().items.map((a) => a.title)).toEqual(["Hurricane Kestrel kills five in Mexico"]);
   });
 });

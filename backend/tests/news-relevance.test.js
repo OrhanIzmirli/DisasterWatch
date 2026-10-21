@@ -6,8 +6,8 @@ import { createThrottle } from "../src/services/gdelt.js";
 import { createNewsService } from "../src/services/news.service.js";
 import { createMemoryNewsStore } from "../src/services/newsStore.js";
 
-/** Live Guardian results of 2026-10-14 (see the fixture) must come out as disaster news only. */
-const live = JSON.parse(readFileSync(new URL("./fixtures/guardian-live-2026-10-14.json", import.meta.url), "utf8"));
+/** The synthetic Guardian sample (cases seen live on 2026-10-14, see the fixture) must come out as disaster news only. */
+const live = JSON.parse(readFileSync(new URL("./fixtures/guardian-synthetic-sample.json", import.meta.url), "utf8"));
 const quiet = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const titled = (list) => list.map((a) => a.title ?? a.webTitle);
 
@@ -53,14 +53,14 @@ describe("general search: headline or standfirst must name a hazard", () => {
     const articles = live.general.map(normalizeGuardianResult).filter(Boolean); // live blogs already gone
     const kept = articles.filter(mentionsDisaster);
     expect(titled(kept)).toEqual([
-      "Inside an abandoned Thai theme park, empty since the flooding",
-      "Huge surf and floods damage California beachfront homes and piers",
-      "Wildfire driven by El Niño destroys nearly 300 homes in Indonesia",
-      "Hurricane Simon and Tropical Storm Rachel leave five dead on Mexico's Pacific coast",
+      "A market town learns to live with the flooding",
+      "Floods and high tides damage harbour homes and a ferry pier in Maine",
+      "Wildfire fanned by El Niño heat burns 120 farms in the highlands",
+      "Hurricane Kestrel makes landfall in Mexico's Oaxaca state, three dead",
     ]);
     const dropped = titled(articles.filter((a) => !mentionsDisaster(a)));
-    expect(dropped).toContain("Was the president right about Greenland after all?");
-    expect(dropped).toContain("Pontiff recovering after surgery following a cancer diagnosis | First Thing");
+    expect(dropped).toContain("Arctic shipping routes draw new interest from trading nations");
+    expect(dropped).toContain("Hospital staffing, transit funding and a new school calendar | First Thing");
     expect(dropped).toHaveLength(10);
   });
 
@@ -78,7 +78,7 @@ describe("general search: headline or standfirst must name a hazard", () => {
       retentionMs: null,
       searchGroup: async () => [],
       searchGeneral: async () => [
-        { title: "Was the president right about Greenland after all?", url: "https://a.com/1", domain: "a.com", publishedAt: null, image: null, provider: "gdelt" },
+        { title: "Arctic shipping routes draw new interest from trading nations", url: "https://a.com/1", domain: "a.com", publishedAt: null, image: null, provider: "gdelt" },
         { title: "Quake rattles Hokkaido", url: "https://a.com/2", domain: "a.com", publishedAt: null, image: null, provider: "gdelt" },
       ],
     };
@@ -90,25 +90,25 @@ describe("general search: headline or standfirst must name a hazard", () => {
 
 describe("linking by headline and story slug only (section segments ignored)", () => {
   it("strips sections, dates, ids, format markers and words repeated from the section path", () => {
-    expect(slugWords("https://www.theguardian.com/australia-news/live/2026/oct/14/australia-news-live-coalition-eu-trade-deal-ntwnfb")).toEqual(["coalition", "eu", "trade", "deal", "ntwnfb"]);
-    expect(slugWords("https://www.theguardian.com/us-news/2026/oct/13/california-storm-floods")).toEqual(["california", "storm", "floods"]);
+    expect(slugWords("https://example.com/australia-news/live/2026/oct/14/australia-news-live-senate-water-rights-qx7wpk")).toEqual(["senate", "water", "rights", "qx7wpk"]);
+    expect(slugWords("https://example.com/us-news/2026/oct/13/central-coast-storm-floods")).toEqual(["central", "coast", "storm", "floods"]);
     expect(slugWords("https://site.com/news/world/asia/12345/kushiro-quake.html")).toEqual(["kushiro", "quake"]);
-    expect(slugWords("https://www.theguardian.com/world/live")).toEqual([]);
+    expect(slugWords("https://example.com/world/live")).toEqual([]);
     expect(slugWords("not a url")).toEqual([]);
   });
 
-  it("does not link the australia-news live blogs to 'Wildfire in Australia', but keeps the Sydney fire-ban article linked", () => {
+  it("does not link the australia-news live blogs to 'Wildfire in Australia', but keeps the Sydney bushfire article linked", () => {
     const event = live.event;
     // even if a live blog slipped past the provider guard, the section path must not link it
-    const [tradeBlog, protestBlog, fireBan] = live.group.map((r) => ({ title: r.webTitle, url: r.webUrl }));
-    const linked = linkArticlesToEvents([tradeBlog, protestBlog, fireBan], [event, { id: 9, type: "wildfire", locationText: "Wildfire in Botswana" }]);
+    const [councilBlog, budgetBlog, bushfire] = live.group.map((r) => ({ title: r.webTitle, url: r.webUrl }));
+    const linked = linkArticlesToEvents([councilBlog, budgetBlog, bushfire], [event, { id: 9, type: "wildfire", locationText: "Wildfire in Botswana" }]);
     expect(linked.map((a) => a.event?.id ?? null)).toEqual([null, null, null]); // multi-event group: no place word in headline/slug
 
-    // the real pipeline: live blogs removed by the provider, the Sydney article linked as the single event of its group
+    // the real pipeline: live blogs removed by the provider, the bushfire article linked as the single event of its group
     const normalized = live.group.map(normalizeGuardianResult).filter(Boolean);
-    expect(titled(normalized)).toEqual(["Total fire ban declared for Sydney as heat and dry lightning raise the bushfire risk"]);
-    const [sydney] = linkArticlesToEvents(normalized, [event], { single: true });
-    expect(sydney.event?.id).toBe(event.id);
+    expect(titled(normalized)).toEqual(["Bushfire warning for Sydney’s north-west as hot winds return"]);
+    const [bushfireArticle] = linkArticlesToEvents(normalized, [event], { single: true });
+    expect(bushfireArticle.event?.id).toBe(event.id);
   });
 
   it("still links by real slug words (GDELT-style urls)", () => {
