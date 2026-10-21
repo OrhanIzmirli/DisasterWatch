@@ -387,7 +387,7 @@ describe("polygon events are placed at the centroid", () => {
 
 describe("counts over the whole window (dashboard KPIs must not depend on the page size)", () => {
   it("counts every event in the window per severity and type, while items are limited", async () => {
-    const t = Date.parse("2026-10-13T12:00:00Z");
+    const t = Date.now(); // the fixtures and the USGS normaliser use the real clock, so the window must too
     const quake = (id, mag, minutesAgo) => ({
       ...USGS_FEATURE,
       id,

@@ -32,10 +32,10 @@ describe("relevance filter on the cases seen on the live panel (synthetic sample
       .filter((a) => isDisasterNews(a).keep)
       .map((a) => a.title);
     expect(shown).toEqual([
-      "Total fire ban declared for Sydney as heat and dry lightning raise the bushfire risk",
-      "Huge surf and floods damage California beachfront homes and piers",
-      "Wildfire driven by El Niño destroys nearly 300 homes in Indonesia",
-      "Hurricane Simon and Tropical Storm Rachel leave five dead on Mexico's Pacific coast",
+      "Total fire ban declared for the Hunter region as heat and dry lightning raise the bushfire risk",
+      "Huge surf and floods damage beachfront homes and piers on the central coast",
+      "Wildfire driven by drought destroys nearly 300 homes on a southern island",
+      "Hurricane Omar and Tropical Storm Lena leave five dead along the Pacific coast",
     ]);
   });
 });
@@ -104,7 +104,7 @@ describe("idioms, names and non-news sections", () => {
     expect(excludedSection("https://news.example.com/world/2026/oct/16/quake")).toBeNull();
     expect(isDisasterNews({ title: "Insurers count the cost of Hurricane Simon", url: "https://news.example.com/business/2026/oct/16/insurers" }).keep).toBe(false);
     expect(isDisasterNews({ title: "The floods were a warning we ignored", url: "https://news.example.com/commentisfree/2026/oct/16/floods" }).keep).toBe(false);
-    expect(isDisasterNews({ title: "Inside an abandoned Thai theme park, empty since the flooding", url: "https://news.example.com/world/ng-interactive/2026/oct/14/park" }).keep).toBe(false);
+    expect(isDisasterNews({ title: "Inside an abandoned theme park, empty since the flooding", url: "https://news.example.com/world/ng-interactive/2026/oct/14/park" }).keep).toBe(false);
   });
 
   it("drops GDELT body-text matches whose headline names no hazard", () => {

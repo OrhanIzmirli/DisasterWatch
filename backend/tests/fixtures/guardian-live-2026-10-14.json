@@ -1,5 +1,5 @@
 {
-  "note": "Shape of the Guardian content-search results served live on 2026-10-14 11:31 UTC, BEFORE the relevance rules. Headlines are paraphrased (no Guardian text is stored in the repo); URLs keep the real section/date/slug structure. The first three were linked to the feed event 'Wildfire in Australia'; the rest came from the general query.",
+  "note": "Synthetic sample in the shape of a Guardian content-search response, BEFORE the relevance rules. Headlines and URLs are invented (example.com); the URL paths keep the section/format/date/slug structure the section and slug rules read. Each entry stands for one case seen in the live results of 2026-10-14: live blogs, off-topic news, opinion, interactives, reviews, obituaries, sponsored content and four disaster stories. The first three play the results of a search for the feed event 'Wildfire in Australia'; the rest play the general query.",
   "event": {
     "id": 1,
     "type": "wildfire",
@@ -9,113 +9,113 @@
   "group": [
     {
       "type": "liveblog",
-      "webTitle": "Opposition MPs leave a trade briefing over the EU deal – as it happened",
-      "webUrl": "https://www.theguardian.com/australia-news/live/2026/oct/14/treasurer-jim-chalmers-labor-one-nation-pauline-hanson-one-nation-gas-reservation-scheme-ntwnfb",
+      "webTitle": "Senate committee hears from regional councils on water rights – as it happened",
+      "webUrl": "https://example.com/australia-news/live/2026/oct/14/senate-committee-regional-councils-water-rights",
       "webPublicationDate": "2026-10-14T07:20:00Z"
     },
     {
       "type": "liveblog",
-      "webTitle": "Protester removed after disrupting the state parliament – as it happened",
-      "webUrl": "https://www.theguardian.com/australia-news/live/2026/oct/13/labor-anthony-albanese-charity-boost-greens-ukraine-coalition-one-nation-ntwnfb",
+      "webTitle": "Late sitting as the budget bill clears the lower house – as it happened",
+      "webUrl": "https://example.com/australia-news/live/2026/oct/13/late-sitting-budget-bill-lower-house",
       "webPublicationDate": "2026-10-13T07:30:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Total fire ban declared for Sydney as heat and dry lightning raise the bushfire risk",
-      "webUrl": "https://www.theguardian.com/australia-news/2026/oct/12/total-fire-ban-sydney-extreme-weather-temperature-37c",
-      "webPublicationDate": "2026-10-12T06:00:00Z"
+      "webTitle": "Total fire ban declared for the Hunter region as heat and dry lightning raise the bushfire risk",
+      "webUrl": "https://example.com/australia-news/2026/oct/12/total-fire-ban-hunter-region-heat-dry-lightning",
+      "webPublicationDate": "2026-10-12T09:00:00Z"
     }
   ],
   "general": [
     {
       "type": "article",
-      "webTitle": "Was the president right about Greenland after all?",
-      "webUrl": "https://www.theguardian.com/world/2026/oct/11/did-trump-get-one-thing-right-about-greenland",
-      "webPublicationDate": "2026-10-11T10:00:00Z"
+      "webTitle": "Arctic shipping routes draw new interest from trading nations",
+      "webUrl": "https://example.com/world/2026/oct/11/arctic-shipping-routes-trading-nations",
+      "webPublicationDate": "2026-10-11T12:00:00Z"
     },
     {
       "type": "liveblog",
-      "webTitle": "Fuel prices set to stay high into next year despite the new trade deal – business live",
-      "webUrl": "https://www.theguardian.com/business/live/2026/oct/14/imf-rising-government-borrowing-costs-inflation-oil-stock-markets-latest-news-updates",
-      "webPublicationDate": "2026-10-14T11:20:00Z"
-    },
-    {
-      "type": "article",
-      "webTitle": "Pontiff recovering after surgery following a cancer diagnosis | First Thing",
-      "webUrl": "https://www.theguardian.com/us-news/2026/oct/14/first-thing-pope-leo-surgery-lung-cancer",
-      "webPublicationDate": "2026-10-14T10:30:00Z"
-    },
-    {
-      "type": "article",
-      "webTitle": "I work in insurance and my industry is not honest about climate risk | Anonymous",
-      "webUrl": "https://www.theguardian.com/commentisfree/2026/oct/14/climate-crisis-insurance-risk-disaster-catastrophe",
+      "webTitle": "Fuel prices expected to stay high into next year – business live",
+      "webUrl": "https://example.com/business/live/2026/oct/14/fuel-prices-high-next-year-markets",
       "webPublicationDate": "2026-10-14T10:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Inside an abandoned Thai theme park, empty since the flooding",
-      "webUrl": "https://www.theguardian.com/world/ng-interactive/2026/oct/14/siam-amazing-park-thailand-oldest-amusement-park-flooded",
-      "webPublicationDate": "2026-10-14T09:00:00Z"
+      "webTitle": "Hospital staffing, transit funding and a new school calendar | First Thing",
+      "webUrl": "https://example.com/us-news/2026/oct/14/first-thing-hospital-staffing-transit-funding",
+      "webPublicationDate": "2026-10-14T10:30:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Huge surf and floods damage California beachfront homes and piers",
-      "webUrl": "https://www.theguardian.com/us-news/2026/oct/13/california-storm-floods",
+      "webTitle": "I work in insurance and my industry underplays climate risk | Anonymous",
+      "webUrl": "https://example.com/commentisfree/2026/oct/14/insurance-industry-climate-risk",
+      "webPublicationDate": "2026-10-14T06:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Inside an abandoned theme park, empty since the flooding",
+      "webUrl": "https://example.com/world/ng-interactive/2026/oct/14/abandoned-theme-park-flooded",
+      "webPublicationDate": "2026-10-14T04:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Huge surf and floods damage beachfront homes and piers on the central coast",
+      "webUrl": "https://example.com/us-news/2026/oct/13/central-coast-storm-floods",
       "webPublicationDate": "2026-10-13T22:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Wildfire driven by El Niño destroys nearly 300 homes in Indonesia",
-      "webUrl": "https://www.theguardian.com/world/2026/oct/13/indonesia-wildfire-el-nino-razes-300-homes-bankga-belitung",
+      "webTitle": "Wildfire driven by drought destroys nearly 300 homes on a southern island",
+      "webUrl": "https://example.com/world/2026/oct/13/wildfire-drought-destroys-homes-southern-island",
       "webPublicationDate": "2026-10-13T15:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Documentary review – a political portrait of a former Irish party leader",
-      "webUrl": "https://www.theguardian.com/film/2026/oct/13/forever-is-now-review-documentary-eamon-ryan",
+      "webTitle": "Documentary review – a portrait of a retired party leader",
+      "webUrl": "https://example.com/film/2026/oct/13/documentary-review-retired-party-leader",
       "webPublicationDate": "2026-10-13T14:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Coastal erosion has taken more than 180 English homes in 16 years",
-      "webUrl": "https://www.theguardian.com/environment/2026/oct/13/coastal-erosion-england-homes-demolished",
-      "webPublicationDate": "2026-10-13T12:00:00Z"
-    },
-    {
-      "type": "article",
-      "webTitle": "Hurricane Simon and Tropical Storm Rachel leave five dead on Mexico's Pacific coast",
-      "webUrl": "https://www.theguardian.com/world/2026/oct/13/mexico-hurricane-simon-tropical-storm-rachel-kill-five-pacific-coast",
+      "webTitle": "Coastal erosion has taken more than 150 homes along one coastline in 15 years",
+      "webUrl": "https://example.com/environment/2026/oct/13/coastal-erosion-homes-lost",
       "webPublicationDate": "2026-10-13T11:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "A 28-year walk home across deserts and ice: one explorer's story",
-      "webUrl": "https://www.theguardian.com/lifeandstyle/2026/oct/13/karl-bushby-incredible-28-year-walk-home-goliath-expedition-hull",
-      "webPublicationDate": "2026-10-13T10:00:00Z"
-    },
-    {
-      "type": "article",
-      "webTitle": "Held hostage for nearly three years: could I forgive the people who took me?",
-      "webUrl": "https://www.theguardian.com/news/ng-interactive/2026/oct/13/i-was-kidnapped-and-held-hostage-for-977-days-could-i-forgive-my-captors",
+      "webTitle": "Hurricane Omar and Tropical Storm Lena leave five dead along the Pacific coast",
+      "webUrl": "https://example.com/world/2026/oct/13/hurricane-omar-tropical-storm-lena-five-dead",
       "webPublicationDate": "2026-10-13T09:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Musician obituary",
-      "webUrl": "https://www.theguardian.com/music/2026/oct/12/stephen-shears-obituary",
-      "webPublicationDate": "2026-10-12T16:00:00Z"
+      "webTitle": "A 20-year walk home across deserts and ice: one traveller's story",
+      "webUrl": "https://example.com/lifeandstyle/2026/oct/13/twenty-year-walk-home-deserts-ice",
+      "webPublicationDate": "2026-10-13T07:00:00Z"
     },
     {
       "type": "article",
-      "webTitle": "Balkan temperatures swing as heavy rain moves towards Greece",
-      "webUrl": "https://www.theguardian.com/environment/2026/oct/12/balkan-temperatures-montenegro-rain-greece",
-      "webPublicationDate": "2026-10-12T14:00:00Z"
+      "webTitle": "After three years in captivity: what forgiveness looks like",
+      "webUrl": "https://example.com/news/ng-interactive/2026/oct/13/three-years-captivity-forgiveness",
+      "webPublicationDate": "2026-10-13T05:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Folk musician obituary",
+      "webUrl": "https://example.com/music/2026/oct/12/folk-musician-obituary",
+      "webPublicationDate": "2026-10-12T18:00:00Z"
+    },
+    {
+      "type": "article",
+      "webTitle": "Temperatures swing across the region as heavy rain moves south",
+      "webUrl": "https://example.com/environment/2026/oct/12/temperatures-swing-heavy-rain-south",
+      "webPublicationDate": "2026-10-12T12:00:00Z"
     },
     {
       "type": "article",
       "webTitle": "Cleaner seas, new jobs: a university's maritime innovation push",
-      "webUrl": "https://www.theguardian.com/uni-a-new-wave-of-innovation/2026/oct/12/how-the-university-of-plymouth-is-driving-maritime-innovation",
-      "webPublicationDate": "2026-10-12T12:00:00Z"
+      "webUrl": "https://example.com/uni-innovation-series/2026/oct/12/university-maritime-innovation-push",
+      "webPublicationDate": "2026-10-12T08:00:00Z"
     }
   ]
 }
