@@ -139,8 +139,10 @@ model Notification {
 /// provider idempotency key and the daily limit is counted from here.
 model EmailDelivery {
   id                Int            @id @default(autoincrement())
-  userId            Int
-  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// null once the account is deleted: the row stays, anonymised, because the
+  /// daily limit and the confirmation cap are counted from it (utils/accountDeletion.js)
+  userId            Int?
+  user              User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   /// "digest" (alerts) | "confirm" (double opt-in link, no user-written text)
   kind              String         @default("digest")
   /// "pending" | "sent" | "failed" | "cancelled"

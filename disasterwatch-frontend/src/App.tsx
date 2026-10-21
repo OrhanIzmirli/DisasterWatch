@@ -155,6 +155,11 @@ export default function App() {
   // /account through ProtectedRoute's own redirect to /signin, which would replace that state.
   const [signInNotice, setSignInNotice] = useState<string | null>(null);
 
+  // shown once: leaving the sign-in page drops it
+  useEffect(() => {
+    if (pathname !== "/signin") setSignInNotice(null);
+  }, [pathname]);
+
   // the server already ended the session and cleared the cookie
   const onAccountDeleted = useCallback(() => {
     writeSessionHint("out");

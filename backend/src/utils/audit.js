@@ -15,17 +15,6 @@ export function maskEmail(email) {
 }
 
 /**
- * When an account is deleted, its earlier audit rows keep only the masked
- * address (disable/enable rows store the full one while the account exists,
- * so the admin can tell who it was). Call inside the deleting transaction.
- */
-export async function forgetAuditAddress(tx, user) {
-  const masked = maskEmail(user.email);
-  await tx.adminAuditLog.updateMany({ where: { targetUserId: user.id }, data: { targetLabel: masked } });
-  await tx.adminAuditLog.updateMany({ where: { actorId: user.id }, data: { actorEmail: masked } });
-}
-
-/**
  * Write one audit row. `tx` is a Prisma client or an interactive-transaction
  * client, so callers can include the row in their own transaction.
  */

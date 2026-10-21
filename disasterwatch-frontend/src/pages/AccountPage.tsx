@@ -32,12 +32,16 @@ function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
         body: JSON.stringify({ password }),
       });
       const data = await res.json().catch(() => null);
-      if (res.ok || res.status === 401) {
-        // 401: the account or the session was already gone; either way there is nothing left to delete
+      if (res.ok) {
         onDeleted();
         return;
       }
-      setError(data?.message || "Could not delete the account.");
+      // 401: the session ended (expired, or signed out elsewhere); nothing was deleted
+      setError(
+        res.status === 401
+          ? "Your session has ended, so nothing was deleted. Sign in again, then delete the account."
+          : data?.message || "Could not delete the account."
+      );
     } catch {
       setError("Could not reach the server.");
     } finally {
@@ -51,8 +55,8 @@ function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
         Delete account
       </h2>
       <p className="channel-note">
-        Deletes your account, your alert subscriptions, your notifications and the record of e-mails we sent you, right away. This
-        cannot be undone. <Link to="/privacy" className="text-link">What we store</Link>
+        Deletes your account, your alert subscriptions and your notifications right away, and removes your address and the
+        messages from the record of e-mails we sent you. This cannot be undone. <Link to="/privacy" className="text-link">What we store</Link>
       </p>
       {!open ? (
         <button type="button" className="btn btn-danger" onClick={() => setOpen(true)}>

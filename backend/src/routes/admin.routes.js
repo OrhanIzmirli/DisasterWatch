@@ -15,7 +15,8 @@ import { z } from "zod";
 import prisma from "../prisma.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
 import { roleFor } from "../utils/adminEmails.js";
-import { maskEmail, writeAudit, forgetAuditAddress } from "../utils/audit.js";
+import { maskEmail, writeAudit } from "../utils/audit.js";
+import { eraseAccount } from "../utils/accountDeletion.js";
 
 const router = express.Router();
 
@@ -192,9 +193,8 @@ router.delete("/users/:id", async (req, res) => {
     }
 
     await prisma.$transaction(async (tx) => {
-      // Subscriptions, notifications and e-mail records go with the user (onDelete: Cascade)
-      await tx.user.delete({ where: { id: target.id } });
-      await forgetAuditAddress(tx, target);
+      // subscriptions and notifications go with the user, e-mail records are anonymised
+      await eraseAccount(tx, target);
       await writeAudit(tx, {
         actor: req.user,
         action: "user.delete",

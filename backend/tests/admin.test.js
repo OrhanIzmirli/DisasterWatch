@@ -91,6 +91,15 @@ describe("GET /disasters/manual", () => {
     expect(res.body.source).toBe("DB");
     expect(res.body.count).toBe(2);
     expect(res.body.items.map((d) => d.title)).toEqual(["Second", "First"]);
+    // the admin's address is not shown to ordinary users, only to admins
+    expect(res.body.items.every((d) => !("createdBy" in d))).toBe(true);
+    expect((await admin.get("/disasters/manual")).body.items[0].createdBy).toBe("admin@example.com");
+  });
+
+  it("keeps only the masked address of an author whose account is deleted", async () => {
+    await admin.post("/disasters").send(DISASTER);
+    expect((await admin.delete("/users/me").send({ password: "CorrectHorse1!" })).status).toBe(200);
+    expect((await prisma.disaster.findFirst()).createdBy).toBe("adm***@example.com");
   });
 });
 

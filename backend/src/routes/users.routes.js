@@ -5,7 +5,7 @@ import rateLimit from "express-rate-limit";
 import prisma from "../prisma.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { roleFor } from "../utils/adminEmails.js";
-import { forgetAuditAddress } from "../utils/audit.js";
+import { eraseAccount } from "../utils/accountDeletion.js";
 import { setSessionCookie, clearSessionCookie } from "../utils/session.js";
 
 // Brute-force protection for credential endpoints: 10 attempts per IP per 15 minutes
@@ -183,45 +183,44 @@ export function createUsersRouter(options = {}) {
 
   /* ===========================
      DELETE /users/me   body: { password }
-     The signed-in user deletes their own account. Their alert subscriptions,
-     notifications and e-mail delivery records go with it (onDelete: Cascade).
+     The signed-in user deletes their own account: subscriptions and
+     notifications go with it, e-mail delivery records are anonymised
+     (utils/accountDeletion.js).
   =========================== */
-  router.delete("/me", authLimiter, requireAuth, async (req, res) => {
+  // requireAuth first: requests without a session never use up the shared sign-in budget
+  router.delete("/me", requireAuth, authLimiter, async (req, res) => {
     const password = typeof req.body?.password === "string" ? req.body.password : "";
     if (!password) return res.status(400).json({ message: "Enter your password to delete the account." });
 
     try {
-      const user = await prisma.user.findUnique({
-        where: { id: req.user.id },
-        select: { id: true, email: true, password: true, _count: { select: { subscriptions: true, notifications: true, emailDeliveries: true } } },
-      });
+      const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, password: true } });
+      // gone since requireAuth looked: a concurrent request (second tab, admin) deleted it
       if (!user) {
         clearSessionCookie(res);
-        return res.status(401).json({ message: "Not authenticated" });
+        return res.json({ ok: true, deleted: null });
       }
       // 403, not 401: the session is valid, only the confirmation failed
       if (!(await bcrypt.compare(password, user.password))) {
         return res.status(403).json({ message: "The password is not correct." });
       }
 
-      await prisma.$transaction(async (tx) => {
-        await tx.user.delete({ where: { id: user.id } });
-        await forgetAuditAddress(tx, user);
+      // counted inside the transaction, so rows the notification service adds meanwhile are counted too
+      const deleted = await prisma.$transaction(async (tx) => {
+        const row = await tx.user.findUnique({
+          where: { id: user.id },
+          select: { id: true, email: true, _count: { select: { subscriptions: true, notifications: true, emailDeliveries: true } } },
+        });
+        if (!row) return null;
+        await eraseAccount(tx, row);
+        return row._count;
       });
       clearSessionCookie(res);
-      res.json({
-        ok: true,
-        deleted: {
-          subscriptions: user._count.subscriptions,
-          notifications: user._count.notifications,
-          emailDeliveries: user._count.emailDeliveries,
-        },
-      });
+      res.json({ ok: true, deleted });
     } catch (err) {
-      // already deleted by a concurrent request (or by an admin)
+      // deleted by a concurrent request between the read and the delete: the account is gone either way
       if (err?.code === "P2025") {
         clearSessionCookie(res);
-        return res.status(401).json({ message: "Not authenticated" });
+        return res.json({ ok: true, deleted: null });
       }
       console.error("DELETE ACCOUNT ERROR:", err?.message || err);
       res.status(500).json({ message: "Server error" });

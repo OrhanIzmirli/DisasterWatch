@@ -89,6 +89,10 @@ export default function PrivacyPage() {
             <strong>Esri</strong> serves the map images: your browser loads them directly, so Esri sees your IP address and the map
             area you look at.
           </li>
+          <li>
+            <strong>News sites:</strong> the small pictures next to some news articles load directly from the publisher's site,
+            so that site sees your IP address (no referring page is sent).
+          </li>
         </ul>
         <p>
           Disaster events and news come from NASA EONET, USGS, GDACS, GDELT and The Guardian. Our server fetches them; nothing about
@@ -115,6 +119,11 @@ export default function PrivacyPage() {
             alerts off stops the e-mails; the record of e-mails already sent stays until you delete your account.
           </li>
           <li>
+            When you delete your account, the record of each e-mail we sent you is anonymised rather than removed: the message,
+            your address and the link to your account are erased. Only the time and the delivery status stay, so that our daily
+            sending limit keeps counting the e-mail; nothing in it points to you any more.
+          </li>
+          <li>
             Resend and Render keep their own logs (sent e-mails, service logs) for the limited time their plans set. The database
             provider can restore the database to an earlier point for a short window, so deleted data can remain in that history
             until the window has passed.
@@ -129,8 +138,8 @@ export default function PrivacyPage() {
         <ul>
           <li>
             <strong>Everything at once:</strong> on <Link to="/account" className="text-link">My account</Link>, choose "Delete
-            account" and enter your password. Your account, subscriptions, notifications and e-mail records are deleted
-            immediately.
+            account" and enter your password. Your account, subscriptions and notifications are deleted and the e-mail records
+            anonymised immediately. An e-mail that was being sent at that very moment may still arrive.
           </li>
           <li>
             <strong>Single subscriptions:</strong> delete them in the <Link to="/alerts" className="text-link">Alert center</Link>.

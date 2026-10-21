@@ -70,7 +70,9 @@ router.get("/manual", async (req, res) => {
       orderBy: { createdAt: "desc" },
       take: 50,
     });
-    res.json({ items, count: items.length, source: "DB" });
+    // the author's address is for admins only
+    const visible = req.user.role === "admin" ? items : items.map(({ createdBy, ...rest }) => rest);
+    res.json({ items: visible, count: visible.length, source: "DB" });
   } catch (err) {
     console.error("LIST MANUAL DISASTERS ERROR:", err?.message || err);
     res.status(500).json({ message: "Server error" });

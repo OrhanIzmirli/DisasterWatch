@@ -233,7 +233,11 @@ export function createEmailDispatcher({ pool, config, sender, now = () => new Da
     // read the row again under the lease: another instance may have stored a payload or counted attempts meanwhile
     const { rows } = await pool.query(`${DELIVERY_SELECT} WHERE d."id" = $1`, [id]);
     const d = rows[0];
-    if (!d) return "cancelled";
+    if (!d) {
+      // the account was deleted (the row stays anonymised, without a user): never send, never retry
+      await finish(id, "cancelled", "disabled", null);
+      return "cancelled";
+    }
 
     if (t.getTime() - new Date(d.createdAt).getTime() > DELIVERY_MAX_AGE_MS) {
       await finish(d.id, "failed", "send-failed", "not sent within 23 hours");

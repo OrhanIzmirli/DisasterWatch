@@ -7,6 +7,7 @@ import PrivacyPage from "./PrivacyPage";
 import SignInPage from "./SignInPage";
 import SignUpPage from "./SignUpPage";
 import SiteFooter from "../components/SiteFooter";
+import ConfirmEmailPage from "./ConfirmEmailPage";
 
 afterEach(() => {
   cleanup();
@@ -62,6 +63,16 @@ describe("account deletion", () => {
     fireEvent.change(screen.getByLabelText("Your password"), { target: { value: "wrong" } });
     fireEvent.click(screen.getByRole("button", { name: "Delete account permanently" }));
     expect((await screen.findByRole("alert")).textContent).toBe("The password is not correct.");
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  it("a 401 (session ended) is not reported as a deletion", async () => {
+    stubServer(() => json(401, { message: "Not authenticated" }));
+    const onDeleted = openAccount();
+    fireEvent.click(screen.getByRole("button", { name: "Delete my account…" }));
+    fireEvent.change(screen.getByLabelText("Your password"), { target: { value: "CorrectHorse1!" } });
+    fireEvent.click(screen.getByRole("button", { name: "Delete account permanently" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Your session has ended, so nothing was deleted/);
     expect(onDeleted).not.toHaveBeenCalled();
   });
 
@@ -126,5 +137,24 @@ describe("sign-up: an already registered address offers sign-in", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     expect(await screen.findByText(/This e-mail is already registered\./)).toBeTruthy();
     expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBe(2); // the error's link and the footer's
+  });
+});
+
+describe("confirmation link of an address on the admin list", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  it("a 403 asks to sign in first, keeps the token and links back to the same link after sign-in", async () => {
+    const TOKEN = "T".repeat(43);
+    window.history.replaceState(null, "", `/confirm-email?token=${TOKEN}`);
+    vi.stubGlobal("fetch", vi.fn(async () => json(403, { message: "This address needs one more step: sign in to the account that asked for these e-mails, then open the link again." })));
+    render(
+      <MemoryRouter initialEntries={[`/confirm-email?token=${TOKEN}`]}>
+        <ConfirmEmailPage />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, send alert e-mails to this address" }));
+    expect(await screen.findByText(/sign in to the account that asked for these e-mails/)).toBeTruthy();
+    expect(window.location.search).toBe(`?token=${TOKEN}`); // still usable after signing in
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/signin");
   });
 });

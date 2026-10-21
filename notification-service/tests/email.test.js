@@ -335,6 +335,21 @@ describe.skipIf(!DB_URL)("dispatcher (Postgres)", () => {
     expect(await notifRows()).toMatchObject([{ emailSkipReason: "disabled" }]);
   });
 
+  it("a pending delivery whose account was deleted meanwhile (row kept without a user) is cancelled, never sent, not retried", async () => {
+    const a = await user("gone@example.com");
+    await notification(a);
+    const provider = fakeProvider();
+    provider.failures.push(new EmailSendError("Resend 503", { transient: true, status: 503 }));
+    const d = createEmailDispatcher({ pool, config: config(), sender: provider, log: quietLog() });
+    await d.runOnce(); // pending, payload stored, waiting for a retry
+    await q(`DELETE FROM "User" WHERE "id" = $1`, [a]); // onDelete: SetNull keeps the row
+    expect(await d.runOnce()).toMatchObject({ cancelled: 1, sent: 0 });
+    expect(provider.delivered).toHaveLength(0);
+    const { rows } = await q(`SELECT "userId", "status" FROM "EmailDelivery"`);
+    expect(rows).toEqual([{ userId: null, status: "cancelled" }]);
+    expect(await d.runOnce()).toMatchObject({ cancelled: 0, sent: 0 }); // not picked up again
+  });
+
   it("two instances at once (deploy overlap): the lease lets one send each delivery, the other skips it", async () => {
     const a = await user("twice@example.com");
     await notification(a);

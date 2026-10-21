@@ -984,12 +984,6 @@
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
 }
 
-.channel-card h2 {
-  font-size: 0.9rem;
-  margin-top: 0.9rem; /* the h3 default (1em) this heading had before it became an h2 */
-  margin-bottom: 0.35rem;
-}
-
 .channel-card ul {
   padding-left: 1.1rem;
 }
@@ -2373,6 +2367,7 @@ body {
 /* alerts info cards: keep list indentation inside the shared card */
 .channel-card h2 {
   font-size: 0.9rem;
+  margin-top: 0.9rem; /* the h3 default (1em) this heading had before it became an h2 */
   margin-bottom: 0.35rem;
   color: var(--dw-cream);
 }

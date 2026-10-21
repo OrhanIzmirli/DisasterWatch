@@ -53,6 +53,27 @@ export async function requireAuth(req, res, next) {
   }
 }
 
+/**
+ * The id of the signed-in user behind the request's session cookie, or null
+ * (no cookie, bad or old token, deleted or disabled account). For routes that
+ * work without a session but must know whose session it is when there is one.
+ */
+export async function sessionUserId(req) {
+  const token = req.cookies?.[COOKIE_NAME];
+  if (!token) return null;
+  let decoded;
+  try {
+    decoded = verifyAccessToken(token);
+  } catch {
+    return null;
+  }
+  const id = Number(decoded?.id);
+  if (!Number.isInteger(id)) return null;
+  const user = await prisma.user.findUnique({ where: { id }, select: { disabledAt: true, tokenVersion: true } });
+  if (!user || user.disabledAt || user.tokenVersion !== Number(decoded.tokenVersion ?? 0)) return null;
+  return id;
+}
+
 /** Admins only; always used after requireAuth, so the role is the current one. */
 export function requireAdmin(req, res, next) {
   if (req.user?.role !== "admin") {
