@@ -24,18 +24,18 @@ describe("relevance filter on the cases seen on the live panel (synthetic sample
     expect(reason("Documentary about a wildfire")).toBe('feature/listing ("documentary")');
   });
 
-  it("keeps only the disaster stories of the 2026-10-14 Guardian sample", () => {
-    const live = fixture("guardian-live-2026-10-14.json");
+  it("keeps only the disaster stories of the synthetic Guardian sample", () => {
+    const live = fixture("guardian-synthetic-sample.json");
     const shown = [...live.group, ...live.general]
       .map(normalizeGuardianResult)
       .filter(Boolean)
       .filter((a) => isDisasterNews(a).keep)
       .map((a) => a.title);
     expect(shown).toEqual([
-      "Total fire ban declared for the Hunter region as heat and dry lightning raise the bushfire risk",
+      "Total fire ban declared across Sydney’s west as heat and dry lightning raise the bushfire risk",
       "Huge surf and floods damage beachfront homes and piers on the central coast",
-      "Wildfire driven by drought destroys nearly 300 homes on a southern island",
-      "Hurricane Omar and Tropical Storm Lena leave five dead along the Pacific coast",
+      "Wildfire driven by El Niño drought destroys nearly 300 homes on a southern island",
+      "Hurricane Omar and Tropical Storm Lena leave five dead along Mexico's Pacific coast",
     ]);
   });
 });

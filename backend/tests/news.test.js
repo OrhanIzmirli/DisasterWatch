@@ -249,7 +249,7 @@ describe("news service: combined searches, merged providers, persistence and sta
   it("serves The Guardian when GDELT fails, without waiting for GDELT (merged, not failover)", async () => {
     const gdelt = failing("gdelt");
     const guardian = fakeProvider("guardian", {
-      group: async (g) => (g.type === "flood" ? [article("Nepal monsoon floods", "https://www.theguardian.com/world/nepal-floods", { provider: "guardian" })] : []),
+      group: async (g) => (g.type === "flood" ? [article("Nepal monsoon floods", "https://guardian.example.com/world/nepal-floods", { provider: "guardian" })] : []),
       refreshIntervalMs: 30 * 60_000,
       retentionMs: 24 * 3600_000,
     });
@@ -281,7 +281,7 @@ describe("news service: combined searches, merged providers, persistence and sta
       },
     });
     const guardian = fakeProvider("guardian", {
-      general: async () => [article("Earthquake shakes Hokkaido", "https://www.theguardian.com/world/2", { provider: "guardian", publishedAt: "2026-10-13T09:00:00.000Z" })],
+      general: async () => [article("Earthquake shakes Hokkaido", "https://guardian.example.com/world/2", { provider: "guardian", publishedAt: "2026-10-13T09:00:00.000Z" })],
       refreshIntervalMs: 30 * 60_000,
       retentionMs: 24 * 3600_000,
     });
@@ -295,7 +295,7 @@ describe("news service: combined searches, merged providers, persistence and sta
     gdeltDown = true;
     await svc.refresh();
     res = svc.getNews();
-    expect(res.items.map((a) => a.url).sort()).toEqual(["https://www.theguardian.com/world/2", "https://x.com/1"]);
+    expect(res.items.map((a) => a.url).sort()).toEqual(["https://guardian.example.com/world/2", "https://x.com/1"]);
     expect(res.stale).toBe(false); // The Guardian refreshed
     expect(svc.status().providers.gdelt.lastErrorKind).toBe("rate-limit");
     expect(svc.status().providers.gdelt.articles).toBe(1);
@@ -305,7 +305,7 @@ describe("news service: combined searches, merged providers, persistence and sta
     let t = T0;
     const gdelt = fakeProvider("gdelt", { general: async () => [article("Quake near Kushiro", "https://a.jp/1", { provider: "gdelt" })] });
     const guardian = fakeProvider("guardian", {
-      general: async () => [article("Nepal floods", "https://www.theguardian.com/world/3", { provider: "guardian" })],
+      general: async () => [article("Nepal floods", "https://guardian.example.com/world/3", { provider: "guardian" })],
       refreshIntervalMs: 30 * 60_000,
       retentionMs: 24 * 3600_000,
     });
@@ -394,7 +394,7 @@ describe("news service: combined searches, merged providers, persistence and sta
 
   it("drops Guardian articles 24 hours after they were fetched (licence), in memory and in the store", async () => {
     const guardian = fakeProvider("guardian", {
-      general: async () => [article("Floods", "https://www.theguardian.com/world/floods", { provider: "guardian" })],
+      general: async () => [article("Floods", "https://guardian.example.com/world/floods", { provider: "guardian" })],
       refreshIntervalMs: 30 * 60_000,
       retentionMs: 24 * 3600_000,
     });

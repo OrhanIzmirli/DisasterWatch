@@ -6,8 +6,8 @@ import { createThrottle } from "../src/services/gdelt.js";
 import { createNewsService } from "../src/services/news.service.js";
 import { createMemoryNewsStore } from "../src/services/newsStore.js";
 
-/** Live Guardian results of 2026-10-14 (see the fixture) must come out as disaster news only. */
-const live = JSON.parse(readFileSync(new URL("./fixtures/guardian-live-2026-10-14.json", import.meta.url), "utf8"));
+/** The synthetic Guardian sample (cases seen live on 2026-10-14, see the fixture) must come out as disaster news only. */
+const live = JSON.parse(readFileSync(new URL("./fixtures/guardian-synthetic-sample.json", import.meta.url), "utf8"));
 const quiet = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const titled = (list) => list.map((a) => a.title ?? a.webTitle);
 
@@ -55,8 +55,8 @@ describe("general search: headline or standfirst must name a hazard", () => {
     expect(titled(kept)).toEqual([
       "Inside an abandoned theme park, empty since the flooding",
       "Huge surf and floods damage beachfront homes and piers on the central coast",
-      "Wildfire driven by drought destroys nearly 300 homes on a southern island",
-      "Hurricane Omar and Tropical Storm Lena leave five dead along the Pacific coast",
+      "Wildfire driven by El Niño drought destroys nearly 300 homes on a southern island",
+      "Hurricane Omar and Tropical Storm Lena leave five dead along Mexico's Pacific coast",
     ]);
     const dropped = titled(articles.filter((a) => !mentionsDisaster(a)));
     expect(dropped).toContain("Arctic shipping routes draw new interest from trading nations");
@@ -90,14 +90,14 @@ describe("general search: headline or standfirst must name a hazard", () => {
 
 describe("linking by headline and story slug only (section segments ignored)", () => {
   it("strips sections, dates, ids, format markers and words repeated from the section path", () => {
-    expect(slugWords("https://example.com/australia-news/live/2026/oct/14/australia-news-live-senate-water-rights")).toEqual(["senate", "water", "rights"]);
+    expect(slugWords("https://example.com/australia-news/live/2026/oct/14/australia-news-live-senate-water-rights-qx7wpk")).toEqual(["senate", "water", "rights", "qx7wpk"]);
     expect(slugWords("https://example.com/us-news/2026/oct/13/central-coast-storm-floods")).toEqual(["central", "coast", "storm", "floods"]);
     expect(slugWords("https://site.com/news/world/asia/12345/kushiro-quake.html")).toEqual(["kushiro", "quake"]);
     expect(slugWords("https://example.com/world/live")).toEqual([]);
     expect(slugWords("not a url")).toEqual([]);
   });
 
-  it("does not link the australia-news live blogs to 'Wildfire in Australia', but keeps the Hunter region fire-ban article linked", () => {
+  it("does not link the australia-news live blogs to 'Wildfire in Australia', but keeps the Sydney fire-ban article linked", () => {
     const event = live.event;
     // even if a live blog slipped past the provider guard, the section path must not link it
     const [councilBlog, budgetBlog, fireBan] = live.group.map((r) => ({ title: r.webTitle, url: r.webUrl }));
@@ -106,7 +106,7 @@ describe("linking by headline and story slug only (section segments ignored)", (
 
     // the real pipeline: live blogs removed by the provider, the fire-ban article linked as the single event of its group
     const normalized = live.group.map(normalizeGuardianResult).filter(Boolean);
-    expect(titled(normalized)).toEqual(["Total fire ban declared for the Hunter region as heat and dry lightning raise the bushfire risk"]);
+    expect(titled(normalized)).toEqual(["Total fire ban declared across Sydney’s west as heat and dry lightning raise the bushfire risk"]);
     const [fireBanArticle] = linkArticlesToEvents(normalized, [event], { single: true });
     expect(fireBanArticle.event?.id).toBe(event.id);
   });

@@ -387,27 +387,36 @@ describe("polygon events are placed at the centroid", () => {
 
 describe("counts over the whole window (dashboard KPIs must not depend on the page size)", () => {
   it("counts every event in the window per severity and type, while items are limited", async () => {
-    const t = Date.now(); // the fixtures and the USGS normaliser use the real clock, so the window must too
-    const quake = (id, mag, minutesAgo) => ({
-      ...USGS_FEATURE,
-      id,
-      properties: { ...USGS_FEATURE.properties, mag, time: t - minutesAgo * 60000 },
-    });
-    const fetchNasa = vi.fn(async () => [NASA_EVENT, { ...NASA_EVENT, id: "EONET_2" }, { ...NASA_EVENT, id: "EONET_3" }]);
-    const fetchUsgs = vi.fn(async () => [quake("q1", 6.2, 10), quake("q2", 5.4, 20), quake("q3", 4.6, 30), quake("q4", 4.6, 40)]);
-    const svc = createFeedService({ fetchNasa, fetchUsgs, now: () => t, log: quiet });
+    // a fixed "now" for the service and for Date (the USGS normaliser reads the clock), with every
+    // timestamp derived from it, so the result does not move with the calendar
+    const t = Date.parse("2026-10-13T12:00:00Z");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(t);
+    try {
+      const fire = (id) => ({ ...NASA_EVENT, id, geometry: [{ ...NASA_EVENT.geometry[0], date: new Date(t - 3600_000).toISOString() }] });
+      const quake = (id, mag, minutesAgo) => ({
+        ...USGS_FEATURE,
+        id,
+        properties: { ...USGS_FEATURE.properties, mag, time: t - minutesAgo * 60000, updated: t },
+      });
+      const fetchNasa = vi.fn(async () => [fire("EONET_1"), fire("EONET_2"), fire("EONET_3")]);
+      const fetchUsgs = vi.fn(async () => [quake("q1", 6.2, 10), quake("q2", 5.4, 20), quake("q3", 4.6, 30), quake("q4", 4.6, 40)]);
+      const svc = createFeedService({ fetchNasa, fetchUsgs, now: () => t, log: quiet });
 
-    const feed = await svc.getFeed({ limit: 2 });
-    expect(feed.items).toHaveLength(2);
-    expect(feed.counts.total).toBe(7);
-    // the fixture fires carry no area and no GDACS level, so they are unrated
-    expect(feed.counts.bySeverity).toEqual({ high: 1, medium: 1, low: 2, unrated: 3 });
-    expect(feed.counts.byType.earthquake).toEqual({ total: 4, high: 1, medium: 1, low: 2, unrated: 0 });
-    expect(feed.counts.byType.wildfire).toEqual({ total: 3, high: 0, medium: 0, low: 0, unrated: 3 });
-    expect(feed.counts.byType.flood).toEqual({ total: 0, high: 0, medium: 0, low: 0, unrated: 0 });
-    // the same counts whatever the limit
-    expect((await svc.getFeed({ limit: 200 })).counts).toEqual(feed.counts);
-    expect(fetchNasa).toHaveBeenCalledTimes(1);
+      const feed = await svc.getFeed({ limit: 2 });
+      expect(feed.items).toHaveLength(2);
+      expect(feed.counts.total).toBe(7);
+      // the fixture fires carry no area and no GDACS level, so they are unrated
+      expect(feed.counts.bySeverity).toEqual({ high: 1, medium: 1, low: 2, unrated: 3 });
+      expect(feed.counts.byType.earthquake).toEqual({ total: 4, high: 1, medium: 1, low: 2, unrated: 0 });
+      expect(feed.counts.byType.wildfire).toEqual({ total: 3, high: 0, medium: 0, low: 0, unrated: 3 });
+      expect(feed.counts.byType.flood).toEqual({ total: 0, high: 0, medium: 0, low: 0, unrated: 0 });
+      // the same counts whatever the limit
+      expect((await svc.getFeed({ limit: 200 })).counts).toEqual(feed.counts);
+      expect(fetchNasa).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("countEvents treats an unknown severity as unrated", () => {
