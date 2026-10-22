@@ -60,7 +60,7 @@ React (Vite) frontend ── /api ──> backend          PostgreSQL: one datab
 | Notification service (Node.js, KafkaJS, `pg`) | Kafka consumer + e-mail sender | Render Web Service (Docker) | container |
 | Database | PostgreSQL | Neon | PostgreSQL 16 container |
 | Message broker | Kafka | Aiven | Confluent 7.6.1 containers |
-| E-mail | HTTP API | Resend | Resend (optional) |
+| E-mail | HTTP API | Resend | off (add `RESEND_*` and `APP_URL` to the `notification` service) |
 | Scheduler | hourly wake-up call | cron-job.org, GitHub Actions as backup | not needed |
 
 The public map and feed need only the backend and the sources; Kafka, the notification service and Resend carry the alerts. Each part degrades on its own: a failed source, news provider, GDACS lookup or a powered-off broker leaves the rest working and is reported in `/health`.
@@ -69,20 +69,20 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 
 ## Methodology in short
 
-- **Sources.** Earthquakes from USGS (magnitude 4.5 and above); wildfires, floods and severe storms from NASA EONET (open and closed events of the last 30 days; the feed shows the last 7 days by default). Every feed item keeps its source id and links, and nothing is invented: when the sources fail the feed says so instead of showing demo data.
-- **Location.** USGS gives a point. For EONET events reported by GDACS the GDACS event point wins over the EONET geometry; when the two are more than 100 km apart the event is marked *approximate* and the drawer says why. Countries come from the source place names; an event whose country cannot be derived (open sea) is not counted as a country.
-- **Severity.** Taken from the source wherever it publishes one: GDACS impact level (Green / Orange / Red) for wildfires and floods, magnitude for earthquakes, the Saffir-Simpson scale on the peak advisory wind for storms, burned area for fires GDACS does not cover. An event the source gives no intensity for is shown as *not rated*, never guessed. Thresholds were set from 90 days of EONET data ([Severity](#severity)).
-- **News.** At most four searches per refresh for the most important events, plus the media list GDACS keeps per event. Every article passes the same relevance rules (sport, retrospectives, idioms and similar are dropped), is linked to an event only by its headline or story slug, and gets a country only when the event, Guardian tags or GDACS agree with the headline; otherwise it stays unlocated ([News](#news)).
+- **Sources.** Earthquakes of the last 24 hours from USGS (magnitude 4.5 and above by default); wildfires, floods and severe storms from NASA EONET (open and closed events of the last 30 days; the feed shows the last 7 days by default). Every feed item keeps its source id and links, and nothing is invented: when the sources fail the feed says so instead of showing demo data.
+- **Location.** USGS gives a point. For EONET events reported by GDACS the GDACS event point wins over the EONET geometry when GDACS can be reached (otherwise the EONET geometry is used, see `ingest.eonetFallbackRecorded`); when the two are more than 100 km apart the event is marked *approximate* and the drawer says why. Countries come from the source place names; an event whose country cannot be derived (open sea) is not counted as a country.
+- **Severity.** Taken from the source wherever it publishes one: GDACS impact level (Green / Orange / Red) for wildfires and floods, magnitude for earthquakes, the Saffir-Simpson scale on the peak advisory wind for storms, burned area for fires GDACS does not cover. An event the source gives no intensity for is shown as *not rated*, never guessed. The wildfire area cut was set from 90 days of EONET data; storms use the Saffir-Simpson boundaries ([Severity](#severity)).
+- **News.** At most four requests per provider and refresh (up to three combined searches for the most important events plus one general search; GDELT makes only the general one), plus the media lists GDACS keeps for up to 25 GDACS-linked events. Every article passes the same relevance rules (sport, retrospectives, idioms and similar are dropped). GDELT and Guardian articles are linked to an event by headline or story slug; GDACS media articles come with the GDACS event they are listed under. An article gets a country from its linked event, its Guardian tags or its GDACS event, and a country inherited from GDACS is kept only when the headline or slug names it; otherwise the article stays unlocated ([News](#news)).
 - **Alerts.** A subscription is a hazard type, a minimum severity and a circle (centre + radius). New events are recorded once, published through a transactional outbox and matched by distance; each user gets at most one notification per event and, if they opted in and confirmed their address, one summary e-mail per run ([Event-driven notification pipeline](#event-driven-notification-pipeline)).
 
 ---
 
 ## Limits
 
-- **Alerts are hourly, not instant.** The free Render services sleep after about 15 minutes without traffic. An external cron job wakes them once an hour; then the backend ingests and the notification service consumes what waits in Kafka. An alert therefore arrives up to about an hour after the source reports the event (plus the source's own delay), and events older than 48 hours never notify. While someone uses the site the backend ingests every 5 minutes.
-- **Free infrastructure.** Cold starts take up to a minute, and the first feed after a restart can be slower while several hundred GDACS lookups warm the cache (fires and floods keep their EONET measurement until a lookup answers). Aiven's free Kafka powers off after a period without traffic and must be started from its console; until then events wait in the outbox and no alerts go out. The free plans also cap the database size, instance hours and e-mails (100 per day at Resend, the service stops at 90).
-- **Source coverage.** Only what USGS (M 4.5+) and NASA EONET (wildfires, floods, severe storms) report: no volcanoes, landslides, tsunami warnings, heat waves, droughts or official warnings. EONET lists an event when one of its contributors does, so small or local events may be missing and some arrive late; floods often carry no intensity and are shown as not rated. GDACS levels describe expected humanitarian impact, not physical size.
-- **News coverage.** GDELT rate-limits by IP and often answers Render's shared address with HTTP 429; The Guardian needs a key; GDACS media lists are noisy. The panel may be thin or stale for hours, and the relevance rules are word-based, so some off-topic articles get through and some relevant ones are dropped.
+- **Alerts are hourly, not instant.** The free Render services sleep after about 15 minutes without traffic. An external cron job wakes them once an hour; then the backend ingests and the notification service consumes what waits in Kafka. An alert therefore arrives up to about an hour after the source reports the event (plus the source's own delay), and events older than 48 hours never notify. While someone uses the site the backend ingests every 5 minutes, but the site never calls the notification service, so alerts (and the e-mail confirmation link) still wait for the hourly wake-up.
+- **Free infrastructure.** Cold starts take up to a minute, and the first feed after a restart can take longer still, because it waits for several hundred GDACS lookups (8 at a time, 4 s timeout each). Events whose lookup fails use the EONET point and burned area (floods: not rated) for the next 10 minutes, and the ingestion job records them that way for good. Aiven's free Kafka powers off after a period without traffic and must be started from its console; until then events wait in the outbox and no alerts go out. The free plans also cap the database size, instance hours and e-mails (100 per day at Resend; e-mail stops at 90 by default, `EMAIL_DAILY_LIMIT`, and alerts stay in-app).
+- **Source coverage.** Only what USGS (M 4.5+) and NASA EONET (wildfires, floods, severe storms) report: no volcanoes, landslides, tsunami warnings, heat waves, droughts or official warnings. EONET lists an event when one of its contributors does, so small or local events may be missing and some arrive late. USGS earthquakes are fetched for the last 24 hours only. EONET reports no flood measurement, so floods are rated only by their GDACS level and shown as not rated when GDACS cannot be reached. GDACS levels describe expected humanitarian impact, not physical size.
+- **News coverage.** GDELT answers most requests with HTTP 429 (even from a residential IP; Render's shared address makes it worse); The Guardian needs a key; GDACS media lists are noisy. The panel may be thin or stale for hours, and the relevance rules are word-based, so some off-topic articles get through and some relevant ones are dropped.
 - **E-mail.** Until the project has its own sending domain, Resend's test mode delivers only to the Resend account owner's address; other users see the switch but their e-mails fail. There is no SMS or push channel.
 
 ---
@@ -303,7 +303,7 @@ All paths are relative to the backend (`http://localhost:5000`) or to the proxy 
 
 | Method and path | Auth | Purpose |
 |---|---|---|
-| `GET /health` | – | `{ ok, service, kafka, outboxPending, ingest: { running, lastRunAt, lastTrigger, lastErrorSources, lastStats, lastWakeAt, lastWakeOutcome, eonetFallbackRecorded }, news: { provider, updatedAt, stale, articles, providers: { <name>: { articles, located, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, droppedOffTopic } }, storms }, gdacs: { requests, hits, failures, cached, lastError }, email: { state, dailyLimit, sentLast24h, lastSentAt, lastError }, time }` |
+| `GET /health` | – | `{ ok, service, kafka, outboxPending, ingest: { running, lastRunAt, lastTrigger, lastErrorSources, lastStats, lastWakeAt, lastWakeOutcome, eonetFallbackRecorded }, news: { provider, updatedAt, stale, articles, providers: { <name>: { articles, located, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, droppedOffTopic } }, storms }, gdacs: { requests, hits, failures, cached, lastError }, email: { state, dailyLimit, sentLast24h, reportedAt, lastSentAt, lastError, lastErrorAt } (null when the database is unreachable), time }` |
 | `GET /disasters` | – | the public feed ([contract below](#feed-contract-get-disasters)) |
 | `GET /news?type=&region=&event=` | – | cached news articles, linked to feed events and placed in a region ([News](#news)) |
 | `POST /users/register`, `POST /users/login`, `POST /users/logout` | – | `{ email, password }`; sets or clears the session cookie. Rate limited |
@@ -364,7 +364,7 @@ How the thresholds were derived (2026-10-15, full analysis in the review notes):
 - **Storms:** the 64 / 96 kts cut is the Saffir-Simpson hurricane / major-hurricane boundary. EONET storms are a series of advisories; the peak is rated because the latest advisory of a dissipating hurricane is a remnant (90 days: on the latest wind 0 of 42 storms are "high", on the peak 15).
 - **Floods:** EONET reports no magnitude at all (0 of 180), so only the GDACS level can rate them.
 
-**GDACS as an ingestion dependency** (`backend/src/services/gdacs.js`): one GET per GDACS event, cached per event id for 6 hours (levels move slowly), fetched 8 at a time with a 4-second timeout, failures remembered for 10 minutes. The lookup runs when the backend fetches EONET (feed cache, ingestion job, news job) and never blocks: when GDACS is down or slow the events keep the EONET measurement and the drawer says "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)". `GET /health` reports `gdacs: { requests, hits, failures, cached, lastError }`; `GDACS_TIMEOUT_MS` and `DISABLE_GDACS=1` configure it.
+**GDACS as an ingestion dependency** (`backend/src/services/gdacs.js`): one GET per GDACS event, cached per event id for 6 hours (levels move slowly), fetched 8 at a time with a 4-second timeout, failures remembered for 10 minutes. The lookup runs when the backend fetches EONET (feed cache, ingestion job, news job) and waits at most for the timeout: when GDACS is down or slow the events keep the EONET measurement and the drawer says "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)". `GET /health` reports `gdacs: { requests, hits, failures, cached, lastError }`; `GDACS_TIMEOUT_MS` and `DISABLE_GDACS=1` configure it.
 
 ---
 
@@ -539,7 +539,7 @@ DATABASE_URL="postgresql://...neon.tech/...?sslmode=require" npm run db:push
 ```
 
 ### 3) Backend and notification service (Render)
-Create two **Web Services** from this repository with the **Docker** runtime, root directories `backend` and `notification-service`, and health check path `/health`. Set the variables from the [Environment variables](#environment-variables) tables: both services need `DATABASE_URL` (pooler host is fine at runtime), `KAFKA_BROKER`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and, unless `letsencrypt_sasl` is enabled on the Aiven service, `KAFKA_SSL_CA`; the backend additionally needs `JWT_SECRET`, `NODE_ENV=production` and `ADMIN_EMAILS`, optionally `GUARDIAN_API_KEY`, `CORS_ORIGINS` and `INGEST_WAKE_SECRET` ([Scheduled wake-up](#scheduled-wake-up)); the notification service needs `RESEND_API_KEY`, `RESEND_FROM` and `APP_URL` for e-mail ([E-mail alerts](#e-mail-alerts)). Render provides `PORT`.
+Create two **Web Services** from this repository with the **Docker** runtime, root directories `backend` and `notification-service`, and health check path `/health`. Set the variables from the [Environment variables](#environment-variables) tables: both services need `DATABASE_URL` (pooler host is fine at runtime), `KAFKA_BROKER`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and, unless `letsencrypt_sasl` is enabled on the Aiven service, `KAFKA_SSL_CA`; the backend additionally needs `JWT_SECRET`, `NODE_ENV=production` and `ADMIN_EMAILS`, `INGEST_WAKE_SECRET` for the hourly wake-up ([Scheduled wake-up](#scheduled-wake-up)), optionally `GUARDIAN_API_KEY` and `CORS_ORIGINS`; the notification service needs `RESEND_API_KEY`, `RESEND_FROM` and `APP_URL` for e-mail ([E-mail alerts](#e-mail-alerts)). Render provides `PORT`.
 
 **Generate a new `JWT_SECRET` for the deployment, never reuse the example value**: in production the backend refuses the `.env.example` placeholder and anything containing "change me" (`node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`).
 
@@ -603,8 +603,8 @@ Captured on the first build (2026-03-09); the layout has been refined since, the
 - **Backend:** Node.js 24, Express 5, Prisma 6, Zod, helmet, express-rate-limit, KafkaJS
 - **Notification service:** Node.js 24, KafkaJS, `pg`, Zod
 - **Infra:** Docker, Docker Compose, Nginx, PostgreSQL 16, Confluent Kafka 7.6.1
-- **Cloud (optional):** Render, Neon, Aiven
-- **Tests / CI:** Vitest, supertest, GitHub Actions
+- **Cloud (optional):** Render, Neon, Aiven, Resend, cron-job.org
+- **Tests / CI:** Vitest, supertest, Testing Library, ESLint, GitHub Actions
 
 ---
 
@@ -613,7 +613,7 @@ Captured on the first build (2026-03-09); the layout has been refined since, the
 **2026-10-23**
 - README brought up to date for the first public version: live link, architecture, methodology summary and the limits of the free setup and of the sources.
 
-**2026-10-15 – 2026-10-22**
+**2026-10-14 – 2026-10-21**
 - Severity from the source (GDACS impact level, Saffir-Simpson on the peak wind, burned area, not rated), GDACS point as the event location, event clustering on the map, phone layout.
 - News from GDELT, The Guardian and GDACS media with relevance rules, event linking and regions.
 - Hourly wake-up (`POST /internal/ingest`), opt-in e-mail alerts with double opt-in and one-click unsubscribe, privacy page, self-service account deletion, admin only for an address confirmed while signed in.
