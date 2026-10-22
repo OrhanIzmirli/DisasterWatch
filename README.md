@@ -2,14 +2,21 @@
 
 [![CI](https://github.com/OrhanIzmirli/DisasterWatch/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/OrhanIzmirli/DisasterWatch/actions/workflows/ci.yml)
 
-A real-time disaster monitoring platform. The backend aggregates **NASA EONET** and **USGS** into one feed, rates every event LOW / MEDIUM / HIGH, links news articles to events, and streams new events through **Kafka** to a notification service that matches them against users' location-based alert rules. The React frontend shows everything on a live map with a feed, news panel, alert subscriptions, in-app notifications and an admin console.
+A real-time disaster monitoring platform. The backend aggregates **NASA EONET** and **USGS** into one feed, rates every event LOW / MEDIUM / HIGH (or not rated) from what the sources publish, links news articles to events, and streams new events through **Kafka** to a notification service that matches them against users' location-based alert rules and sends in-app and opt-in e-mail alerts. The React frontend shows everything on a live map with a feed, news panel, alert subscriptions, notifications and an admin console.
 
-The whole stack runs on localhost with one `docker compose up`; the same images run in the cloud (Render + Neon + Aiven, free tiers).
+**Live:** https://disasterwatch-frontend.onrender.com (free hosting: the first request after a quiet spell can take up to a minute while the services wake up, see [Limits](#limits)).
+
+The whole stack runs on localhost with one `docker compose up`; the same images run in the cloud (Render + Neon + Aiven + Resend, free tiers).
+
+> DisasterWatch is a portfolio project, not an official warning service. For warnings and evacuation orders follow your local authorities.
 
 ---
 
 ## Contents
 
+- [Architecture](#architecture)
+- [Methodology in short](#methodology-in-short)
+- [Limits](#limits)
 - [Features](#features)
 - [Quick start (Docker Compose)](#quick-start-docker-compose)
 - [Running the services outside Docker](#running-the-services-outside-docker)
@@ -23,6 +30,60 @@ The whole stack runs on localhost with one `docker compose up`; the same images 
 - [Cloud deployment (free tiers)](#cloud-deployment-free-tiers)
 - [Repository layout](#repository-layout)
 - [Screenshots](#screenshots)
+
+---
+
+## Architecture
+
+```
+                      ┌──────────── backend (Express + Prisma) ────────────┐
+NASA EONET ──┐        │ feed cache (5 min) ──────────────> GET /disasters  │
+USGS ────────┼──────> │ GDACS impact level + point (severity, location)    │
+GDACS ───────┘        │ ingestion job ─> IngestedEvent (outbox) ─┐         │
+GDELT, Guardian,      │ news job ─> NewsCache ─────────> GET /news│        │
+GDACS media ────────> │ accounts, alerts, admin, privacy          │        │
+                      └───────────────────────────────────────────┼────────┘
+                                                                  │ publish
+                                                       Kafka topic disaster-events
+                                                                  │ consume
+                      ┌──────────── notification-service ─────────▼────────┐
+                      │ match subscriptions ─> Notification (in-app bell)  │
+                      │ e-mail dispatcher ─> EmailDelivery ─> Resend       │
+                      └────────────────────────────────────────────────────┘
+React (Vite) frontend ── /api ──> backend          PostgreSQL: one database for both services
+```
+
+| Part | Runs as | Cloud (free tier) | Local (Compose) |
+|---|---|---|---|
+| Frontend (React, TypeScript, Leaflet) | static build | Render Static Site, `/api` rewritten to the backend | Nginx on 8080, proxies `/api` |
+| Backend (Node.js, Express, Prisma) | web service | Render Web Service (Docker) | container on 5000 |
+| Notification service (Node.js, KafkaJS, `pg`) | Kafka consumer + e-mail sender | Render Web Service (Docker) | container |
+| Database | PostgreSQL | Neon | PostgreSQL 16 container |
+| Message broker | Kafka | Aiven | Confluent 7.6.1 containers |
+| E-mail | HTTP API | Resend | off (add `RESEND_*` and `APP_URL` to the `notification` service) |
+| Scheduler | hourly wake-up call | cron-job.org, GitHub Actions as backup | not needed |
+
+The public map and feed need only the backend and the sources; Kafka, the notification service and Resend carry the alerts. Each part degrades on its own: a failed source, news provider, GDACS lookup or a powered-off broker leaves the rest working and is reported in `/health`.
+
+---
+
+## Methodology in short
+
+- **Sources.** Earthquakes of the last 24 hours from USGS (magnitude 4.5 and above by default); wildfires, floods and severe storms from NASA EONET (open and closed events of the last 30 days; the feed shows the last 7 days by default). Every feed item keeps its source id and links, and nothing is invented: when the sources fail the feed says so instead of showing demo data.
+- **Location.** USGS gives a point. For EONET events reported by GDACS the GDACS event point wins over the EONET geometry when GDACS can be reached (otherwise the EONET geometry is used, see `ingest.eonetFallbackRecorded`); when the two are more than 100 km apart the event is marked *approximate* and the drawer says why. Countries come from the source place names; an event whose country cannot be derived (open sea) is not counted as a country.
+- **Severity.** Taken from the source wherever it publishes one: GDACS impact level (Green / Orange / Red) for wildfires and floods, magnitude for earthquakes, the Saffir-Simpson scale on the peak advisory wind for storms, burned area for fires GDACS does not cover. An event the source gives no intensity for is shown as *not rated*, never guessed. The wildfire area cut was set from 90 days of EONET data; storms use the Saffir-Simpson boundaries ([Severity](#severity)).
+- **News.** At most four requests per provider and refresh (up to three combined searches for the most important events plus one general search; GDELT makes only the general one), plus the media lists GDACS keeps for up to 25 GDACS-linked events. Every article passes the same relevance rules (sport, retrospectives, idioms and similar are dropped). GDELT and Guardian articles are linked to an event by headline or story slug; GDACS media articles come with the GDACS event they are listed under. An article gets a country from its linked event, its Guardian tags or its GDACS event, and a country inherited from GDACS is kept only when the headline or slug names it; otherwise the article stays unlocated ([News](#news)).
+- **Alerts.** A subscription is a hazard type, a minimum severity and a circle (centre + radius). New events are recorded once, published through a transactional outbox and matched by distance; each user gets at most one notification per event and, if they opted in and confirmed their address, one summary e-mail per run ([Event-driven notification pipeline](#event-driven-notification-pipeline)).
+
+---
+
+## Limits
+
+- **Alerts are hourly, not instant.** The free Render services sleep after about 15 minutes without traffic. An external cron job wakes them once an hour; then the backend ingests and the notification service consumes what waits in Kafka. An alert therefore arrives up to about an hour after the source reports the event (plus the source's own delay), and events older than 48 hours never notify. While someone uses the site the backend ingests every 5 minutes, but the site never calls the notification service, so alerts (and the e-mail confirmation link) still wait for the hourly wake-up.
+- **Free infrastructure.** Cold starts take up to a minute, and the first feed after a restart can take longer still, because it waits for several hundred GDACS lookups (8 at a time, 4 s timeout each). Events whose lookup fails use the EONET point and burned area (floods: not rated) for the next 10 minutes, and the ingestion job records them that way for good. Aiven's free Kafka powers off after a period without traffic and must be started from its console; until then events wait in the outbox and no alerts go out. The free plans also cap the database size, instance hours and e-mails (100 per day at Resend; e-mail stops at 90 by default, `EMAIL_DAILY_LIMIT`, and alerts stay in-app).
+- **Source coverage.** Only what USGS (M 4.5+) and NASA EONET (wildfires, floods, severe storms) report: no volcanoes, landslides, tsunami warnings, heat waves, droughts or official warnings. EONET lists an event when one of its contributors does, so small or local events may be missing and some arrive late. USGS earthquakes are fetched for the last 24 hours only. EONET reports no flood measurement, so floods are rated only by their GDACS level and shown as not rated when GDACS cannot be reached. GDACS levels describe expected humanitarian impact, not physical size.
+- **News coverage.** GDELT answers most requests with HTTP 429 (even from a residential IP; Render's shared address makes it worse); The Guardian needs a key; GDACS media lists are noisy. The panel may be thin or stale for hours, and the relevance rules are word-based, so some off-topic articles get through and some relevant ones are dropped.
+- **E-mail.** Until the project has its own sending domain, Resend's test mode delivers only to the Resend account owner's address; other users see the switch but their e-mails fail. There is no SMS or push channel.
 
 ---
 
@@ -169,9 +230,9 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/disasterwatch KAFKA_B
 
 | Suite | Command | Needs |
 |---|---|---|
-| Backend (Vitest + supertest, 17 files) | `cd backend && npm test` | `TEST_DATABASE_URL`, a throwaway PostgreSQL |
-| Notification service (Vitest, pure unit tests) | `cd notification-service && npm test` | nothing |
-| Frontend | `cd disasterwatch-frontend && npm run build` | nothing (type check + production build) |
+| Backend (Vitest + supertest) | `cd backend && npm test` | `TEST_DATABASE_URL`, a throwaway PostgreSQL |
+| Notification service (Vitest) | `cd notification-service && npm test` | nothing for the unit tests; the e-mail dispatcher tests run only with `TEST_DATABASE_URL` (schema pushed from `backend/prisma`) and are skipped otherwise |
+| Frontend (Vitest + Testing Library, ESLint) | `cd disasterwatch-frontend && npm run lint && npm test && npm run build` | nothing (lint, tests, type check + production build) |
 
 The backend suite **refuses to run against the application database**: `TEST_DATABASE_URL` must be set, must not share a host with `DATABASE_URL` (from the environment or `backend/.env`), and the target must not contain any user whose e-mail is not `@example.com`. It pushes the Prisma schema into that database and truncates the tables before every file. A throwaway database for local runs:
 
@@ -183,7 +244,7 @@ TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/dwtest npm test
 
 `GET /disasters` (external NASA/USGS) is not covered by tests on purpose.
 
-**CI** (`.github/workflows/ci.yml`, on every push and pull request): backend tests against a `postgres:16` service container, notification-service tests, frontend build. All jobs use the Node version from `.nvmrc`.
+**CI** (`.github/workflows/ci.yml`, on every push and pull request): backend tests and notification-service tests, each against its own `postgres:16` service container, and frontend lint, tests and build. All jobs use the Node version from `.nvmrc`.
 
 ---
 
@@ -242,7 +303,7 @@ All paths are relative to the backend (`http://localhost:5000`) or to the proxy 
 
 | Method and path | Auth | Purpose |
 |---|---|---|
-| `GET /health` | – | `{ ok, service, kafka, outboxPending, news: { provider, updatedAt, stale, articles, providers: { <name>: { articles, located, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, droppedOffTopic } } }, gdacs: { requests, hits, failures, cached, lastError }, time }` |
+| `GET /health` | – | `{ ok, service, kafka, outboxPending, ingest: { running, lastRunAt, lastTrigger, lastErrorSources, lastStats, lastWakeAt, lastWakeOutcome, eonetFallbackRecorded }, news: { provider, updatedAt, stale, articles, providers: { <name>: { articles, located, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, droppedOffTopic } }, storms }, gdacs: { requests, hits, failures, cached, lastError }, email: { state, dailyLimit, sentLast24h, reportedAt, lastSentAt, lastError, lastErrorAt } (null when the database is unreachable), time }` |
 | `GET /disasters` | – | the public feed ([contract below](#feed-contract-get-disasters)) |
 | `GET /news?type=&region=&event=` | – | cached news articles, linked to feed events and placed in a region ([News](#news)) |
 | `POST /users/register`, `POST /users/login`, `POST /users/logout` | – | `{ email, password }`; sets or clears the session cookie. Rate limited |
@@ -288,7 +349,7 @@ Response `200`:
 | `updatedAt` | string | ISO timestamp of the newest source data; the dashboard derives every "ago" label from it |
 | `params` | object | the effective `minutesWindow`, `limit`, `minMag` after clamping |
 
-Each item: `id`, `type` (`earthquake` | `wildfire` | `flood` | `storm`), `location`, `meta` (one-line summary), `severity` (`low` | `medium` | `high` | `unrated`), `timeMinutesAgo`, `description`, `lat`, `lng`, `country` (derived from the USGS place or the EONET title, `null` when not derivable) and `details`: source-faithful fields for the event drawer (`eventId` such as `usgs:us7000abcd`, `source`, `category`, `cleanTitle`, `place`, `occurredAt`, `updatedAt`, `status`, `sources` [{ name, url }], `magnitude`, `magnitudeLabel`, `magType`, `depthKm`, `pagerAlert`, `tsunami`, `feltReports` for USGS; `magnitudeValue`/`magnitudeUnit` as reported by EONET plus `areaHa` (wildfire area normalised to hectares), `peakKts`/`currentKts` (storms), `gdacsLevel`/`gdacsScore` (wildfires and floods rated by GDACS; `null` otherwise); `severity`, `severityReason`, `severitySource`). Polygon events (GDACS floods) are placed at the polygon centroid.
+Each item: `id`, `type` (`earthquake` | `wildfire` | `flood` | `storm`), `location`, `meta` (one-line summary), `severity` (`low` | `medium` | `high` | `unrated`), `timeMinutesAgo`, `description`, `lat`, `lng`, `country` (derived from the USGS place or the EONET title, `null` when not derivable) and `details`: source-faithful fields for the event drawer (`eventId` such as `usgs:us7000abcd`, `source`, `category`, `cleanTitle`, `place`, `occurredAt`, `updatedAt`, `status`, `sources` [{ name, url }], `magnitude`, `magnitudeLabel`, `magType`, `depthKm`, `pagerAlert`, `tsunami`, `feltReports` for USGS; `magnitudeValue`/`magnitudeUnit` as reported by EONET plus `areaHa` (wildfire area normalised to hectares), `peakKts`/`currentKts` (storms), `gdacsLevel`/`gdacsScore` (wildfires and floods rated by GDACS; `null` otherwise); `severity`, `severityReason`, `severitySource`; `locationPrecision`). An event that links to GDACS is placed at the GDACS event point; otherwise at the EONET point or polygon centroid. When the GDACS point and the EONET geometry lie more than 100 km apart, `details.locationPrecision` is `approximate` with the reason, and the drawer and e-mails show an "approximate" note.
 
 Failure behaviour: a source that fails keeps serving its last good data while it is at most 60 minutes old; a source that has never returned data is retried after 10 seconds, otherwise after a minute. When both sources fail and nothing is cached the endpoint answers `503 { message: "Live disaster sources are not responding", retryAfterSeconds: 60 }`. Upstream error details never leave the server log.
 
@@ -303,7 +364,7 @@ How the thresholds were derived (2026-10-15, full analysis in the review notes):
 - **Storms:** the 64 / 96 kts cut is the Saffir-Simpson hurricane / major-hurricane boundary. EONET storms are a series of advisories; the peak is rated because the latest advisory of a dissipating hurricane is a remnant (90 days: on the latest wind 0 of 42 storms are "high", on the peak 15).
 - **Floods:** EONET reports no magnitude at all (0 of 180), so only the GDACS level can rate them.
 
-**GDACS as an ingestion dependency** (`backend/src/services/gdacs.js`): one GET per GDACS event, cached per event id for 6 hours (levels move slowly), fetched 8 at a time with a 4-second timeout, failures remembered for 10 minutes. The lookup runs when the backend fetches EONET (feed cache, ingestion job, news job) and never blocks: when GDACS is down or slow the events keep the EONET measurement and the drawer says "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)". `GET /health` reports `gdacs: { requests, hits, failures, cached, lastError }`; `GDACS_TIMEOUT_MS` and `DISABLE_GDACS=1` configure it.
+**GDACS as an ingestion dependency** (`backend/src/services/gdacs.js`): one GET per GDACS event, cached per event id for 6 hours (levels move slowly), fetched 8 at a time with a 4-second timeout, failures remembered for 10 minutes. The lookup runs when the backend fetches EONET (feed cache, ingestion job, news job) and waits at most for the timeout: when GDACS is down or slow the events keep the EONET measurement and the drawer says "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)". `GET /health` reports `gdacs: { requests, hits, failures, cached, lastError }`; `GDACS_TIMEOUT_MS` and `DISABLE_GDACS=1` configure it.
 
 ---
 
@@ -390,7 +451,7 @@ Setup, values never in the repository:
 | GitHub → … → Actions → **Variables** | `BACKEND_URL` | the backend's Render URL, no trailing slash |
 | GitHub → … → Actions → **Variables** | `NOTIFICATION_URL` | the notification service's Render URL, no trailing slash |
 
-`/health` → `ingest` shows the last run (time, trigger, counts, which part failed) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`). `ingest.eonetFallbackRecorded` counts the events recorded with the EONET point because GDACS could not be reached (`total` since the process started; `lastStats.eonetFallback` for the last run); events are recorded once, so these keep that point (and the severity from the EONET measurement), and their ids are in the `[ingest] ... recorded with the EONET point` log line. GitHub delays scheduled runs under load and disables a schedule after 60 days without repository activity: check `lastWakeAt`, and optionally let a second scheduler (e.g. cron-job.org) call the same endpoint; it is idempotent.
+`/health` → `ingest` shows the last run (time, trigger, counts, which part failed) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`). `ingest.eonetFallbackRecorded` counts the events recorded with the EONET point because GDACS could not be reached (`total` since the process started; `lastStats.eonetFallback` for the last run); events are recorded once, so these keep that point (and the severity from the EONET measurement), and their ids are in the `[ingest] ... recorded with the EONET point` log line. GitHub delays scheduled runs under load and disables a schedule after 60 days without repository activity, which is why cron-job.org is the primary caller: check `lastWakeAt` to see that the wake-ups arrive.
 
 ### E-mail alerts
 
@@ -404,20 +465,21 @@ The notification service (`src/email/`) sends, after a burst of new notification
 - **Unsubscribe:** every e-mail has a link to `/unsubscribe?token=…` (no sign-in; one button press switches e-mail off and the page confirms it; opening the page changes nothing, so link scanners, even ones that run JavaScript, cannot unsubscribe anyone) and the headers `List-Unsubscribe: <APP_URL/api/email/unsubscribe?token=…>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058). The token is 32 random bytes, kept across opt-ins.
 - **Honest status:** the service writes `EmailChannelStatus` on start and after every run; the Alerts page shows e-mail as "active" only when the service reports it configured (within 3 hours), and says when the daily limit is used up. `/health` of both services shows the e-mail status (configured, sent in the last 24 h, last error); no addresses. Logs mask addresses (`som***@example.com`).
 
-### Known limitations
+### Operational notes
 
-- **Render free tier sleeps** after ~15 minutes without traffic. While the backend sleeps no ingestion runs and nothing is published; while the notification service sleeps nothing is consumed. Both catch up when they wake: Kafka keeps the messages, so the consumer resumes from its committed offset. The [scheduled wake-up](#scheduled-wake-up) wakes both once an hour, so an alert arrives at most about an hour after the event is reported.
-- **Aiven free Kafka powers off** after a period without traffic and has to be started from the Aiven console. The backend keeps serving the public feed without Kafka; events recorded meanwhile wait in the outbox and are published once the broker is back.
-- Notifications are in-app and, opt-in, by **e-mail** (Resend); there is no SMS or push channel. Without an own domain Resend's test mode delivers only to the account owner's address.
+The user-facing limits (hourly alerts, free tiers, source coverage) are listed under [Limits](#limits).
+
+- **Sleeping services catch up.** While the backend sleeps no ingestion runs and nothing is published; while the notification service sleeps nothing is consumed. Both catch up when they wake: Kafka keeps the messages, so the consumer resumes from its committed offset. With the broker powered off the backend keeps serving the public feed and events wait in the outbox.
 - Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
-- **GDELT rate limits by source IP.** Render's shared egress IP can be throttled (HTTP 429) by other tenants' traffic. The news job then backs off and keeps serving GDELT's last articles (72 h) next to The Guardian and GDACS media; `/health` → `news.providers.gdelt` shows the last success and error.
+- **GDELT rate limits by source IP.** The news job backs off and keeps serving GDELT's last articles (72 h) next to The Guardian and GDACS media; `/health` → `news.providers.gdelt` shows the last success and error.
 - **Deploy order: notification-service first, then the backend.** A consumer running an older build rejects messages with a value it does not know (such as `severity: "unrated"`) and commits their offsets, so those events never produce notifications unless the group offset is reset. On Render: 1) deploy the `notification-service` web service and wait for its `/health` to answer with `kafka: "connected"`; 2) only then deploy the backend. With auto-deploy from `main` on both services, suspend the backend's auto-deploy before merging a contract change, merge, let the notification-service build finish, then deploy the backend manually.
 
 ### Future work
 
 - The "subscription must predate the event" rule compares against `occurredAt`; for long-running EONET events (a wildfire first seen days after it started) it should compare against the time the event entered the system so such events can still notify.
 - Pre-filter subscriptions in SQL with a bounding box around the event before the haversine check, instead of loading every active subscription per message.
-- Frontend lint: `npm run lint` reports 5 errors (setState inside effects in `NewsPanel` and `RelatedNews`, non-component exports in `NewsPanel`, an impure call during render in `MapView`); fix them and add `npm run lint` to CI.
+- An own sending domain for e-mail (Resend DNS records), so alerts reach every confirmed address.
+- Password reset by e-mail.
 - News: when the cache is empty and every provider failed, retry after a couple of minutes instead of waiting the full refresh interval; keep the first real provider error in `lastError` instead of the local backoff refusal that follows it.
 - WebSocket live updates, SMS / push channels, metrics and tracing.
 
@@ -477,7 +539,7 @@ DATABASE_URL="postgresql://...neon.tech/...?sslmode=require" npm run db:push
 ```
 
 ### 3) Backend and notification service (Render)
-Create two **Web Services** from this repository with the **Docker** runtime, root directories `backend` and `notification-service`, and health check path `/health`. Set the variables from the [Environment variables](#environment-variables) tables: both services need `DATABASE_URL` (pooler host is fine at runtime), `KAFKA_BROKER`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and, unless `letsencrypt_sasl` is enabled on the Aiven service, `KAFKA_SSL_CA`; the backend additionally needs `JWT_SECRET`, `NODE_ENV=production` and `ADMIN_EMAILS`, optionally `GUARDIAN_API_KEY` and `CORS_ORIGINS`. Render provides `PORT`.
+Create two **Web Services** from this repository with the **Docker** runtime, root directories `backend` and `notification-service`, and health check path `/health`. Set the variables from the [Environment variables](#environment-variables) tables: both services need `DATABASE_URL` (pooler host is fine at runtime), `KAFKA_BROKER`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and, unless `letsencrypt_sasl` is enabled on the Aiven service, `KAFKA_SSL_CA`; the backend additionally needs `JWT_SECRET`, `NODE_ENV=production` and `ADMIN_EMAILS`, `INGEST_WAKE_SECRET` for the hourly wake-up ([Scheduled wake-up](#scheduled-wake-up)), optionally `GUARDIAN_API_KEY` and `CORS_ORIGINS`; the notification service needs `RESEND_API_KEY`, `RESEND_FROM` and `APP_URL` for e-mail ([E-mail alerts](#e-mail-alerts)). Render provides `PORT`.
 
 **Generate a new `JWT_SECRET` for the deployment, never reuse the example value**: in production the backend refuses the `.env.example` placeholder and anything containing "change me" (`node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`).
 
@@ -498,7 +560,8 @@ The frontend calls relative `/api/...` paths, so the first rule plays the role o
 ## Repository layout
 
 ```
-.github/workflows/ci.yml     backend tests, notification-service tests, frontend build
+.github/workflows/ci.yml     backend tests, notification-service tests, frontend lint + tests + build
+.github/workflows/wake.yml   backup of the hourly wake-up (primary: cron-job.org)
 .nvmrc                       Node 24.13.0 (also in every package.json "engines", Dockerfile and CI)
 docker-compose.yml           db, zookeeper, dw-kafka, backend, notification, frontend
 backend/                     Express API, Prisma schema, ingestion + news jobs, Kafka producer, tests
@@ -506,9 +569,9 @@ backend/                     Express API, Prisma schema, ingestion + news jobs, 
   src/index.js               entry point: HTTP server, news job, producer, ingestion
   src/events/contract.js     event contract v1 (zod)
   src/services/              feed (NASA/USGS cache), news providers, Kafka producer
-  prisma/schema.prisma       User, AlertSubscription, Notification, IngestedEvent, NewsCache, AdminAuditLog, Disaster
+  prisma/schema.prisma       User, AlertSubscription, Notification, IngestedEvent, EmailDelivery, EmailChannelStatus, NewsCache, AdminAuditLog, Disaster
   tests/                     Vitest suites (TEST_DATABASE_URL only)
-notification-service/        Kafka consumer: contract, matcher, pg writes, /health; unit tests
+notification-service/        Kafka consumer: contract, matcher, pg writes, /health; e-mail dispatcher (src/email/); tests
 disasterwatch-frontend/      React + TypeScript + Vite app, Nginx config for the Docker image (own README)
 screenshots/                 README images
 CONTRIBUTING.md              branch, review and no-risk-zone rules
@@ -540,12 +603,20 @@ Captured on the first build (2026-03-09); the layout has been refined since, the
 - **Backend:** Node.js 24, Express 5, Prisma 6, Zod, helmet, express-rate-limit, KafkaJS
 - **Notification service:** Node.js 24, KafkaJS, `pg`, Zod
 - **Infra:** Docker, Docker Compose, Nginx, PostgreSQL 16, Confluent Kafka 7.6.1
-- **Cloud (optional):** Render, Neon, Aiven
-- **Tests / CI:** Vitest, supertest, GitHub Actions
+- **Cloud (optional):** Render, Neon, Aiven, Resend, cron-job.org
+- **Tests / CI:** Vitest, supertest, Testing Library, ESLint, GitHub Actions
 
 ---
 
 ## Changelog
+
+**2026-10-23**
+- README brought up to date for the first public version: live link, architecture, methodology summary and the limits of the free setup and of the sources.
+
+**2026-10-14 – 2026-10-21**
+- Severity from the source (GDACS impact level, Saffir-Simpson on the peak wind, burned area, not rated), GDACS point as the event location, event clustering on the map, phone layout.
+- News from GDELT, The Guardian and GDACS media with relevance rules, event linking and regions.
+- Hourly wake-up (`POST /internal/ingest`), opt-in e-mail alerts with double opt-in and one-click unsubscribe, privacy page, self-service account deletion, admin only for an address confirmed while signed in.
 
 **2026-10-15**
 - Clone-and-run verified on a fresh clone with deleted volumes: the backend container now runs `prisma db push` before starting, the notification service gets `DATABASE_URL`, and `backend/.env.example` ships a dev-only `JWT_SECRET` placeholder instead of the rejected `CHANGE_ME`.
