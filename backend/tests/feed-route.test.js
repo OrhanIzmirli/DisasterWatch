@@ -8,7 +8,7 @@ import request from "supertest";
 
 const mocks = vi.hoisted(() => ({ nasa: vi.fn(), usgs: vi.fn() }));
 // the feed uses the GDACS-rated variant; both resolve to the same raw events here (no GDACS lookups in tests)
-vi.mock("../src/services/nasa.service.js", () => ({ fetchNasaEvents: mocks.nasa, fetchNasaEventsRated: mocks.nasa }));
+vi.mock("../src/services/nasa.service.js", () => ({ fetchNasaEvents: mocks.nasa, fetchNasaEventsRated: mocks.nasa, fetchNasaEventsFast: mocks.nasa }));
 vi.mock("../src/services/usgs.service.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchUsgsEarthquakes: mocks.usgs };
@@ -63,7 +63,7 @@ describe("GET /disasters: the cache is server-side only", () => {
     expect(await params("")).toEqual({ minutesWindow: 10080, limit: 50, minMag: 4.5 });
     expect(await params("?limit=0&minutes=1")).toEqual({ minutesWindow: 60, limit: 1, minMag: 4.5 });
     expect(await params("?limit=99999&minutes=99999999")).toEqual({ minutesWindow: 43200, limit: 200, minMag: 4.5 });
-    expect(await params("?limit=-5&minutes=-5&minMag=-3")).toEqual({ minutesWindow: 60, limit: 1, minMag: 0 });
+    expect(await params("?limit=-5&minutes=-5&minMag=-3")).toEqual({ minutesWindow: 60, limit: 1, minMag: 4.5 });
     expect(await params("?limit=abc&minutes=abc&minMag=abc")).toEqual({ minutesWindow: 10080, limit: 50, minMag: 4.5 });
     expect(await params("?minMag=99")).toEqual({ minutesWindow: 10080, limit: 50, minMag: 10 });
     expect(mocks.nasa).toHaveBeenCalledTimes(1);

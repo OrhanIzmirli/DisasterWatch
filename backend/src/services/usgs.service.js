@@ -14,10 +14,15 @@ function toId(str) {
 // re-exported so existing imports keep working.
 export { severityFromMag };
 
+/**
+ * USGS summary feed: every M4.5+ earthquake of the last 7 days (about 100-150
+ * features, ~90 kB), the same window as the rest of the public feed. Smaller
+ * quakes are not in it, so minMag below 4.5 changes nothing (the feed clamps it).
+ */
+export const USGS_FEED_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson";
+
 export async function fetchUsgsEarthquakes() {
-  // More stable + small enough: all_day
-  const url =
-    "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
+  const url = USGS_FEED_URL;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);

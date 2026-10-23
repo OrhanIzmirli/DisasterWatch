@@ -66,12 +66,15 @@ export class NewsUnavailableError extends Error {
   }
 }
 
-/** Current feed events, same normalisation as GET /disasters. */
+/** Earthquakes older than this are not news candidates (the USGS feed covers 7 days; GDELT searches 72 h). */
+export const NEWS_QUAKE_MAX_MINUTES = 24 * 60;
+
+/** Current feed events, same normalisation as GET /disasters (earthquakes of the last 24 hours only). */
 export async function loadFeedEvents({ fetchNasa = fetchNasaEventsRated, fetchUsgs = fetchUsgsEarthquakes } = {}) {
   const [nasa, usgs] = await Promise.all([
     fetchNasa().then(normalizeNasaEvents).catch(() => []),
     fetchUsgs()
-      .then((f) => normalizeUsgsEarthquakes(f, { minMag: 4.5, limit: 300 }))
+      .then((f) => normalizeUsgsEarthquakes(f, { minMag: 4.5, limit: 300 }).filter((q) => q.timeMinutesAgo <= NEWS_QUAKE_MAX_MINUTES))
       .catch(() => []),
   ]);
   return [...nasa, ...usgs];
