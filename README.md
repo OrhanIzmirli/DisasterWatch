@@ -69,7 +69,7 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 
 ## Methodology in short
 
-- **Sources.** Earthquakes of the last 24 hours from USGS (magnitude 4.5 and above by default); wildfires, floods and severe storms from NASA EONET (open and closed events of the last 30 days; the feed shows the last 7 days by default). Every feed item keeps its source id and links, and nothing is invented: when the sources fail the feed says so instead of showing demo data.
+- **Sources.** Earthquakes of the last 7 days from USGS (magnitude 4.5 and above); wildfires, floods and severe storms from NASA EONET (open and closed events of the last 30 days; the feed shows the last 7 days by default). Every feed item keeps its source id and links, and nothing is invented: when the sources fail the feed says so instead of showing demo data.
 - **Location.** USGS gives a point. For EONET events reported by GDACS the GDACS event point wins over the EONET geometry when GDACS can be reached (otherwise the EONET geometry is used, see `ingest.eonetFallbackRecorded`); when the two are more than 100 km apart the event is marked *approximate* and the drawer says why. Countries come from the source place names; an event whose country cannot be derived (open sea) is not counted as a country.
 - **Severity.** Taken from the source wherever it publishes one: GDACS impact level (Green / Orange / Red) for wildfires and floods, magnitude for earthquakes, the Saffir-Simpson scale on the peak advisory wind for storms, burned area for fires GDACS does not cover. An event the source gives no intensity for is shown as *not rated*, never guessed. The wildfire area cut was set from 90 days of EONET data; storms use the Saffir-Simpson boundaries ([Severity](#severity)).
 - **News.** At most four requests per provider and refresh (up to three combined searches for the most important events plus one general search; GDELT makes only the general one), plus the media lists GDACS keeps for up to 25 GDACS-linked events. Every article passes the same relevance rules (sport, retrospectives, idioms and similar are dropped). GDELT and Guardian articles are linked to an event by headline or story slug; GDACS media articles come with the GDACS event they are listed under. An article gets a country from its linked event, its Guardian tags or its GDACS event, and a country inherited from GDACS is kept only when the headline or slug names it; otherwise the article stays unlocated ([News](#news)).
@@ -80,8 +80,8 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 ## Limits
 
 - **Alerts are hourly, not instant.** The free Render services sleep after about 15 minutes without traffic. An external cron job wakes them once an hour; then the backend ingests and the notification service consumes what waits in Kafka. An alert therefore arrives up to about an hour after the source reports the event (plus the source's own delay), and events older than 48 hours never notify. While someone uses the site the backend ingests every 5 minutes, but the site never calls the notification service, so alerts (and the e-mail confirmation link) still wait for the hourly wake-up.
-- **Free infrastructure.** Cold starts take up to a minute, and the first feed after a restart can take longer still, because it waits for several hundred GDACS lookups (8 at a time, 4 s timeout each). Events whose lookup fails use the EONET point and burned area (floods: not rated) for the next 10 minutes, and the ingestion job records them that way for good. Aiven's free Kafka powers off after a period without traffic and must be started from its console; until then events wait in the outbox and no alerts go out. The free plans also cap the database size, instance hours and e-mails (100 per day at Resend; e-mail stops at 90 by default, `EMAIL_DAILY_LIMIT`, and alerts stay in-app).
-- **Source coverage.** Only what USGS (M 4.5+) and NASA EONET (wildfires, floods, severe storms) report: no volcanoes, landslides, tsunami warnings, heat waves, droughts or official warnings. EONET lists an event when one of its contributors does, so small or local events may be missing and some arrive late. USGS earthquakes are fetched for the last 24 hours only. EONET reports no flood measurement, so floods are rated only by their GDACS level and shown as not rated when GDACS cannot be reached. GDACS levels describe expected humanitarian impact, not physical size.
+- **Free infrastructure.** Cold starts take up to a minute, and the first feed after it waits for the NASA EONET download (2.6 MB, 4–13 s when measured). It does not wait for GDACS: events show the GDACS answers stored from earlier lookups at once, the others the EONET point and measurement (floods: not rated) until their lookup answers in the background, from the next request on. GDACS is often slow (on 2026-10-22 most lookups timed out from Render and from a residential line alike), so after a long sleep or a deploy some events can stay on the EONET values for a while. The ingestion job waits for its lookups and records an event with the EONET point and area when GDACS cannot be reached. Aiven's free Kafka powers off after a period without traffic and must be started from its console; until then events wait in the outbox and no alerts go out. The free plans also cap the database size, instance hours and e-mails (100 per day at Resend; e-mail stops at 90 by default, `EMAIL_DAILY_LIMIT`, and alerts stay in-app).
+- **Source coverage.** Only what USGS (M 4.5+) and NASA EONET (wildfires, floods, severe storms) report: no volcanoes, landslides, tsunami warnings, heat waves, droughts or official warnings. EONET lists an event when one of its contributors does, so small or local events may be missing and some arrive late. EONET reports no flood measurement, so floods are rated only by their GDACS level and shown as not rated when GDACS cannot be reached. GDACS levels describe expected humanitarian impact, not physical size.
 - **News coverage.** GDELT answers most requests with HTTP 429 (even from a residential IP; Render's shared address makes it worse); The Guardian needs a key; GDACS media lists are noisy. The panel may be thin or stale for hours, and the relevance rules are word-based, so some off-topic articles get through and some relevant ones are dropped.
 - **E-mail.** Until the project has its own sending domain, Resend's test mode delivers only to the Resend account owner's address; other users see the switch but their e-mails fail. There is no SMS or push channel.
 
@@ -90,10 +90,10 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 ## Features
 
 ### 1) Multi-source disaster feed (NASA EONET + USGS)
-- **USGS** earthquakes (M ≥ 4.5 by default) and **NASA EONET** wildfires, floods and storms.
+- **USGS** earthquakes (M ≥ 4.5, last 7 days) and **NASA EONET** wildfires, floods and storms.
 - Heterogeneous responses are normalized into one model (`type`, `severity`, `title`, `lat`/`lng`, `country`, `occurredAt`, source ids).
 - 5-minute server-side cache per source; the two sources are fetched independently, so one failing source degrades the feed instead of killing it (see [Feed contract](#feed-contract-get-disasters)).
-- Pagination and marker caps keep the map responsive.
+- Pagination and marker caps keep the map responsive: the map shows the 15 strongest earthquakes of the window (the feed lists them all), and a full feed page keeps the strongest quakes, not the newest.
 
 ### 2) Live dashboard (map + feed + KPIs)
 - Interactive world map (Leaflet) with severity-coloured markers and an event detail drawer (related news, USGS PAGER alert level, EONET sources).
@@ -303,7 +303,7 @@ All paths are relative to the backend (`http://localhost:5000`) or to the proxy 
 
 | Method and path | Auth | Purpose |
 |---|---|---|
-| `GET /health` | – | `{ ok, service, kafka, outboxPending, ingest: { running, lastRunAt, lastTrigger, lastErrorSources, lastStats, lastWakeAt, lastWakeOutcome, eonetFallbackRecorded }, news: { provider, updatedAt, stale, articles, providers: { <name>: { articles, located, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, droppedOffTopic } }, storms }, gdacs: { requests, hits, failures, cached, lastError }, email: { state, dailyLimit, sentLast24h, reportedAt, lastSentAt, lastError, lastErrorAt } (null when the database is unreachable), time }` |
+| `GET /health` | – | `{ ok, service, kafka, outboxPending, ingest: { running, lastRunAt, lastTrigger, lastErrorSources, lastStats, lastWakeAt, lastWakeOutcome, eonetFallbackRecorded }, news: { provider, updatedAt, stale, articles, providers: { <name>: { articles, located, lastAttemptAt, lastSuccessAt, lastError, lastErrorKind, droppedOffTopic } }, storms }, gdacs: { disabled, cached, pending, requests, hits, failures, lastError, lastFetchAt, store }, email: { state, dailyLimit, sentLast24h, reportedAt, lastSentAt, lastError, lastErrorAt } (null when the database is unreachable), time }` |
 | `GET /disasters` | – | the public feed ([contract below](#feed-contract-get-disasters)) |
 | `GET /news?type=&region=&event=` | – | cached news articles, linked to feed events and placed in a region ([News](#news)) |
 | `POST /users/register`, `POST /users/login`, `POST /users/logout` | – | `{ email, password }`; sets or clears the session cookie. Rate limited |
@@ -330,7 +330,7 @@ Query parameters (anything outside the range is clamped; non-numeric input falls
 |---|---|---|---|
 | `minutes` | `10080` (7 days) | 60 … 43200 | look-back window |
 | `limit` | `50` | 1 … 200 | maximum number of items |
-| `minMag` | `4.5` | 0 … 10 | minimum earthquake magnitude (USGS) |
+| `minMag` | `4.5` | 4.5 … 10 | minimum earthquake magnitude (the USGS feed carries M 4.5+ only) |
 
 There is **no** parameter to force a live fetch or shorten the cache: the lifetime is fixed on the server (5 minutes per source), so anonymous callers cannot turn the backend into a NASA/USGS proxy.
 
@@ -364,7 +364,9 @@ How the thresholds were derived (2026-10-15, full analysis in the review notes):
 - **Storms:** the 64 / 96 kts cut is the Saffir-Simpson hurricane / major-hurricane boundary. EONET storms are a series of advisories; the peak is rated because the latest advisory of a dissipating hurricane is a remnant (90 days: on the latest wind 0 of 42 storms are "high", on the peak 15).
 - **Floods:** EONET reports no magnitude at all (0 of 180), so only the GDACS level can rate them.
 
-**GDACS as an ingestion dependency** (`backend/src/services/gdacs.js`): one GET per GDACS event, cached per event id for 6 hours (levels move slowly), fetched 8 at a time with a 4-second timeout, failures remembered for 10 minutes. The lookup runs when the backend fetches EONET (feed cache, ingestion job, news job) and waits at most for the timeout: when GDACS is down or slow the events keep the EONET measurement and the drawer says "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)". `GET /health` reports `gdacs: { requests, hits, failures, cached, lastError }`; `GDACS_TIMEOUT_MS` and `DISABLE_GDACS=1` configure it.
+**GDACS as an ingestion dependency** (`backend/src/services/gdacs.js`): one GET per GDACS event, cached per event id for 6 hours (levels move slowly), fetched 8 at a time with a 4-second timeout, failures remembered for 10 minutes. The ingestion job and the news job wait for their lookups (at most one timeout each). The public feed does not: it attaches the answers already known and lets the missing lookups run in the background; they are attached to the cached EONET events as they answer, so the next request shows them. Until then, and when GDACS is down, the events keep the EONET measurement and the drawer says "Severity rule applied to the burned area reported by EONET (no GDACS level for this fire)".
+
+Every answer is also written to the `GdacsCache` table (key `eventtype:eventid`, level, score, affected countries, point, `fetchedAt`; batched 2 seconds after the first new answer) and loaded once, before the first lookup after a start (waiting at most 5 seconds; rows older than 30 days are deleted then), so a restarted or woken backend starts with what it knew. A stored answer older than 6 hours is still served while its refresh is pending or failing. Without the table (migration not applied yet) the backend logs a warning and works from memory. `GET /health` reports `gdacs: { disabled, cached, pending, requests, hits, failures, lastError, lastFetchAt, store: { loaded, saved, lastError } }`; `GDACS_TIMEOUT_MS` and `DISABLE_GDACS=1` configure it.
 
 ---
 
@@ -401,7 +403,7 @@ Admin POST /events ──validate contract──┘                             
                                                      backend GET /notifications ──> header bell
 ```
 
-1. **Ingestion (backend, `src/jobs/ingest.js`)** runs at start-up and every 5 minutes: fetches NASA EONET and USGS (M ≥ 4.5), maps them to the event contract and inserts into `IngestedEvent` with `ON CONFLICT DO NOTHING` (`publishedAt = NULL`). It then drains the **outbox**: unpublished rows, oldest first, up to 500 per run, are published and marked `publishedAt`. The public `GET /disasters` feed is a separate path and is not affected.
+1. **Ingestion (backend, `src/jobs/ingest.js`)** runs at start-up and every 5 minutes: fetches NASA EONET and USGS (M ≥ 4.5, last 7 days), maps them to the event contract and inserts into `IngestedEvent` with `ON CONFLICT DO NOTHING` (`publishedAt = NULL`). It then drains the **outbox**: unpublished rows, oldest first, up to 500 per run, are published and marked `publishedAt`. The public `GET /disasters` feed is a separate path and is not affected.
 2. **Kafka topic `disaster-events`** carries one JSON message per event (contract below).
 3. **notification-service** validates each message, loads active `AlertSubscription` rows and creates a `Notification` when the rule matches (type is `any` or equal, event severity ≥ `minSeverity` where `unrated` ranks below `low` and is matched only by `minSeverity: "low"`, haversine distance ≤ `radiusKm`), the event is at most 48 h old and the subscription was created before the event. Inserts are `ON CONFLICT (userId, eventId) DO NOTHING`; invalid messages are logged and skipped, database errors make Kafka redeliver the message.
 4. **Backend API** `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` (all scoped to the signed-in user) feed the **bell in the header**, which polls every 60 s.
@@ -569,7 +571,7 @@ backend/                     Express API, Prisma schema, ingestion + news jobs, 
   src/index.js               entry point: HTTP server, news job, producer, ingestion
   src/events/contract.js     event contract v1 (zod)
   src/services/              feed (NASA/USGS cache), news providers, Kafka producer
-  prisma/schema.prisma       User, AlertSubscription, Notification, IngestedEvent, EmailDelivery, EmailChannelStatus, NewsCache, AdminAuditLog, Disaster
+  prisma/schema.prisma       User, AlertSubscription, Notification, IngestedEvent, EmailDelivery, EmailChannelStatus, NewsCache, GdacsCache, AdminAuditLog, Disaster
   tests/                     Vitest suites (TEST_DATABASE_URL only)
 notification-service/        Kafka consumer: contract, matcher, pg writes, /health; e-mail dispatcher (src/email/); tests
 disasterwatch-frontend/      React + TypeScript + Vite app, Nginx config for the Docker image (own README)
@@ -611,6 +613,8 @@ Captured on the first build (2026-03-09); the layout has been refined since, the
 ## Changelog
 
 **2026-10-23**
+- The public feed no longer waits for GDACS after a restart: known levels come from the new `GdacsCache` table, missing lookups finish in the background. First `/disasters` after a cold start, measured locally: 257 s before, 4–8 s after (bounded by the EONET download).
+- Earthquakes: USGS weekly M 4.5+ feed (was the last 24 hours), the same window as the rest of the feed; the map's earthquake cap and a full feed page keep the strongest quakes.
 - README brought up to date for the first public version: live link, architecture, methodology summary and the limits of the free setup and of the sources.
 
 **2026-10-14 – 2026-10-21**
