@@ -28,6 +28,23 @@ export async function fetchNasaEvents() {
  * a short timeout; when GDACS is unreachable the events are returned without
  * a level and the severity rules fall back to the EONET measurement.
  */
-export async function fetchNasaEventsRated({ gdacs = gdacsClient } = {}) {
-  return gdacs.enrich(await fetchNasaEvents());
+export async function fetchNasaEventsRated({ gdacs = gdacsClient, fetchEvents = fetchNasaEvents } = {}) {
+  return gdacs.enrich(await fetchEvents());
+}
+
+/**
+ * For the public feed: EONET events with the GDACS answers already known
+ * (memory, or the durable store after a restart) attached at once; the
+ * missing lookups run in the background and are attached to the same
+ * array when they answer, so the feed's next request shows them. Until
+ * then those events use the EONET measurement and point. The ingestion job
+ * keeps fetchNasaEventsRated: it records an event once and must wait.
+ */
+export async function fetchNasaEventsFast({ gdacs = gdacsClient, fetchEvents = fetchNasaEvents, log = console } = {}) {
+  const [events] = await Promise.all([fetchEvents(), gdacs.ensureLoaded()]);
+  const missing = gdacs.attach(events);
+  if (missing > 0) log.info?.(`[feed] ${missing} GDACS lookup(s) continue in the background`);
+  // also when nothing is missing: answers older than the TTL are refreshed (known ones are cache hits)
+  gdacs.enrich(events).catch((err) => log.warn(`[feed] background GDACS lookups failed: ${err?.message || err}`));
+  return events;
 }

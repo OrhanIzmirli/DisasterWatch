@@ -22,7 +22,7 @@
  *
  * Fetchers and the clock are injectable for tests.
  */
-import { fetchNasaEventsRated } from "./nasa.service.js";
+import { fetchNasaEventsFast } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
 import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
 import { withSubtitles } from "../utils/eventSubtitle.js";
@@ -53,7 +53,8 @@ export const FEED_UNAVAILABLE_MESSAGE = "Live disaster sources are not respondin
 export const FEED_PARAM_LIMITS = {
   limit: { min: 1, max: 200, fallback: 50 },
   minutes: { min: 60, max: 30 * 24 * 60, fallback: 7 * 24 * 60 },
-  minMag: { min: 0, max: 10, fallback: 4.5 },
+  // the USGS feed only carries M4.5+ (usgs.service.js), so a lower minimum would promise quakes that are not there
+  minMag: { min: 4.5, max: 10, fallback: 4.5 },
 };
 
 export class FeedUnavailableError extends Error {
@@ -70,6 +71,18 @@ function sanitizeText(s) {
 }
 
 const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
+
+/**
+ * The `n` strongest quakes (magnitude, then newer first), returned newest
+ * first like the rest of the page: a full page drops the smallest quakes of
+ * the week, not the oldest strong ones.
+ */
+export function strongestFirst(quakes, n) {
+  const mag = (q) => (Number.isFinite(q?.details?.magnitude) ? q.details.magnitude : Number.NEGATIVE_INFINITY);
+  const age = (q) => q?.timeMinutesAgo ?? Number.MAX_SAFE_INTEGER;
+  const kept = new Set(quakes.slice().sort((a, b) => mag(b) - mag(a) || age(a) - age(b)).slice(0, n));
+  return quakes.filter((q) => kept.has(q));
+}
 
 export const FEED_TYPES = ["earthquake", "wildfire", "flood", "storm"];
 export const FEED_SEVERITIES = ["high", "medium", "low", "unrated"];
@@ -93,7 +106,7 @@ export function countEvents(events) {
 }
 
 export function createFeedService({
-  fetchNasa = fetchNasaEventsRated, // EONET events with their GDACS impact level attached
+  fetchNasa = fetchNasaEventsFast, // EONET events with the GDACS answers known so far; the rest arrive in the background
   fetchUsgs = fetchUsgsEarthquakes,
   now = () => Date.now(), // read through the global so fake timers in tests apply
   log = console,
@@ -160,7 +173,7 @@ export function createFeedService({
 
     const nasaAll = nasa ? normalizeNasaEvents(nasa).filter(inWindow) : [];
     const quakesAll = usgs ? normalizeUsgsEarthquakes(usgs, { minMag, limit: Number.MAX_SAFE_INTEGER }).filter(inWindow) : [];
-    const page = [...nasaAll.slice(0, perSource), ...quakesAll.slice(0, perSource)].slice(0, limit).map((e) => ({
+    const page = [...nasaAll.slice(0, perSource), ...strongestFirst(quakesAll, perSource)].slice(0, limit).map((e) => ({
       ...e,
       meta: sanitizeText(e.meta),
       description: sanitizeText(e.description),

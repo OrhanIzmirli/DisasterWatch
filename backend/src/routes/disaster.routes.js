@@ -34,7 +34,7 @@ function bounded(val, { min, max, fallback }, parse = toInt) {
    The cache lifetime is fixed on the server: there is no query parameter to
    force a live fetch or shorten the cache, so anonymous callers cannot make
    NASA/USGS calls go through this server. limit is clamped to 1..200,
-   minutes to 60..43200, minMag to 0..10.
+   minutes to 60..43200, minMag to 4.5..10 (the USGS feed carries M4.5+ only).
    503 { message, retryAfterSeconds } when both sources fail and nothing is cached;
    upstream error details never leave the server (log only).
 ===================================================== */

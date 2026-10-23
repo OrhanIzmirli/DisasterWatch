@@ -196,6 +196,28 @@ model Disaster {
   createdAt   DateTime @default(now())
 }
 
+/// Durable copy of the GDACS lookups (services/gdacs.js): one row per GDACS
+/// event, so a restarted backend (Render sleep, deploy) starts with the
+/// levels and points it already knew instead of several hundred lookups.
+/// Rows older than 30 days are deleted when the backend loads them.
+model GdacsCache {
+  /// GDACS "eventtype:eventid", e.g. "WF:1032806"
+  key       String   @id
+  /// "green" | "orange" | "red"; null when GDACS answered without a level
+  level     String?
+  score     Float?
+  text      String?
+  /// ISO 3166-1 alpha-2 codes of the affected countries, comma-separated ("" when none)
+  countries String   @default("")
+  /// GDACS event point; null when GDACS gives none
+  lat       Float?
+  lng       Float?
+  /// When GDACS answered; the entry is refreshed 6 hours after this
+  fetchedAt DateTime
+
+  @@index([fetchedAt])
+}
+
 /// Durable copy of the news cache: one row per article of the last
 /// successful refresh, so a restarted backend (Render sleep) can serve the
 /// previous articles instead of 503 until GDELT answers again.

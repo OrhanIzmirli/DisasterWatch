@@ -20,8 +20,16 @@
  *    the news panel's region filter (getPlace);
  *  - lists the tropical cyclones of a date range (listTropicalCyclones),
  *    a second source for the news job's list of current storms;
- *  - is injectable (fetch, clock, timeouts) for tests.
+ *  - keeps every answer in a durable store (GdacsCache, services/gdacsStore.js)
+ *    and loads it once before the first lookup, so a restarted backend starts
+ *    with what it knew; an entry older than the TTL is still served while
+ *    its refresh is pending or failing;
+ *  - attaches what is already known without waiting (attach), so the public
+ *    feed can answer at once and let the lookups finish in the background;
+ *  - is injectable (fetch, clock, timeouts, store) for tests.
  */
+
+import { createPrismaGdacsStore } from "./gdacsStore.js";
 
 const GDACS_API = "https://www.gdacs.org/gdacsapi/api/events/geteventdata";
 const GDACS_EVENT_LIST = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH";
@@ -34,6 +42,10 @@ export const DEFAULT_GDACS_TIMEOUT_MS = 4000;
 export const GDACS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // a level moves slowly: hours
 export const GDACS_FAILURE_TTL_MS = 10 * 60 * 1000; // do not hammer GDACS while it is down
 export const GDACS_CONCURRENCY = 8;
+/** Loading the durable store waits at most this long; after that the client works from memory. */
+export const GDACS_STORE_LOAD_TIMEOUT_MS = 5000;
+/** New answers are written to the store in one batch this long after the first of them. */
+export const GDACS_PERSIST_DELAY_MS = 2000;
 
 /** GDACS alert level -> our severity. */
 export const GDACS_LEVEL_SEVERITY = { green: "low", orange: "medium", red: "high" };
@@ -109,10 +121,90 @@ export function createGdacsClient({
   now = () => Date.now(),
   log = console,
   disabled = process.env.DISABLE_GDACS === "1",
+  store = null, // durable copy ({ load, save }); null keeps everything in memory
+  storeLoadTimeoutMs = GDACS_STORE_LOAD_TIMEOUT_MS,
+  persistDelayMs = GDACS_PERSIST_DELAY_MS,
 } = {}) {
-  const cache = new Map(); // key -> { value|null, place|null, unreachable?, expiresAt }
+  const cache = new Map(); // key -> { value|null, place|null, unreachable?, expiresAt, fetchedAt? }
   const inflight = new Map(); // key -> Promise
   const stats = { requests: 0, hits: 0, failures: 0, lastError: null, lastFetchAt: null };
+  const storeStats = { loaded: 0, saved: 0, lastError: null };
+  let loading = null; // Promise of the one store load
+  const unsaved = new Map(); // key -> answer not yet written to the store
+  let persistTimer = null;
+  let saving = null;
+
+  /** Loads the durable store into memory once; bounded by storeLoadTimeoutMs, never throws. */
+  function ensureLoaded() {
+    if (!store) return Promise.resolve();
+    if (!loading) {
+      let timer;
+      const timeout = new Promise((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), storeLoadTimeoutMs);
+        timer.unref?.();
+      });
+      const load = Promise.resolve()
+        .then(() => store.load(now()))
+        .then((rows) => {
+          for (const r of rows) {
+            // an answer this process already has is newer than the stored one
+            if (cache.has(r.key)) continue;
+            cache.set(r.key, { value: r.value, place: r.place, fetchedAt: r.fetchedAt, expiresAt: r.fetchedAt + ttlMs });
+            storeStats.loaded++;
+          }
+          if (storeStats.loaded) log.info?.(`[gdacs] ${storeStats.loaded} stored lookup(s) loaded`);
+        });
+      loading = Promise.race([load, timeout])
+        .then((outcome) => {
+          if (outcome === "timeout") {
+            storeStats.lastError = `store load took longer than ${storeLoadTimeoutMs} ms`;
+            log.warn(`[gdacs] ${storeStats.lastError}; continuing without it`);
+          }
+        })
+        .catch((err) => {
+          storeStats.lastError = err?.message || String(err);
+          log.warn(`[gdacs] could not load stored lookups (${storeStats.lastError}); continuing without them`);
+        })
+        .finally(() => clearTimeout(timer));
+    }
+    return loading;
+  }
+
+  /** Writes the answers collected since the last write; never throws. */
+  async function flush() {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    while (saving) await saving;
+    if (!store || unsaved.size === 0) return;
+    const entries = [...unsaved].map(([key, e]) => ({ key, value: e.value, place: e.place, fetchedAt: e.fetchedAt }));
+    unsaved.clear();
+    saving = Promise.resolve()
+      .then(() => store.save(entries))
+      .then(() => {
+        storeStats.saved += entries.length;
+      })
+      .catch((err) => {
+        storeStats.lastError = err?.message || String(err);
+        log.warn(`[gdacs] could not store ${entries.length} lookup(s): ${storeStats.lastError}`);
+      })
+      .finally(() => {
+        saving = null;
+      });
+    await saving;
+  }
+
+  function persistLater(key, entry) {
+    if (!store) return;
+    unsaved.set(key, entry);
+    if (persistTimer) return;
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      flush();
+    }, persistDelayMs);
+    persistTimer.unref?.();
+  }
 
   async function request(ref) {
     const controller = new AbortController();
@@ -131,6 +223,7 @@ export function createGdacsClient({
   /** Level for one event; null when unknown, unreachable or disabled. Never throws. */
   async function getLevel(ref) {
     if (!ref || disabled) return null;
+    await ensureLoaded();
     const key = gdacsKey(ref);
     const t = now();
     const hit = cache.get(key);
@@ -144,14 +237,16 @@ export function createGdacsClient({
       stats.lastFetchAt = t;
       try {
         const { value, place } = await request(ref);
-        cache.set(key, { value, place, expiresAt: now() + ttlMs });
+        const entry = { value, place, fetchedAt: now(), expiresAt: now() + ttlMs };
+        cache.set(key, entry);
+        persistLater(key, entry);
         return value;
       } catch (err) {
         stats.failures++;
         stats.lastError = err?.name === "AbortError" ? `timeout after ${timeoutMs} ms` : err?.message || String(err);
         // serve the previous answer while GDACS is down, otherwise remember the failure briefly
         if (hit && !hit.unreachable) {
-          cache.set(key, { value: hit.value, place: hit.place ?? null, expiresAt: now() + failureTtlMs });
+          cache.set(key, { value: hit.value, place: hit.place ?? null, fetchedAt: hit.fetchedAt, expiresAt: now() + failureTtlMs });
           return hit.value;
         }
         // `unreachable`: nothing known about this event because GDACS could not be asked (not "GDACS has no point");
@@ -214,14 +309,44 @@ export function createGdacsClient({
     return list;
   }
 
+  /**
+   * Attaches what is already known, without any request: `event.gdacs` and
+   * `event.gdacsPlace` for every GDACS-linked event with an answer in memory
+   * (also one older than the TTL). Events without one are left untouched, so
+   * the severity rules use the EONET measurement until a lookup answers.
+   * Returns the number of GDACS-linked events still without an answer.
+   */
+  function attach(events) {
+    const list = Array.isArray(events) ? events : [];
+    if (disabled) return 0;
+    let missing = 0;
+    for (const e of list) {
+      const ref = parseGdacsRef(e);
+      if (!ref) continue;
+      const entry = cache.get(gdacsKey(ref));
+      if (!entry || entry.unreachable) {
+        missing++;
+        continue;
+      }
+      e.gdacs = entry.value;
+      e.gdacsPlace = entry.place ?? null;
+    }
+    return missing;
+  }
+
   function status() {
-    return { disabled, cached: cache.size, ...stats };
+    return { disabled, cached: cache.size, pending: inflight.size, ...stats, store: store ? { ...storeStats } : null };
   }
 
   function reset() {
     cache.clear();
     inflight.clear();
+    unsaved.clear();
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = null;
+    loading = null;
     Object.assign(stats, { requests: 0, hits: 0, failures: 0, lastError: null, lastFetchAt: null });
+    Object.assign(storeStats, { loaded: 0, saved: 0, lastError: null });
   }
 
   /**
@@ -246,8 +371,8 @@ export function createGdacsClient({
     }
   }
 
-  return { getLevel, getLevels, getPlace, enrich, listTropicalCyclones, status, reset };
+  return { getLevel, getLevels, getPlace, enrich, attach, ensureLoaded, flush, listTropicalCyclones, status, reset };
 }
 
-/** Process-wide client shared by the feed, the ingestion job and the news job. */
-export const gdacsClient = createGdacsClient();
+/** Process-wide client shared by the feed, the ingestion job and the news job; tests run it without the durable store. */
+export const gdacsClient = createGdacsClient({ store: process.env.NODE_ENV === "test" ? null : createPrismaGdacsStore() });

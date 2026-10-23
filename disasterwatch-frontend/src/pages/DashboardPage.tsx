@@ -11,6 +11,7 @@ import { getCachedFeed, isFeedFresh, setCachedFeed, type FeedSources, type FeedS
 import HeadlineStrip from "../components/HeadlineStrip";
 import { headlineText } from "../utils/headline";
 import { pulseIds } from "../utils/liveness";
+import { strongestEarthquakes } from "../utils/mapEarthquakes";
 import { usePrefersReducedMotion } from "../utils/usePrefersReducedMotion";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 
@@ -497,7 +498,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
 
   /* =========================
      MAP DATA
-     - For earthquakes: show last 15 (even low)
+     - For earthquakes: the 15 strongest (any severity)
      - For others: medium/high only + wildfire per-country cap
   ========================= */
   const MAX_WILDFIRE_PER_COUNTRY = 30;
@@ -508,11 +509,10 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
     const showEarthquakes = activeFilter === "all" || activeFilter === "earthquake";
 
     const eq = showEarthquakes
-      ? filteredDisasters
-          .filter((d) => d.type === "earthquake")
-          .slice()
-          .sort((a, b) => a.timeMinutesAgo - b.timeMinutesAgo)
-          .slice(0, MAP_EARTHQUAKE_CAP)
+      ? strongestEarthquakes(
+          filteredDisasters.filter((d) => d.type === "earthquake"),
+          MAP_EARTHQUAKE_CAP
+        )
       : [];
 
     const baseNonEq = filteredDisasters.filter((d) => d.type !== "earthquake");
@@ -660,7 +660,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
                 ) : (
                   <>
                     Showing {mapDisasters.length} marker{mapDisasters.length === 1 ? "" : "s"} • Earthquakes: {mapMarkers.earthquakesShown}
-                    {mapMarkers.earthquakesTotal > mapMarkers.earthquakesShown ? ` of ${mapMarkers.earthquakesTotal} (latest ${MAP_EARTHQUAKE_CAP})` : ""}.
+                    {mapMarkers.earthquakesTotal > mapMarkers.earthquakesShown ? ` of ${mapMarkers.earthquakesTotal} (${MAP_EARTHQUAKE_CAP} strongest)` : ""}.
                   </>
                 )}
                 {hasData && feedUpdatedAt && (
