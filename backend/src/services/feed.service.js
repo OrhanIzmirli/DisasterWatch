@@ -173,7 +173,10 @@ export function createFeedService({
 
     const nasaAll = nasa ? normalizeNasaEvents(nasa).filter(inWindow) : [];
     const quakesAll = usgs ? normalizeUsgsEarthquakes(usgs, { minMag, limit: Number.MAX_SAFE_INTEGER }).filter(inWindow) : [];
-    const page = [...nasaAll.slice(0, perSource), ...strongestFirst(quakesAll, perSource)].slice(0, limit).map((e) => ({
+    const nasaPage = nasaAll.slice(0, perSource);
+    // the quakes get what is left of the page, chosen by magnitude (cutting the joined page would drop them by date)
+    const quakePage = strongestFirst(quakesAll, Math.min(perSource, limit - nasaPage.length));
+    const page = [...nasaPage, ...quakePage].map((e) => ({
       ...e,
       meta: sanitizeText(e.meta),
       description: sanitizeText(e.description),

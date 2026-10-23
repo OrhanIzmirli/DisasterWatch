@@ -5,7 +5,8 @@
  * USGS window: a full page keeps the strongest quakes. No network.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createGdacsClient, GDACS_CACHE_TTL_MS } from "../src/services/gdacs.js";
+import { createGdacsClient, GDACS_CACHE_TTL_MS, GDACS_STALE_MAX_MS } from "../src/services/gdacs.js";
+import { loadFeedEvents, NEWS_QUAKE_MAX_MINUTES } from "../src/services/news.service.js";
 import { createMemoryGdacsStore, createPrismaGdacsStore, GDACS_STORE_MAX_AGE_MS } from "../src/services/gdacsStore.js";
 import { fetchNasaEventsFast, fetchNasaEventsRated } from "../src/services/nasa.service.js";
 import { createFeedService, strongestFirst } from "../src/services/feed.service.js";
@@ -88,15 +89,38 @@ describe("GDACS durable store", () => {
     expect(store.rows.get("WF:1").fetchedAt.getTime()).toBe(t);
   });
 
-  it("works from memory when the store cannot be read or written, and says so in status()", async () => {
-    const broken = { load: vi.fn(async () => { throw new Error('relation "GdacsCache" does not exist'); }), save: vi.fn(async () => { throw new Error("write failed"); }) };
+  it("works from memory when the store cannot be read or written; status() names the Prisma code only, never the message", async () => {
+    const dbError = (code, message) => Object.assign(new Error(message), { code });
+    const broken = {
+      load: vi.fn(async () => { throw dbError("P1001", "Can't reach database server at `db.internal.example:5432`"); }),
+      save: vi.fn(async () => { throw new Error("write failed at /srv/app/gdacsStore.js:44"); }),
+    };
     const client = createGdacsClient({ fetchImpl: vi.fn(async () => answer("orange")), store: broken, log: quiet });
     const events = [fire("1")];
     await client.enrich(events);
     expect(events[0].gdacs.level).toBe("orange");
-    expect(client.status().store.lastError).toMatch(/does not exist/);
+    expect(client.status().store.lastError).toBe("store load failed (P1001)");
     await client.flush();
-    expect(client.status().store.lastError).toBe("write failed");
+    expect(client.status().store.lastError).toBe("store save failed");
+    expect(JSON.stringify(client.status())).not.toMatch(/db\.internal|srv\/app/);
+  });
+
+  it("tries a failed store load again after the retry delay (database still waking up)", async () => {
+    let t = 1_000_000;
+    const load = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error("not ready"), { code: "P1001" }))
+      .mockResolvedValueOnce([{ key: "WF:1", value: { level: "red", score: 3, text: null }, place: { countries: [], lat: 1, lng: 2 }, fetchedAt: t }]);
+    const client = createGdacsClient({ fetchImpl: vi.fn(), store: { load, save: vi.fn() }, now: () => t, storeRetryMs: 60_000, log: quiet });
+    await client.ensureLoaded();
+    await client.ensureLoaded(); // inside the retry delay: no second load
+    expect(load).toHaveBeenCalledTimes(1);
+    t += 60_000;
+    await client.ensureLoaded();
+    expect(load).toHaveBeenCalledTimes(2);
+    const events = [fire("1")];
+    expect(client.attach(events)).toBe(0);
+    expect(events[0].gdacs.level).toBe("red");
   });
 
   it("does not wait longer than the load timeout for a hanging store", async () => {
@@ -127,6 +151,39 @@ describe("GDACS durable store", () => {
   });
 });
 
+describe("stored answers: age limit and late loads", () => {
+  it("an answer older than 48 hours is not served, neither by attach nor while GDACS is down", async () => {
+    const t = 100 * GDACS_STALE_MAX_MS;
+    const store = createMemoryGdacsStore();
+    await store.save([{ key: "WF:1", value: { level: "red", score: 3, text: null }, place: { countries: [], lat: 1, lng: 2 }, fetchedAt: t - GDACS_STALE_MAX_MS - 1 }]);
+    const client = createGdacsClient({ fetchImpl: vi.fn(async () => { throw new Error("down"); }), store, now: () => t, log: quiet });
+    await client.ensureLoaded();
+    const events = [fire("1")];
+    expect(client.attach(events)).toBe(1);
+    expect(events[0].gdacs).toBeUndefined();
+    await client.enrich(events);
+    expect(events[0].gdacs).toBeNull(); // the EONET values apply, as for an event GDACS never answered
+    expect(events[0].gdacsPlace).toBeNull();
+  });
+
+  it("a store load that arrives after the wait replaces a failure mark and clears the timeout error", async () => {
+    let releaseLoad;
+    const rows = [{ key: "WF:1", value: { level: "orange", score: 2, text: null }, place: { countries: [], lat: 1, lng: 2 }, fetchedAt: Date.now() }];
+    const store = { load: () => new Promise((r) => (releaseLoad = () => r(rows))), save: vi.fn() };
+    const client = createGdacsClient({ fetchImpl: vi.fn(async () => { throw new Error("down"); }), store, storeLoadTimeoutMs: 10, log: quiet });
+    const events = [fire("1")];
+    await client.enrich(events); // load timed out, the lookup failed: failure mark
+    expect(events[0].gdacsUnreachable).toBe(true);
+    expect(client.status().store.lastError).toMatch(/longer than 10 ms/);
+    releaseLoad();
+    await vi.waitFor(() => expect(client.status().store.loaded).toBe(1));
+    expect(client.status().store.lastError).toBeNull();
+    const again = [fire("1")];
+    expect(client.attach(again)).toBe(0);
+    expect(again[0].gdacs.level).toBe("orange");
+  });
+});
+
 describe("public feed on a cold start", () => {
   let gdacs;
   let held;
@@ -143,6 +200,17 @@ describe("public feed on a cold start", () => {
     held.release();
     await vi.waitFor(() => expect(events.every((e) => e.gdacs?.level === "red")).toBe(true));
     expect(events[0].gdacsPlace).toMatchObject({ lat: 20.1, lng: 10.2 });
+  });
+
+  it("each event gets its answer as soon as its own lookup is done, before the rest of the batch", async () => {
+    const slow = heldFetch("red");
+    const fetchImpl = vi.fn(async (url) => (url.includes("eventid=111") ? answer("orange") : slow.fetchImpl(url)));
+    const client = createGdacsClient({ fetchImpl, log: quiet });
+    const events = await fetchNasaEventsFast({ gdacs: client, fetchEvents: async () => [fire("111"), fire("222")], log: quiet });
+    await vi.waitFor(() => expect(events[0].gdacs?.level).toBe("orange"));
+    expect(events[1].gdacs).toBeUndefined(); // still waiting
+    slow.release();
+    await vi.waitFor(() => expect(events[1].gdacs?.level).toBe("red"));
   });
 
   it("the ingestion path still waits for every lookup", async () => {
@@ -198,6 +266,31 @@ describe("USGS: 7 days of M4.5+", () => {
     const feed = await svc.getFeed({ limit: 2 });
     expect(feed.items.map((i) => i.location)).toEqual(["Somewhere mid", "Somewhere big-old"]);
     expect(feed.counts.byType.earthquake.total).toBe(4); // KPIs still count the whole window
+  });
+
+  it("on a page the NASA events fill first, the slots left for quakes still go to the strongest", async () => {
+    const nasa = Array.from({ length: 10 }, (_, i) => ({
+      id: `EONET_${i}`,
+      title: `Wildfire in Testland ${i}`,
+      categories: [{ id: "wildfires", title: "Wildfires" }],
+      sources: [],
+      geometry: [{ date: new Date(Date.now() - 3600_000).toISOString(), type: "Point", coordinates: [i, i] }],
+    }));
+    const svc = createFeedService({
+      fetchNasa: async () => nasa,
+      fetchUsgs: async () => [quake("big-old", 7.1, 6 * 24 * 60), quake("small-1", 4.6, 1), quake("small-2", 4.6, 2), quake("small-3", 4.7, 3), quake("mid", 5.8, 3000)],
+      log: quiet,
+    });
+    // limit 10: up to 6 per source, NASA takes 6, 4 slots left for 5 quakes -> the smallest one (4.6, older) goes
+    const feed = await svc.getFeed({ limit: 10 });
+    expect(feed.items).toHaveLength(10);
+    expect(feed.items.filter((i) => i.type === "earthquake").map((i) => i.location)).toEqual(["Somewhere small-1", "Somewhere small-3", "Somewhere mid", "Somewhere big-old"]);
+  });
+
+  it("the news job takes earthquakes of the last 24 hours only, although the feed shows 7 days", async () => {
+    const events = await loadFeedEvents({ fetchNasa: async () => [], fetchUsgs: async () => [quake("today", 6.1, 60), quake("five-days", 7.0, 5 * 24 * 60)] });
+    expect(NEWS_QUAKE_MAX_MINUTES).toBe(24 * 60);
+    expect(events.map((e) => e.location)).toEqual(["Somewhere today"]);
   });
 
   it("strongestFirst breaks magnitude ties by age and keeps the input order", () => {
