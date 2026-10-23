@@ -105,6 +105,27 @@ describe("GDACS durable store", () => {
     expect(JSON.stringify(client.status())).not.toMatch(/db\.internal|srv\/app/);
   });
 
+  it("a store load that fails only after the wait is also tried again (a cold database often answers that late)", async () => {
+    let t = 1_000_000;
+    let loads = 0;
+    const store = {
+      load: () => {
+        loads++;
+        return loads === 1
+          ? new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error("Can't reach database server"), { code: "P1001" })), 50))
+          : Promise.resolve([]);
+      },
+      save: vi.fn(),
+    };
+    const client = createGdacsClient({ fetchImpl: vi.fn(), store, now: () => t, storeLoadTimeoutMs: 10, storeRetryMs: 60_000, log: quiet });
+    await client.ensureLoaded();
+    expect(client.status().store.lastError).toMatch(/longer than 10 ms/);
+    await vi.waitFor(() => expect(client.status().store.lastError).toBe("store load failed (P1001)"));
+    t += 60_000;
+    await client.ensureLoaded();
+    expect(loads).toBe(2);
+  });
+
   it("tries a failed store load again after the retry delay (database still waking up)", async () => {
     let t = 1_000_000;
     const load = vi

@@ -176,6 +176,12 @@ export function createGdacsClient({
           if (storeStats.loaded) log.info?.(`[gdacs] ${storeStats.loaded} stored lookup(s) loaded`);
           // a load that outlasted the wait still arrived: no error to report any more
           if (storeStats.lastError?.startsWith("store load took longer")) storeStats.lastError = null;
+        })
+        // handled on the load itself, so a failure after the wait also marks it for a retry
+        .catch((err) => {
+          loadFailedAt = now();
+          storeStats.lastError = storeErrorLabel("store load", err);
+          log.warn(`[gdacs] could not load stored lookups (${err?.message || err}); continuing without them, next try in ${Math.round(storeRetryMs / 1000)} s`);
         });
       loading = Promise.race([load, timeout])
         .then((outcome) => {
@@ -183,11 +189,6 @@ export function createGdacsClient({
             storeStats.lastError = `store load took longer than ${storeLoadTimeoutMs} ms`;
             log.warn(`[gdacs] ${storeStats.lastError}; continuing without it`);
           }
-        })
-        .catch((err) => {
-          loadFailedAt = now();
-          storeStats.lastError = storeErrorLabel("store load", err);
-          log.warn(`[gdacs] could not load stored lookups (${err?.message || err}); continuing without them, next try in ${Math.round(storeRetryMs / 1000)} s`);
         })
         .finally(() => clearTimeout(timer));
     }
