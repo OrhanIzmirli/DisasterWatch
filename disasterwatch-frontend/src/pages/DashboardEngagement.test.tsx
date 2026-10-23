@@ -121,7 +121,7 @@ describe("headline strip", () => {
     stubApi(BUSY);
     await renderDashboard();
     expect(
-      await screen.findByText("2 significant events worldwide right now. The most serious: Hurricane Simon, a Category 4 at its peak — 7 hours ago.")
+      await screen.findByText("2 significant events worldwide in the past 7 days. The most serious: Hurricane Simon, a Category 4 at its peak — 7 hours ago.")
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Get alerts for your area" }).getAttribute("href")).toBe("/alerts");
   });
@@ -129,8 +129,8 @@ describe("headline strip", () => {
   it("states the quiet case plainly when nothing is significant", async () => {
     stubApi(QUIET);
     await renderDashboard();
-    expect(await screen.findByText("No major events right now — tracking 2 events worldwide.")).toBeTruthy();
-    expect(screen.getByText("None right now (high or medium severity)")).toBeTruthy();
+    expect(await screen.findByText("No major events in the past 7 days — tracking 2 events worldwide.")).toBeTruthy();
+    expect(screen.getByText("None in the past 7 days (high or medium severity)")).toBeTruthy();
   });
 });
 
