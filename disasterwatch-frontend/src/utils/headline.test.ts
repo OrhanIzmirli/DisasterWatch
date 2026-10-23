@@ -26,36 +26,36 @@ describe("headlineText", () => {
   it("names the count and the latest highest-severity event when there are significant events", () => {
     const text = headlineText({ status: "ready", significant: 4, total: 5, items: [fire, tonga, quake, trudy, simon], now: NOW });
     // high beats medium even when the medium one is newer; same time: the stronger storm wins
-    expect(text).toBe("4 significant events worldwide right now. The most serious: Hurricane Simon, a Category 4 at its peak — 7 hours ago.");
+    expect(text).toBe("4 significant events worldwide in the past 7 days. The most serious: Hurricane Simon, a Category 4 at its peak — 7 hours ago.");
   });
 
   it("uses the singular and the earthquake wording for a single significant quake", () => {
     const text = headlineText({ status: "ready", significant: 1, total: 2, items: [fire, tonga], now: NOW });
-    expect(text).toBe("1 significant event worldwide right now. The most serious: M 5.9 earthquake near Fiji region — 6 hours ago.");
+    expect(text).toBe("1 significant event worldwide in the past 7 days. The most serious: M 5.9 earthquake near Fiji region — 6 hours ago.");
   });
 
   it("says so plainly when nothing is significant (zero case)", () => {
-    expect(headlineText({ status: "ready", significant: 0, total: 60, items: [fire], now: NOW })).toBe("No major events right now — tracking 60 events worldwide.");
-    expect(headlineText({ status: "ready", significant: 0, total: 1, items: [fire], now: NOW })).toBe("No major events right now — tracking 1 event worldwide.");
+    expect(headlineText({ status: "ready", significant: 0, total: 60, items: [fire], now: NOW })).toBe("No major events in the past 7 days — tracking 60 events worldwide.");
+    expect(headlineText({ status: "ready", significant: 0, total: 1, items: [fire], now: NOW })).toBe("No major events in the past 7 days — tracking 1 event worldwide.");
   });
 
   it("has honest wording for an empty feed, a stale feed, loading and offline", () => {
     expect(headlineText({ status: "ready", significant: 0, total: 0, items: [], now: NOW })).toBe("No events reported by NASA EONET or USGS in the last 7 days.");
     expect(headlineText({ status: "ready", significant: 0, total: 3, items: [fire], stale: true, dataAge: "2 hours ago", now: NOW })).toBe(
-      "No major events right now — tracking 3 events worldwide. Showing the last update, from 2 hours ago."
+      "No major events in the past 7 days — tracking 3 events worldwide. Showing the last update, from 2 hours ago."
     );
     expect(headlineText({ status: "ready", significant: 0, total: 3, items: [fire], stale: true, now: NOW })).toBe(
-      "No major events right now — tracking 3 events worldwide. Showing the last update."
+      "No major events in the past 7 days — tracking 3 events worldwide. Showing the last update."
     );
     expect(headlineText({ status: "ready", significant: 1, total: 3, items: [simon], stale: true, dataAge: "5 minutes ago", now: NOW })).toBe(
-      "1 significant event worldwide right now. The most serious: Hurricane Simon, a Category 4 at its peak — 7 hours ago. Showing the last update, from 5 minutes ago."
+      "1 significant event worldwide in the past 7 days. The most serious: Hurricane Simon, a Category 4 at its peak — 7 hours ago. Showing the last update, from 5 minutes ago."
     );
     expect(headlineText({ status: "loading", significant: 0, total: 0, items: [] })).toBe("Loading the latest events from NASA and USGS…");
     expect(headlineText({ status: "error", significant: 0, total: 0, items: [] })).toBe("Live sources aren't responding right now.");
   });
 
   it("never invents a lead event: counts from the backend without matching loaded items give only the count", () => {
-    expect(headlineText({ status: "ready", significant: 2, total: 9, items: [fire], now: NOW })).toBe("2 significant events worldwide right now.");
+    expect(headlineText({ status: "ready", significant: 2, total: 9, items: [fire], now: NOW })).toBe("2 significant events worldwide in the past 7 days.");
   });
 });
 

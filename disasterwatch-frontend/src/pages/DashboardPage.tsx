@@ -621,7 +621,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
           <span className="kpi-label">Significant events</span>
           <span className="kpi-value kpi-value-warning">{kpi(significantEvents)}</span>
           <span className="kpi-footnote">
-            {feedStatus === "error" ? "Feed offline" : hasData && significantEvents === 0 ? "None right now (high or medium severity)" : "High or medium severity"}
+            {feedStatus === "error" ? "Feed offline" : hasData && significantEvents === 0 ? "None in the past 7 days (high or medium severity)" : "High or medium severity"}
           </span>
         </div>
 

@@ -3,9 +3,9 @@
  * already loaded (no AI, no invented numbers). Deterministic for a given feed
  * and clock:
  *
- *   "8 significant events worldwide right now. The most serious: Hurricane
- *    Simon, a Category 4 at its peak — 7 hours ago."
- *   "No major events right now — tracking 60 events worldwide."
+ *   "8 significant events worldwide in the past 7 days. The most serious:
+ *    Hurricane Simon, a Category 4 at its peak — 7 hours ago."
+ *   "No major events in the past 7 days — tracking 60 events worldwide."
  *
  * Peak wind in knots stays in the event drawer; the headline names the
  * Saffir-Simpson category instead.
@@ -103,9 +103,9 @@ export function headlineText({ status, significant, total, items, stale = false,
 
   if (total === 0) return `No events reported by NASA EONET or USGS in the last 7 days.${staleNote}`;
 
-  if (significant === 0) return `No major events right now — tracking ${plural(total, "event")} worldwide.${staleNote}`;
+  if (significant === 0) return `No major events in the past 7 days — tracking ${plural(total, "event")} worldwide.${staleNote}`;
 
-  const head = `${plural(significant, "significant event")} worldwide right now.`;
+  const head = `${plural(significant, "significant event")} worldwide in the past 7 days.`;
   const lead = leadEvent(items, now);
   if (!lead) return `${head}${staleNote}`;
   const when = eventRelativeTime(lead, now);
