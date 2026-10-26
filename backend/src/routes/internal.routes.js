@@ -1,7 +1,6 @@
 /**
  * Internal endpoints called by the scheduled wake-up (GitHub Actions
- * .github/workflows/wake.yml: dispatched by an external cron service at :17,
- * its own schedule at :22 as the backup), not by the frontend.
+ * .github/workflows/wake.yml, every few hours in practice), not by the frontend.
  *
  *   POST /internal/ingest   Authorization: Bearer <INGEST_WAKE_SECRET>
  *     -> 200 { ok, ran, reason, lastRunAt, stats }
@@ -10,7 +9,7 @@
  *        when the run is still going after WAKE_WAIT_MS (follow it on /health -> ingest)
  *
  * The free Render plan puts the backend to sleep after ~15 minutes without
- * traffic; while it sleeps nothing is ingested or published. The hourly call
+ * traffic; while it sleeps nothing is ingested or published. The scheduled call
  * wakes it (the start-up run ingests) and, when it was already awake, runs
  * an ingestion now. It is idempotent: a run that finished in the last
  * WAKE_MIN_INTERVAL_MS without errors is not repeated, a run in progress is

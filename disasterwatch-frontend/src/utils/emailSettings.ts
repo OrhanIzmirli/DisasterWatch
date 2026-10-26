@@ -23,7 +23,7 @@ export function emailChannelText(settings: EmailSettings | null, failed: boolean
   if (!settings) return "E-mail: checking…";
   const { state, dailyLimit } = settings.channel;
   if (state === "not-configured") return "E-mail: not available yet (not set up on this server)";
-  if (state === "unknown") return "E-mail: status unknown (the e-mail service has not reported in the last 3 hours)";
+  if (state === "unknown") return "E-mail: status unknown (the e-mail service has not reported in the last 12 hours)";
   if (state === "limit-reached")
     return `E-mail: paused, the limit of ${dailyLimit ?? "?"} e-mails per 24 hours is used up; new alerts stay in the app until it frees up`;
   if (!settings.enabled) return "E-mail: available, off for your account";

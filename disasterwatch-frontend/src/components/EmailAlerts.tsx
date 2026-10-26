@@ -8,7 +8,7 @@ function confirmationText(status: string | undefined, email: string): string {
     return `Almost done: we sent a confirmation link to ${email}. Alert e-mails start after you open it and confirm. Nothing there? Check the spam folder, or turn this off and on again for a new link (at most one per hour).`;
   if (status === "failed" || status === "cancelled")
     return `The confirmation e-mail to ${email} could not be sent. Turn this off and on again to try once more (at most one link per hour).`;
-  return `Almost done: a confirmation link to ${email} is on its way (new alerts are checked about once an hour, and at most one link is sent per hour). Alert e-mails start after you open it and confirm.`;
+  return `Almost done: a confirmation link to ${email} is on its way (new alerts are checked every few hours, and at most one link is sent per hour). Alert e-mails start after you open it and confirm.`;
 }
 
 type Props = {
@@ -66,7 +66,7 @@ const EmailAlerts = ({ email, settings, onChange }: Props) => {
           ? confirmationText(settings?.confirmation?.status, email)
           : enabled
           ? `On: a summary goes to ${email} when new events match your alerts. Turn it off here at any time, or use the unsubscribe link in any of the e-mails.`
-          : `Off. By turning this on you agree that DisasterWatch sends a summary e-mail to ${email} when new events match your alerts (at most one per check, about once an hour). We first send a link to confirm the address. You can turn it off here at any time, or with the unsubscribe link in every e-mail.`}{" "}
+          : `Off. By turning this on you agree that DisasterWatch sends a summary e-mail to ${email} when new events match your alerts (at most one per check; checks run every few hours). We first send a link to confirm the address. You can turn it off here at any time, or with the unsubscribe link in every e-mail.`}{" "}
         <Link to="/privacy" className="text-link">
           Privacy
         </Link>

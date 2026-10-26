@@ -14,8 +14,8 @@
 import crypto from "node:crypto";
 import defaultPrisma from "../prisma.js";
 
-/** The notification-service reports at least on every hourly wake-up. */
-export const STALE_MS = 3 * 60 * 60 * 1000;
+/** The notification-service reports on every wake-up; GitHub's schedule brings one every few hours in practice. */
+export const STALE_MS = 12 * 60 * 60 * 1000;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Unsubscribe and confirmation tokens: 32 random bytes, base64url (43 characters). */

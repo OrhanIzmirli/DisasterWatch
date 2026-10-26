@@ -206,7 +206,7 @@ export async function ingestOnce({
   return stats;
 }
 
-/** A wake-up call within this long after the last run does nothing (the hourly wake is idempotent). */
+/** A wake-up call within this long after the last run does nothing (the scheduled wake is idempotent). */
 export const WAKE_MIN_INTERVAL_MS = 10 * 60 * 1000;
 
 /**
