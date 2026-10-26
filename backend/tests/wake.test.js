@@ -136,6 +136,50 @@ describe("POST /internal/ingest", () => {
     expect(JSON.stringify(res.body)).not.toContain("broker unreachable");
   });
 
+  it("answers 202 when the run outlasts the wait (cold start: GDACS lookups can take minutes); the run goes on and the next call finds it done", async () => {
+    let release;
+    let t = 1_000_000;
+    const ingest = vi.fn(() => new Promise((r) => (release = () => r(STATS))));
+    const runner = createIngestRunner({ ingest, now: () => t, log: quiet });
+    const app = appWith({ secret: SECRET, runner, waitMs: 50 });
+    const started = Date.now();
+    const early = await request(app).post("/internal/ingest").set("Authorization", `Bearer ${SECRET}`);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(early.status).toBe(202);
+    expect(early.body).toEqual({ ok: null, ran: null, reason: "in-progress", lastRunAt: null, stats: null });
+    expect(runner.status()).toMatchObject({ running: true, lastWakeAt: null });
+    release();
+    await vi.waitFor(() => expect(runner.status().running).toBe(false));
+    expect(runner.status()).toMatchObject({ lastTrigger: "wake", lastWakeOutcome: "ran", lastStats: { inserted: 2 } });
+    t += 1000;
+    const later = await request(app).post("/internal/ingest").set("Authorization", `Bearer ${SECRET}`);
+    expect(later.status).toBe(200);
+    expect(later.body).toMatchObject({ ok: true, ran: false, reason: "recent" });
+    expect(ingest).toHaveBeenCalledTimes(1);
+  });
+
+  it("the Kafka wait counts against the same budget: a slow connection does not push the answer past it", async () => {
+    let release;
+    const ingest = vi.fn(() => new Promise((r) => (release = () => r(STATS))));
+    const runner = createIngestRunner({ ingest, now: () => 1, log: quiet });
+    const app = appWith({ secret: SECRET, runner, ready: () => new Promise(() => {}), readyTimeoutMs: 10_000, waitMs: 100 });
+    const started = Date.now();
+    const res = await request(app).post("/internal/ingest").set("Authorization", `Bearer ${SECRET}`);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(res.status).toBe(202);
+    expect(ingest).toHaveBeenCalledTimes(1); // the run was started once the Kafka wait used up the budget
+    release();
+    await vi.waitFor(() => expect(runner.status().running).toBe(false));
+  });
+
+  it("the workflow treats 202 as a run to follow on /health, not as a failure", () => {
+    const yml = fs.readFileSync(new URL("../../.github/workflows/wake.yml", import.meta.url), "utf8");
+    expect(yml).toMatch(/^\s+202\)/m);
+    expect(yml).toContain('"$BACKEND_URL/health"');
+    expect(yml).toContain(".ingest.running == false");
+    expect(yml).toContain(".ingest.lastErrorSources");
+  });
+
   it("waits for the first Kafka connection attempt, but not longer than the timeout", async () => {
     const { runner, ingest } = fakeRunner();
     const app = appWith({ secret: SECRET, runner, ready: () => new Promise(() => {}), readyTimeoutMs: 50 });
@@ -306,7 +350,8 @@ describe("events recorded with the EONET point because GDACS was unreachable (co
   it("ingestOnce counts the newly recorded ones (once), the runner adds them up for /health", async () => {
     await resetDb();
     const events = [flood(6, { gdacsPlace: null, gdacsUnreachable: true }), flood(7, { gdacsPlace: { countries: ["TR"], lat: 41.1, lng: 29 } })];
-    const deps = { prisma, fetchNasa: async () => events, fetchUsgs: async () => [], publish: vi.fn(async () => {}) };
+    // the events come rated (gdacsPlace / gdacsUnreachable already attached), so the rating step passes them through
+    const deps = { prisma, fetchNasa: async () => events, rateNasa: async (e) => e, fetchUsgs: async () => [], publish: vi.fn(async () => {}) };
     const log = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const runner = createIngestRunner({ ingest: (o) => ingestOnce({ ...o, ...deps }), now: () => 1_000_000, log });
 

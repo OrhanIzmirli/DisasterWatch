@@ -38,7 +38,8 @@ export async function fetchNasaEventsRated({ gdacs = gdacsClient, fetchEvents = 
  * missing lookups run in the background and are attached to the same
  * array when they answer, so the feed's next request shows them. Until
  * then those events use the EONET measurement and point. The ingestion job
- * keeps fetchNasaEventsRated: it records an event once and must wait.
+ * fetches the raw events and rates only the ones not yet recorded (it
+ * records an event once and must wait for those lookups, jobs/ingest.js).
  */
 export async function fetchNasaEventsFast({ gdacs = gdacsClient, fetchEvents = fetchNasaEvents, log = console } = {}) {
   const [events] = await Promise.all([fetchEvents(), gdacs.ensureLoaded()]);

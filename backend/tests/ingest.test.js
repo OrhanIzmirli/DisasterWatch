@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { resetDb, prisma } from "./helpers.js";
-import { ingestOnce, recordNewEvents, publishOutbox, countPendingOutbox } from "../src/jobs/ingest.js";
+import { ingestOnce, recordNewEvents, publishOutbox, countPendingOutbox, unrecordedNasaEvents } from "../src/jobs/ingest.js";
 import { nasaEventsToContract, usgsFeaturesToContract } from "../src/events/mappers.js";
 
 // ---- fixtures shaped like the real feeds ----
@@ -270,6 +270,29 @@ describe("ingestOnce", () => {
     const next = await ingestOnce({ prisma, ...d2 });
     expect(next).toMatchObject({ fetched: 0, inserted: 0, published: 3, pending: 0, errors: [] });
     expect(d2.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it("rates (GDACS) only the EONET events not yet recorded: a run after a sleep does not look up hundreds of known events", async () => {
+    const rateNasa = vi.fn(async (events) => events);
+    const d = deps({ rateNasa });
+    const first = await ingestOnce({ prisma, ...d });
+    expect(rateNasa).toHaveBeenCalledTimes(1);
+    expect(rateNasa.mock.calls[0][0].map((e) => e.id)).toEqual(["EONET_1001", "EONET_1002", "EONET_1003"]);
+    expect(first).toMatchObject({ fetched: 3, known: 0, inserted: 3 });
+
+    const grown = [...NASA_RAW, { ...NASA_RAW[0], id: "EONET_1004", title: "Wildfire in Namibia 1032799" }];
+    const second = await ingestOnce({ prisma, ...deps({ rateNasa, fetchNasa: vi.fn(async () => grown) }) });
+    // EONET_1003 is not a tracked type, so it was never recorded: it is offered for rating again, the two recorded ones are not
+    expect(rateNasa.mock.calls[1][0].map((e) => e.id)).toEqual(["EONET_1003", "EONET_1004"]);
+    expect(second).toMatchObject({ fetched: 4, known: 2, inserted: 1, published: 1 });
+    expect(await prisma.ingestedEvent.count()).toBe(4);
+  });
+
+  it("unrecordedNasaEvents keeps events without an id out of the query and reports the known count", async () => {
+    await recordNewEvents(nasaEventsToContract(NASA_RAW).events, { prisma });
+    const { fresh, known } = await unrecordedNasaEvents([...NASA_RAW, { title: "no id" }], { prisma });
+    expect(fresh.map((e) => e.id)).toEqual(["EONET_1003", undefined]);
+    expect(known).toBe(2);
   });
 
   it("does nothing when both feeds are empty and the outbox is clear", async () => {

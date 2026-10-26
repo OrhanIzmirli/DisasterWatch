@@ -153,7 +153,8 @@ describe("ingestion records the map's location note for the e-mails", () => {
       ...extra,
     });
     const events = [flood(1, { gdacsPlace: { countries: ["TR"], lat: 41.1, lng: 29 } }), flood(2, { gdacsPlace: { countries: ["TR"], lat: 37.81, lng: 33.01 } })];
-    await ingestOnce({ prisma, fetchNasa: async () => events, fetchUsgs: async () => [], publish: vi.fn(async () => {}), log: { log() {}, warn() {}, error() {} } });
+    // the events come rated (gdacsPlace attached), so the rating step passes them through
+    await ingestOnce({ prisma, fetchNasa: async () => events, rateNasa: async (e) => e, fetchUsgs: async () => [], publish: vi.fn(async () => {}), log: { log() {}, warn() {}, error() {} } });
     const rows = await prisma.ingestedEvent.findMany({ orderBy: { eventId: "asc" }, select: { eventId: true, locationPrecision: true } });
     expect(rows).toEqual([
       { eventId: "nasa:EONET_1", locationPrecision: "approximate" },
