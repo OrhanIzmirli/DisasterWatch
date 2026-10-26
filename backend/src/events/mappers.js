@@ -42,6 +42,12 @@ function validateAll(candidates) {
   return { events, dropped };
 }
 
+/** Contract eventId of a raw EONET event ("nasa:EONET_1234"); null without an id. */
+export function nasaEventId(raw) {
+  const id = cleanId(raw?.id);
+  return id ? `nasa:${id}` : null;
+}
+
 /**
  * EONET events -> contract events. Also returns `eonetFallback`: the eventIds
  * placed on the EONET geometry only because GDACS could not be reached for an
@@ -59,7 +65,7 @@ export function nasaEventsToContract(rawEvents) {
     if (!type || !id) continue;
 
     const best = pickBestLatLngFromGeometryArray(ev?.geometry);
-    // Same point as the public map marker: the GDACS event point when there is one (fetchNasaEventsRated
+    // Same point as the public map marker: the GDACS event point when there is one (the GDACS client
     // attaches it as gdacsPlace), else the EONET geometry; like the map, a GDACS point alone is enough.
     // Only the values change; the contract does not.
     const place = resolveEventLocation(best?.coords ? fixSwappedCoords(best.coords) : null, ev?.gdacsPlace);

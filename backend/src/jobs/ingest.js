@@ -18,10 +18,11 @@
  */
 import { Prisma } from "@prisma/client";
 import defaultPrisma from "../prisma.js";
-import { fetchNasaEventsRated } from "../services/nasa.service.js";
+import { fetchNasaEvents } from "../services/nasa.service.js";
 import { fetchUsgsEarthquakes } from "../services/usgs.service.js";
+import { gdacsClient } from "../services/gdacs.js";
 import { publishDisasterEvents } from "../services/kafkaProducer.js";
-import { nasaEventsToContract, usgsFeaturesToContract } from "../events/mappers.js";
+import { nasaEventsToContract, usgsFeaturesToContract, nasaEventId } from "../events/mappers.js";
 
 export const INGEST_INTERVAL_MS = 5 * 60 * 1000;
 export const OUTBOX_BATCH = 500; // rows considered per run
@@ -118,14 +119,38 @@ export async function publishOutbox({
 }
 
 /**
+ * The raw EONET events not yet in IngestedEvent (by contract eventId). An
+ * event is recorded once (ON CONFLICT DO NOTHING), so only these need the
+ * GDACS level and point before they are mapped; the recorded ones would be
+ * looked up for nothing. Returns { fresh, known } (known: the count skipped).
+ */
+export async function unrecordedNasaEvents(rawEvents, { prisma = defaultPrisma } = {}) {
+  const list = Array.isArray(rawEvents) ? rawEvents : [];
+  const ids = [...new Set(list.map(nasaEventId).filter(Boolean))];
+  const recorded = new Set();
+  for (let i = 0; i < ids.length; i += INSERT_CHUNK) {
+    const rows = await prisma.ingestedEvent.findMany({ where: { eventId: { in: ids.slice(i, i + INSERT_CHUNK) } }, select: { eventId: true } });
+    for (const r of rows) recorded.add(r.eventId);
+  }
+  const fresh = list.filter((e) => !recorded.has(nasaEventId(e)));
+  return { fresh, known: list.length - fresh.length };
+}
+
+/**
  * One ingestion run: record new feed events, then drain the outbox.
  * Never throws for a single failing source (that source is skipped and the
  * error is logged); a publish failure is reported in `errors` and retried
  * next run.
+ *
+ * Only the EONET events not yet recorded are rated (GDACS level and point,
+ * same client and rules as the public feed): a run after a long sleep used
+ * to refresh the lookups of every event of the last 30 days first (hundreds,
+ * minutes when GDACS is slow) although none of them is recorded again.
  */
 export async function ingestOnce({
   prisma = defaultPrisma,
-  fetchNasa = fetchNasaEventsRated, // same GDACS-rated events as the public feed
+  fetchNasa = fetchNasaEvents, // raw EONET events; the new ones are rated by `rateNasa`
+  rateNasa = (events) => gdacsClient.enrich(events), // attaches the GDACS level and point (waits for the lookups)
   fetchUsgs = fetchUsgsEarthquakes,
   publish = publishDisasterEvents,
   log = console,
@@ -133,10 +158,17 @@ export async function ingestOnce({
   const events = [];
   const fallback = new Set(); // eventIds placed on the EONET geometry because GDACS was unreachable
   const approximate = new Set(); // eventIds whose location the map marks "approximate"
-  const stats = { fetched: 0, dropped: 0, inserted: 0, eonetFallback: 0, published: 0, pending: 0, errors: [] };
+  const stats = { fetched: 0, known: 0, dropped: 0, inserted: 0, eonetFallback: 0, published: 0, pending: 0, errors: [] };
 
   const sources = [
-    ["nasa", async () => nasaEventsToContract(await fetchNasa())],
+    [
+      "nasa",
+      async () => {
+        const { fresh, known } = await unrecordedNasaEvents(await fetchNasa(), { prisma });
+        stats.known += known;
+        return nasaEventsToContract(await rateNasa(fresh));
+      },
+    ],
     ["usgs", async () => usgsFeaturesToContract(await fetchUsgs(), { minMag: USGS_MIN_MAG })],
   ];
 
@@ -153,6 +185,8 @@ export async function ingestOnce({
       log.error(`[ingest] ${name} fetch failed:`, err?.message || err);
     }
   }
+
+  stats.fetched += stats.known; // the recorded EONET events count as fetched too: they were delivered, only not rated again
 
   if (events.length > 0) {
     const fresh = await recordNewEvents(events, { prisma, approximate });
@@ -204,7 +238,7 @@ export function createIngestRunner({ ingest = ingestOnce, now = () => Date.now()
         last = { at: now(), trigger, stats, error: null };
         eonetFallbackTotal += stats.eonetFallback ?? 0;
         log.log(
-          `[ingest] (${trigger}) fetched=${stats.fetched} new=${stats.inserted} published=${stats.published} pending=${stats.pending}` +
+          `[ingest] (${trigger}) fetched=${stats.fetched} known=${stats.known ?? 0} new=${stats.inserted} published=${stats.published} pending=${stats.pending}` +
             (stats.errors.length ? ` errors=${stats.errors.join(" | ")}` : "")
         );
       } catch (err) {
