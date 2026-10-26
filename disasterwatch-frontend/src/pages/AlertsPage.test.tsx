@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe("Alerts page delivery channels", () => {
-  it("says honestly that new events are checked about once an hour", async () => {
+  it("says honestly that new events are checked every few hours, so alerts can be hours late", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } })));
     render(
       <MemoryRouter>
@@ -18,8 +18,8 @@ describe("Alerts page delivery channels", () => {
       </MemoryRouter>
     );
     expect(await screen.findByText("In-app notifications: active")).toBeTruthy();
-    expect(screen.getByText(/checked about once an hour/).textContent).toBe(
-      "New events are checked about once an hour, so an alert can arrive up to an hour after the event is reported."
+    expect(screen.getByText(/checked only when the hosting is woken up/).textContent).toBe(
+      "New events are checked only when the hosting is woken up, every few hours in practice, so an alert can arrive several hours after the event is reported."
     );
   });
 });

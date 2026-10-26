@@ -61,7 +61,7 @@ React (Vite) frontend ── /api ──> backend          PostgreSQL: one datab
 | Database | PostgreSQL | Neon | PostgreSQL 16 container |
 | Message broker | Kafka | Aiven | Confluent 7.6.1 containers |
 | E-mail | HTTP API | Resend | off (add `RESEND_*` and `APP_URL` to the `notification` service) |
-| Scheduler | hourly wake-up call | cron-job.org triggers the GitHub Actions workflow (`wake.yml`), whose runner calls the services; the workflow's own :22 schedule as backup | not needed |
+| Scheduler | wake-up call every few hours | GitHub Actions scheduled workflow (`wake.yml`) | not needed |
 
 The public map and feed need only the backend and the sources; Kafka, the notification service and Resend carry the alerts. Each part degrades on its own: a failed source, news provider, GDACS lookup or a powered-off broker leaves the rest working and is reported in `/health`.
 
@@ -79,7 +79,7 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 
 ## Limits
 
-- **Alerts are hourly, not instant.** The free Render services sleep after about 15 minutes without traffic. A GitHub Actions workflow, triggered once an hour by cron-job.org, wakes them; then the backend ingests and the notification service consumes what waits in Kafka. An alert therefore arrives up to about an hour after the source reports the event (plus the source's own delay), and events older than 48 hours never notify. While someone uses the site the backend ingests every 5 minutes, but the site never calls the notification service, so alerts (and the e-mail confirmation link) still wait for the hourly wake-up.
+- **Alerts can be hours late.** The free Render services sleep after about 15 minutes without traffic. GitHub's scheduled workflow (`.github/workflows/wake.yml`, hourly on paper, in practice every few hours because GitHub delays or skips scheduled runs under load) wakes them; then the backend ingests and the notification service consumes what waits in Kafka. An alert therefore arrives up to several hours after the source reports the event (plus the source's own delay), and events older than 48 hours never notify. While someone uses the site the backend ingests every 5 minutes, but the site never calls the notification service, so alerts (and the e-mail confirmation link) still wait for the next wake-up.
 - **Free infrastructure.** Cold starts take up to a minute, and the first feed after it waits for the NASA EONET download (2.6 MB, 4–13 s when measured). It does not wait for GDACS: events show the GDACS answers stored from earlier lookups at once, the others the EONET point and measurement (floods: not rated) until their lookup answers in the background, from the next request on. GDACS is often slow (on 2026-10-22 most lookups timed out from Render and from a residential line alike), so after a long sleep or a deploy some events can stay on the EONET values for a while. The ingestion job waits for the lookups of the events it has not recorded yet (the others are recorded once and not looked up again) and records an event with the EONET point and area when GDACS cannot be reached. Aiven's free Kafka powers off after a period without traffic and must be started from its console; until then events wait in the outbox and no alerts go out. The free plans also cap the database size, instance hours and e-mails (100 per day at Resend; e-mail stops at 90 by default, `EMAIL_DAILY_LIMIT`, and alerts stay in-app).
 - **An alert carries the level known when the event was first seen.** The ingestion job asks GDACS for an event's impact level only before recording it; a recorded event is never rated again (the public feed refreshes its levels, the alert pipeline does not). An event whose GDACS level rises later (Green to Orange or Red) sends no new alert, so a subscriber whose minimum severity it now reaches never hears of it; an event recorded while GDACS was unreachable keeps the severity from the EONET measurement for the same reason.
 - **Source coverage.** Only what USGS (M 4.5+) and NASA EONET (wildfires, floods, severe storms) report: no volcanoes, landslides, tsunami warnings, heat waves, droughts or official warnings. EONET lists an event when one of its contributors does, so small or local events may be missing and some arrive late. EONET reports no flood measurement, so floods are rated only by their GDACS level and shown as not rated when GDACS cannot be reached. GDACS levels describe expected humanitarian impact, not physical size.
@@ -275,7 +275,7 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | `CORS_ORIGINS` | no | live frontend + `localhost:8080/5173/4173` | browser origins allowed to call the API directly; the `/api` proxy never needs it |
 | `DISABLE_NEWS_JOB` | no | – | `1` switches off the background news refresh |
 | `DISABLE_INGESTION` | no | – | `1` switches off the NASA/USGS ingestion job (no events reach Kafka) |
-| `INGEST_WAKE_SECRET` | cloud | empty | shared secret of the hourly wake-up (`POST /internal/ingest`, [Scheduled wake-up](#scheduled-wake-up)); **32+ characters**, same value as the GitHub Actions secret of the same name (the workflow is the only caller). Without it the endpoint does not exist |
+| `INGEST_WAKE_SECRET` | cloud | empty | shared secret of the scheduled wake-up (`POST /internal/ingest`, [Scheduled wake-up](#scheduled-wake-up)); **32+ characters**, same value as the GitHub Actions secret of the same name (the workflow is the only caller). Without it the endpoint does not exist |
 | `TEST_DATABASE_URL` | tests | – | throwaway database for `npm test` ([Tests and CI](#tests-and-ci)) |
 
 ### Notification service (`notification-service/.env.example`)
@@ -440,7 +440,7 @@ Defined in `backend/src/events/contract.js` and `notification-service/src/contra
 
 ### Scheduled wake-up
 
-The services are not kept awake (the free plan has 750 instance hours a month per workspace). Once an hour, at minute 17, cron-job.org triggers the GitHub Actions workflow `.github/workflows/wake.yml` through the GitHub API (`workflow_dispatch`), and the GitHub runner calls the two services; the workflow's own schedule at minute 22 is the backup for an hour in which the dispatch did not arrive (GitHub delays or skips scheduled runs under load, so the schedule alone is not reliable). cron-job.org does not call Render itself any more: Render's edge answered its requests to a sleeping service with 503 (`x-render-routing: hibernate-wake-error`) without waking it, while the same requests from a GitHub runner wake it. At :22 the services are still awake from the :17 call, so the backup opens no second awake window, but as a new request it restarts Render's 15-minute idle timer and extends that window by about 5 minutes: roughly 60 instance hours a month per service, about 22 of every 60 minutes awake instead of 17 (a few minutes more when the workflow follows a long run on `/health`); a run delayed past about :32 opens a short second window. Every run sends:
+The services are not kept awake (the free plan has 750 instance hours a month per workspace). The GitHub Actions workflow `.github/workflows/wake.yml` wakes them: its schedule says minute 22 of every hour, but GitHub delays or skips scheduled runs under load, and in practice the runs arrive every three to five hours. It is the only scheduler: an external cron service was tried and dropped, because Render's edge answered its requests to a sleeping service with 503 (`x-render-routing: hibernate-wake-error`) without waking it, while the same requests from a GitHub runner wake it. Each run opens an awake window of about 20 minutes (the calls, then Render's 15-minute idle timer; a few minutes more when the workflow follows a long run on `/health`): some 6 to 8 windows a day, roughly 50 to 80 instance hours a month per service; even hourly runs would use about 240 per service, within the budget. Visits to the site open their own windows. Every run sends:
 
 1. `POST <backend>/internal/ingest` with `Authorization: Bearer <INGEST_WAKE_SECRET>`: a sleeping backend wakes (and ingests on start), an awake one ingests unless a run worked in the last 10 minutes (it ingests every 5 minutes anyway); new events are published to Kafka. Idempotent: a run in progress is joined, a failed recent run is retried. The secret is compared in constant time and the endpoint is rate limited (10 requests per 15 minutes per client). The answer carries counts only; `ok: false` (a failed source fetch or Kafka publish, e.g. a powered-off Aiven broker) fails the workflow run, so GitHub reports it. The answer is sent within 60 seconds whatever the run does (Kafka readiness and the run share that budget): when the run is still going, the endpoint answers `202 { reason: "in-progress" }` and the run continues; the workflow then follows it on `/health` → `ingest` (`running`, then `lastErrorSources`) for up to 6 minutes. Before this, a run after a long sleep could hold the answer for 5 minutes and more (it refreshed the GDACS lookups of every EONET event of the last 30 days first) and every wake-up call timed out, which GitHub reported as a failed run.
 2. `GET <notification service>/health`: the consumer wakes and processes what waits in Kafka.
@@ -453,10 +453,8 @@ Setup, values never in the repository:
 | GitHub → Settings → Secrets and variables → Actions → **Secrets** | `INGEST_WAKE_SECRET` | the same value |
 | GitHub → … → Actions → **Variables** | `BACKEND_URL` | the backend's Render URL, no trailing slash |
 | GitHub → … → Actions → **Variables** | `NOTIFICATION_URL` | the notification service's Render URL, no trailing slash |
-| GitHub → Settings → Developer settings → **Fine-grained personal access tokens** | a token for cron-job.org | repository access: **only this repository**; permissions: **Actions: read and write** and nothing else; an expiry date (when it expires the dispatch stops and only the :22 schedule carries on, so renew it in time). The value lives only in the cron-job.org job |
-| cron-job.org → job, every hour at minute 17 | `POST https://api.github.com/repos/<owner>/<repo>/actions/workflows/wake.yml/dispatches` | headers `Authorization: Bearer <token>` and `Accept: application/vnd.github+json`, body `{"ref":"main"}`; GitHub answers 204 and the run appears under Actions → Scheduled wake with the trigger `workflow_dispatch` |
 
-`/health` → `ingest` shows the last run (time, trigger, counts, which part failed) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`). `ingest.eonetFallbackRecorded` counts the events recorded with the EONET point because GDACS could not be reached (`total` since the process started; `lastStats.eonetFallback` for the last run); events are recorded once, so these keep that point (and the severity from the EONET measurement), and their ids are in the `[ingest] ... recorded with the EONET point` log line. GitHub delays scheduled runs under load and disables a schedule after 60 days without repository activity (a `workflow_dispatch` is not affected), which is why the dispatch from cron-job.org is the primary trigger and the schedule only the backup: check `lastWakeAt` to see that the wake-ups arrive, and the trigger column under Actions to see which of the two made the call.
+`/health` → `ingest` shows the last run (time, trigger, counts, which part failed) and the last wake-up (`lastWakeAt`, `lastWakeOutcome`). `ingest.eonetFallbackRecorded` counts the events recorded with the EONET point because GDACS could not be reached (`total` since the process started; `lastStats.eonetFallback` for the last run); events are recorded once, so these keep that point (and the severity from the EONET measurement), and their ids are in the `[ingest] ... recorded with the EONET point` log line. GitHub delays scheduled runs under load and disables a schedule after 60 days without repository activity (a push keeps it alive): check `lastWakeAt` to see when the last wake-up arrived and the run list under Actions → Scheduled wake for the gaps between runs; **Run workflow** there (`workflow_dispatch`) wakes the services by hand.
 
 ### E-mail alerts
 
@@ -472,7 +470,7 @@ The notification service (`src/email/`) sends, after a burst of new notification
 
 ### Operational notes
 
-The user-facing limits (hourly alerts, free tiers, source coverage) are listed under [Limits](#limits).
+The user-facing limits (alerts hours late, free tiers, source coverage) are listed under [Limits](#limits).
 
 - **Sleeping services catch up.** While the backend sleeps no ingestion runs and nothing is published; while the notification service sleeps nothing is consumed. Both catch up when they wake: Kafka keeps the messages, so the consumer resumes from its committed offset. With the broker powered off the backend keeps serving the public feed and events wait in the outbox.
 - Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
@@ -544,7 +542,7 @@ DATABASE_URL="postgresql://...neon.tech/...?sslmode=require" npm run db:push
 ```
 
 ### 3) Backend and notification service (Render)
-Create two **Web Services** from this repository with the **Docker** runtime, root directories `backend` and `notification-service`, and health check path `/health`. Set the variables from the [Environment variables](#environment-variables) tables: both services need `DATABASE_URL` (pooler host is fine at runtime), `KAFKA_BROKER`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and, unless `letsencrypt_sasl` is enabled on the Aiven service, `KAFKA_SSL_CA`; the backend additionally needs `JWT_SECRET`, `NODE_ENV=production` and `ADMIN_EMAILS`, `INGEST_WAKE_SECRET` for the hourly wake-up ([Scheduled wake-up](#scheduled-wake-up)), optionally `GUARDIAN_API_KEY` and `CORS_ORIGINS`; the notification service needs `RESEND_API_KEY`, `RESEND_FROM` and `APP_URL` for e-mail ([E-mail alerts](#e-mail-alerts)). Render provides `PORT`.
+Create two **Web Services** from this repository with the **Docker** runtime, root directories `backend` and `notification-service`, and health check path `/health`. Set the variables from the [Environment variables](#environment-variables) tables: both services need `DATABASE_URL` (pooler host is fine at runtime), `KAFKA_BROKER`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` and, unless `letsencrypt_sasl` is enabled on the Aiven service, `KAFKA_SSL_CA`; the backend additionally needs `JWT_SECRET`, `NODE_ENV=production` and `ADMIN_EMAILS`, `INGEST_WAKE_SECRET` for the scheduled wake-up ([Scheduled wake-up](#scheduled-wake-up)), optionally `GUARDIAN_API_KEY` and `CORS_ORIGINS`; the notification service needs `RESEND_API_KEY`, `RESEND_FROM` and `APP_URL` for e-mail ([E-mail alerts](#e-mail-alerts)). Render provides `PORT`.
 
 **Generate a new `JWT_SECRET` for the deployment, never reuse the example value**: in production the backend refuses the `.env.example` placeholder and anything containing "change me" (`node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`).
 
@@ -566,7 +564,7 @@ The frontend calls relative `/api/...` paths, so the first rule plays the role o
 
 ```
 .github/workflows/ci.yml     backend tests, notification-service tests, frontend lint + tests + build
-.github/workflows/wake.yml   hourly wake-up of the Render services (dispatched by cron-job.org at :17, own schedule at :22 as backup)
+.github/workflows/wake.yml   scheduled wake-up of the Render services (hourly on paper, every few hours in practice)
 .nvmrc                       Node 24.13.0 (also in every package.json "engines", Dockerfile and CI)
 docker-compose.yml           db, zookeeper, dw-kafka, backend, notification, frontend
 backend/                     Express API, Prisma schema, ingestion + news jobs, Kafka producer, tests
@@ -608,7 +606,7 @@ Captured on the first build (2026-03-09); the layout has been refined since, the
 - **Backend:** Node.js 24, Express 5, Prisma 6, Zod, helmet, express-rate-limit, KafkaJS
 - **Notification service:** Node.js 24, KafkaJS, `pg`, Zod
 - **Infra:** Docker, Docker Compose, Nginx, PostgreSQL 16, Confluent Kafka 7.6.1
-- **Cloud (optional):** Render, Neon, Aiven, Resend, cron-job.org
+- **Cloud (optional):** Render, Neon, Aiven, Resend
 - **Tests / CI:** Vitest, supertest, Testing Library, ESLint, GitHub Actions
 
 ---
@@ -617,7 +615,7 @@ Captured on the first build (2026-03-09); the layout has been refined since, the
 
 **2026-10-26**
 - Scheduled wake-up: `POST /internal/ingest` answers within 60 seconds (202 while a long run goes on, the workflow follows it on `/health`); the ingestion job rates only the EONET events it has not recorded yet instead of refreshing every lookup of the last 30 days. Every backup run that cold-started the backend had failed on a 90-second timeout before.
-- Scheduler: cron-job.org triggers the workflow through the GitHub API instead of calling Render, whose edge refused its wake-up requests (`hibernate-wake-error`).
+- Scheduler: GitHub's scheduled workflow is the only wake-up (the external cron service was dropped: Render's edge refused its requests to a sleeping service, `hibernate-wake-error`); it runs every few hours in practice, so the Alerts page and this README say that alerts can be hours late. The e-mail channel counts as "unknown" after 12 hours without a report (was 3).
 
 **2026-10-23**
 - The public feed no longer waits for GDACS after a restart: known levels come from the new `GdacsCache` table, missing lookups finish in the background. First `/disasters` after a cold start, measured locally: 257 s before, 4–8 s after (bounded by the EONET download).
@@ -627,7 +625,7 @@ Captured on the first build (2026-03-09); the layout has been refined since, the
 **2026-10-14 – 2026-10-21**
 - Severity from the source (GDACS impact level, Saffir-Simpson on the peak wind, burned area, not rated), GDACS point as the event location, event clustering on the map, phone layout.
 - News from GDELT, The Guardian and GDACS media with relevance rules, event linking and regions.
-- Hourly wake-up (`POST /internal/ingest`), opt-in e-mail alerts with double opt-in and one-click unsubscribe, privacy page, self-service account deletion, admin only for an address confirmed while signed in.
+- Scheduled wake-up (`POST /internal/ingest`), opt-in e-mail alerts with double opt-in and one-click unsubscribe, privacy page, self-service account deletion, admin only for an address confirmed while signed in.
 
 **2026-10-15**
 - Clone-and-run verified on a fresh clone with deleted volumes: the backend container now runs `prisma db push` before starting, the notification service gets `DATABASE_URL`, and `backend/.env.example` ships a dev-only `JWT_SECRET` placeholder instead of the rejected `CHANGE_ME`.

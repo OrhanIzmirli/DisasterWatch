@@ -405,8 +405,8 @@ const AlertsPage = ({ user, authLoading }: Props) => {
             <li>{emailChannelText(email.settings, email.failed)}</li>
           </ul>
           {user && <EmailAlerts email={user.email} settings={email.settings} onChange={email.setSettings} />}
-          {/* the free hosting sleeps between visits; a scheduled job wakes it once an hour (.github/workflows/wake.yml) */}
-          <p className="channel-note">New events are checked about once an hour, so an alert can arrive up to an hour after the event is reported.</p>
+          {/* the free hosting sleeps between visits; GitHub's scheduled workflow wakes it (.github/workflows/wake.yml), in practice every few hours */}
+          <p className="channel-note">New events are checked only when the hosting is woken up, every few hours in practice, so an alert can arrive several hours after the event is reported.</p>
         </article>
       </section>
 
