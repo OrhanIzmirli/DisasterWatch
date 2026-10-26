@@ -1,6 +1,7 @@
 /**
- * Internal endpoints called by the scheduled wake-up (an external cron service at :17,
- * GitHub Actions .github/workflows/wake.yml at :22 as the backup), not by the frontend.
+ * Internal endpoints called by the scheduled wake-up (GitHub Actions
+ * .github/workflows/wake.yml: dispatched by an external cron service at :17,
+ * its own schedule at :22 as the backup), not by the frontend.
  *
  *   POST /internal/ingest   Authorization: Bearer <INGEST_WAKE_SECRET>
  *     -> 200 { ok, ran, reason, lastRunAt, stats }

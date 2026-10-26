@@ -12,17 +12,20 @@
 #     Variables: BACKEND_URL         (backend service URL, no trailing slash)
 #                NOTIFICATION_URL    (notification service URL, no trailing slash)
 #
-# GitHub disables scheduled workflows after 60 days without repository activity, and delays or
-# skips scheduled runs under load. /health -> ingest.lastWakeAt shows when the last wake-up
-# arrived. The primary scheduler is an external cron service calling the same two URLs at minute
-# 17; this workflow is the backup (the endpoint is idempotent, a run in progress is joined).
+# Primary trigger: an external cron service (cron-job.org) dispatches this workflow through the
+# GitHub API (workflow_dispatch, fine-grained token: this repository only, Actions read/write) at
+# minute 17; the GitHub runner then calls Render (Render's edge refused the cron service's own
+# requests to a sleeping service). The schedule below is the backup: GitHub delays or skips
+# scheduled runs under load and disables a schedule after 60 days without repository activity.
+# /health -> ingest.lastWakeAt shows when the last wake-up arrived (the endpoint is idempotent,
+# a run in progress is joined).
 name: Scheduled wake
 
 on:
   schedule:
-    # backup at :22, five minutes after the primary :17 call: the services are still awake from
-    # that call, so it opens no second awake window, only extends the existing one by ~5 min
-    # (Render's idle timer restarts); it wakes them if the primary call did not arrive
+    # backup at :22, five minutes after the :17 dispatch: the services are still awake from that
+    # call, so it opens no second awake window, only extends the existing one by ~5 min
+    # (Render's idle timer restarts); it wakes them if the dispatch did not arrive
     - cron: "22 * * * *"
   workflow_dispatch:
 
