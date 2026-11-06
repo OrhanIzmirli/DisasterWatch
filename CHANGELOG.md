@@ -1,0 +1,27 @@
+# Changelog
+
+Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
+
+**2026-10-26**
+- Scheduled wake-up: `POST /internal/ingest` answers within 60 seconds (202 while a long run goes on, the workflow follows it on `/health`); the ingestion job rates only the EONET events it has not recorded yet instead of refreshing every lookup of the last 30 days. Every backup run that cold-started the backend had failed on a 90-second timeout before.
+- Scheduler: GitHub's scheduled workflow is the only wake-up (the external cron service was dropped: Render's edge refused its requests to a sleeping service, `hibernate-wake-error`); it runs every few hours in practice, so the Alerts page and this README say that alerts can be hours late. The e-mail channel counts as "unknown" after 12 hours without a report (was 3).
+
+**2026-10-23**
+- The public feed no longer waits for GDACS after a restart: known levels come from the new `GdacsCache` table, missing lookups finish in the background. First `/disasters` after a cold start, measured locally: 257 s before, 4–8 s after (bounded by the EONET download).
+- Earthquakes: USGS weekly M 4.5+ feed (was the last 24 hours), the same window as the rest of the feed; the map's earthquake cap and a full feed page keep the strongest quakes.
+- README brought up to date for the first public version: live link, architecture, methodology summary and the limits of the free setup and of the sources.
+
+**2026-10-14 – 2026-10-21**
+- Severity from the source (GDACS impact level, Saffir-Simpson on the peak wind, burned area, not rated), GDACS point as the event location, event clustering on the map, phone layout.
+- News from GDELT, The Guardian and GDACS media with relevance rules, event linking and regions.
+- Scheduled wake-up (`POST /internal/ingest`), opt-in e-mail alerts with double opt-in and one-click unsubscribe, privacy page, self-service account deletion, admin only for an address confirmed while signed in.
+
+**2026-10-15**
+- Clone-and-run verified on a fresh clone with deleted volumes: the backend container now runs `prisma db push` before starting, the notification service gets `DATABASE_URL`, and `backend/.env.example` ships a dev-only `JWT_SECRET` placeholder instead of the rejected `CHANGE_ME`.
+- Node pinned to 24.13.0 (`.nvmrc`, `engines`, Dockerfiles, CI); images install with `npm ci`.
+- README rewritten to match the code (env tables for all three services, HTTP API, feed contract, valid Kafka demo payload); `.env.example` for every service; frontend README, page title, favicon, meta description and `robots.txt`.
+- Dead files removed (old demo routes and components, root `package.json`, `event.json`, unused CSS).
+
+**2026-10-07**
+- Azure Container Apps + ACR was the initial deployment plan; it was dropped because of cost and operational complexity in favour of a free-tier stack: Render, Neon and Aiven.
+- Added `.dockerignore` files for the backend and notification service to keep the build context and images lean.
