@@ -7,9 +7,9 @@
  * every response the routes give against it.
  */
 import { ATTRIBUTION } from "./attribution.js";
-import { PAGE_LIMIT, RATE_LIMIT, SEVERITIES, TYPES, WINDOW_DAYS } from "./events.js";
+import { KEY_RATE_LIMIT, PAGE_LIMIT, RATE_LIMIT, SEVERITIES, TYPES, WINDOW_DAYS } from "./events.js";
 
-const OPENAPI_LIMITS = { requestsPerMinute: RATE_LIMIT.limit };
+const OPENAPI_LIMITS = { requestsPerMinute: RATE_LIMIT.limit, requestsPerMinuteWithKey: KEY_RATE_LIMIT.limit };
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, "null"] });
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
@@ -34,6 +34,7 @@ const errorResponse = (description, extraHeaders = {}) => ({
 });
 
 const commonErrors = {
+  401: { $ref: "#/components/responses/InvalidKey" },
   429: { $ref: "#/components/responses/TooManyRequests" },
   500: { $ref: "#/components/responses/ServerError" },
 };
@@ -49,6 +50,7 @@ export function buildOpenApi() {
         `Events of the last ${WINDOW_DAYS} days from USGS (earthquakes of magnitude 4.5 and above) and NASA EONET (wildfires, floods, severe storms), rated with the same rules as the DisasterWatch dashboard.`,
         "",
         `- **No key needed.** At most ${OPENAPI_LIMITS.requestsPerMinute} requests per minute per IP address; above that the API answers 429 with \`Retry-After\`.`,
+        `- **Optional key.** Sign in with GitHub on the API page to get one; send it as \`X-API-Key\` for ${OPENAPI_LIMITS.requestsPerMinuteWithKey} requests per minute, counted per key. A wrong key is a 401. Keep keys on your server: a key in browser code is public.`,
         "- **Cache.** Responses carry `Cache-Control` and an `ETag`: send `If-None-Match` to get a 304. The data itself refreshes every 5 minutes.",
         "- **Free hosting.** The first request after about 15 quiet minutes can take up to a minute while the server wakes up.",
         "- **Attribution.** Every response has an `attribution` object: credit the sources it lists when you show the data.",
@@ -62,6 +64,8 @@ export function buildOpenApi() {
       { url: "https://disasterwatch-frontend.onrender.com/api/v1", description: "DisasterWatch (live)" },
     ],
     tags: [{ name: "Events" }, { name: "Reference" }],
+    // the key is optional: every operation works without one ({}) or with one
+    security: [{}, { ApiKey: [] }],
     paths: {
       "/disasters": {
         get: {
@@ -151,6 +155,14 @@ export function buildOpenApi() {
       },
     },
     components: {
+      securitySchemes: {
+        ApiKey: {
+          type: "apiKey",
+          in: "header",
+          name: "X-API-Key",
+          description: `Optional. ${OPENAPI_LIMITS.requestsPerMinuteWithKey} requests per minute per key instead of ${OPENAPI_LIMITS.requestsPerMinute} per IP address.`,
+        },
+      },
       parameters: {
         type: {
           name: "type",
@@ -209,14 +221,15 @@ export function buildOpenApi() {
       },
       headers: {
         RateLimit: { description: "Remaining requests in the current window (IETF draft-7 format), e.g. `limit=60, remaining=59, reset=60`", schema: { type: "string" } },
-        RateLimitPolicy: { description: `The limit: \`${OPENAPI_LIMITS.requestsPerMinute};w=60\``, schema: { type: "string" } },
+        RateLimitPolicy: { description: `The limit: \`${OPENAPI_LIMITS.requestsPerMinute};w=60\` without a key, \`${OPENAPI_LIMITS.requestsPerMinuteWithKey};w=60\` with one`, schema: { type: "string" } },
         RetryAfter: { description: "Seconds to wait before retrying", schema: { type: "integer", minimum: 1 } },
         CacheControl: { description: "`public, max-age=60, stale-while-revalidate=300` for events, a day for reference data", schema: { type: "string" } },
         ETag: { description: "Send it back in If-None-Match to get a 304 when nothing changed", schema: { type: "string" } },
       },
       responses: {
         BadRequest: errorResponse("A parameter is unknown or invalid; the message says which"),
-        TooManyRequests: errorResponse(`More than ${OPENAPI_LIMITS.requestsPerMinute} requests in a minute from this IP address`, {
+        InvalidKey: errorResponse("The X-API-Key header holds no valid key (unknown, revoked or malformed); leave the header out to use the API without a key"),
+        TooManyRequests: errorResponse(`More than ${OPENAPI_LIMITS.requestsPerMinute} requests in a minute from this IP address, or ${OPENAPI_LIMITS.requestsPerMinuteWithKey} with this key`, {
           "Retry-After": { $ref: "#/components/headers/RetryAfter" },
           ...rateHeaders,
         }),
@@ -359,8 +372,8 @@ export function buildOpenApi() {
             limits: {
               type: "object",
               additionalProperties: false,
-              required: ["requestsPerMinute", "windowDays", "maxPageSize"],
-              properties: { requestsPerMinute: { type: "integer" }, windowDays: { type: "integer" }, maxPageSize: { type: "integer" } },
+              required: ["requestsPerMinute", "requestsPerMinuteWithKey", "windowDays", "maxPageSize"],
+              properties: { requestsPerMinute: { type: "integer" }, requestsPerMinuteWithKey: { type: "integer" }, windowDays: { type: "integer" }, maxPageSize: { type: "integer" } },
             },
             attribution: ref("Attribution"),
           },
@@ -401,7 +414,7 @@ export function buildOpenApi() {
               additionalProperties: false,
               required: ["code", "message"],
               properties: {
-                code: { type: "string", enum: ["bad_request", "not_found", "method_not_allowed", "rate_limited", "unavailable", "server_error"] },
+                code: { type: "string", enum: ["bad_request", "invalid_key", "not_found", "method_not_allowed", "rate_limited", "unavailable", "server_error"] },
                 message: { type: "string" },
               },
             },

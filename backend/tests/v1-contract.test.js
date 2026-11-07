@@ -176,6 +176,12 @@ describe("responses match the document", () => {
     expectContract(await get(), "/types");
   });
 
+  it("401 for a wrong API key", async () => {
+    const res = await request(app).get("/api/v1/types").set("X-API-Key", "dwk_not-a-real-key");
+    expect(res.status).toBe(401);
+    expectContract(res, "/types");
+  });
+
   it("405 bodies use the documented error schema", async () => {
     const res = await request(app).post("/api/v1/disasters");
     expect(res.status).toBe(405);

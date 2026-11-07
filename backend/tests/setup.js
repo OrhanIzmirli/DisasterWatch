@@ -24,7 +24,7 @@ const { default: prisma } = await import("../src/prisma.js");
 
 async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "NewsCache", "AdminAuditLog", "Notification", "IngestedEvent", "AlertSubscription", "Disaster", "User" RESTART IDENTITY CASCADE'
+    'TRUNCATE TABLE "ApiKey", "ApiDeveloper", "NewsCache", "AdminAuditLog", "Notification", "IngestedEvent", "AlertSubscription", "Disaster", "User" RESTART IDENTITY CASCADE'
   );
 }
 

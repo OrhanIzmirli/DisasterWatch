@@ -19,6 +19,7 @@ import { gdacsClient } from "./services/gdacs.js";
 import { createEmailRouter } from "./routes/email.routes.js";
 import { emailChannelStatus } from "./services/emailChannel.js";
 import { createV1Router } from "./routes/v1.routes.js";
+import { createDeveloperRouters } from "./routes/developer.routes.js";
 
 /**
  * Build the Express app without starting a server or touching Kafka,
@@ -34,6 +35,9 @@ import { createV1Router } from "./routes/v1.routes.js";
  *   (routes/internal.routes.js); defaults read INGEST_WAKE_SECRET.
  * @param {false | { windowMs?: number, limit?: number }} [options.v1RateLimit]
  *   Per-IP limit of the public API v1 (default 60/min); `false` disables it (tests only).
+ * @param {false | { windowMs?: number, limit?: number }} [options.developerRateLimit]
+ *   Limit of the GitHub sign-in and key routes (default 30/min); `false` disables it (tests only).
+ * @param {object} [options.developer] overrides for createDeveloperRouters (env, fetch, prisma, keyStore; tests)
  */
 export function createApp(options = {}) {
   const app = express();
@@ -56,6 +60,11 @@ export function createApp(options = {}) {
 
   // Public read-only API v1: its own CORS (any origin, GET only, no credentials) and rate limit.
   // /api/v1 is the documented path; the site's /api/* rewrite delivers it here as /v1.
+  // GitHub sign-in and key management (POST/DELETE, cookies, no CORS) come first: the v1
+  // router answers every other method with 405.
+  const developer = createDeveloperRouters({ rateLimit: options.developerRateLimit, ...(options.developer || {}) });
+  app.use(["/v1/auth", "/api/v1/auth"], cookieParser(), developer.auth);
+  app.use(["/v1/developer", "/api/v1/developer"], cookieParser(), developer.developer);
   const v1 = createV1Router({ rateLimit: options.v1RateLimit });
   app.use("/v1", v1);
   app.use("/api/v1", v1);

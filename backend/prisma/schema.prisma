@@ -244,3 +244,35 @@ model NewsCache {
 
   @@index([expiresAt])
 }
+
+/// A developer signed in with GitHub to get a public API key (routes/developer.routes.js).
+/// Only GitHub's numeric user id and login are kept: no e-mail, no GitHub token.
+/// Deleting the row deletes its keys (cascade).
+model ApiDeveloper {
+  id          Int      @id @default(autoincrement())
+  /// GitHub's numeric user id, as text (stable when the login changes)
+  githubId    String   @unique
+  /// GitHub login at the last sign-in
+  githubLogin String
+  createdAt   DateTime @default(now())
+  lastLoginAt DateTime @default(now())
+  keys        ApiKey[]
+}
+
+/// Public API key: stored only as a SHA-256 hash (the key is 32 random bytes, shown once).
+/// At most one active key per developer; renewing revokes the previous one.
+model ApiKey {
+  id          Int          @id @default(autoincrement())
+  developerId Int
+  developer   ApiDeveloper @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  /// First characters of the key ("dwk_" + 8), shown so the owner can tell keys apart
+  prefix      String
+  /// hex SHA-256 of the whole key
+  hash        String       @unique
+  createdAt   DateTime     @default(now())
+  /// Written at most once an hour per key
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+
+  @@index([developerId])
+}

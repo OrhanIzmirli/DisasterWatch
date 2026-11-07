@@ -126,7 +126,7 @@ describe("GET /api/v1/disasters/{id} and /api/v1/types", () => {
 
   it("index lists the endpoints and limits", async () => {
     const res = await request(app).get("/api/v1");
-    expect(res.body.limits).toEqual({ requestsPerMinute: 60, windowDays: 30, maxPageSize: 200 });
+    expect(res.body.limits).toEqual({ requestsPerMinute: 60, requestsPerMinuteWithKey: 600, windowDays: 30, maxPageSize: 200 });
   });
 
   it("unknown v1 path is a JSON 404", async () => {
