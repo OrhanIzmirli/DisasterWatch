@@ -207,6 +207,25 @@ const AlertsPage = ({ user, authLoading }: Props) => {
     }
   };
 
+  /* ---------- Session check in flight ----------
+     Same frame as the signed-out view (most first visits end there), so the page
+     does not jump from the wide signed-in layout to the narrow one (layout shift). */
+  if (authLoading && !user) {
+    return (
+      <main className="page page-narrow alerts-page" aria-busy="true">
+        <header className="page-header page-header-row">
+          <div>
+            <h1 className="page-title">Alert center</h1>
+            <p className="page-subtitle">Get alerts for disasters near places you care about.</p>
+          </div>
+        </header>
+        <section className="alerts-signed-out alerts-checking" role="status">
+          <p className="muted">Checking your session…</p>
+        </section>
+      </main>
+    );
+  }
+
   /* ---------- Signed-out view ---------- */
   if (!authLoading && !user) {
     return (
@@ -274,8 +293,9 @@ const AlertsPage = ({ user, authLoading }: Props) => {
           <form className="alerts-form" onSubmit={submit}>
             <div className="alerts-form-grid">
               <div className="form-field">
-                <label>Disaster type</label>
+                <label htmlFor="alert-type">Disaster type</label>
                 <select
+                  id="alert-type"
                   value={form.type}
                   onChange={(e) => setForm({ ...form, type: e.target.value as AlertType })}
                 >
@@ -288,8 +308,9 @@ const AlertsPage = ({ user, authLoading }: Props) => {
               </div>
 
               <div className="form-field">
-                <label>Minimum severity</label>
+                <label htmlFor="alert-min-severity">Minimum severity</label>
                 <select
+                  id="alert-min-severity"
                   value={form.minSeverity}
                   onChange={(e) =>
                     setForm({ ...form, minSeverity: e.target.value as Severity })
@@ -304,8 +325,9 @@ const AlertsPage = ({ user, authLoading }: Props) => {
               </div>
 
               <div className="form-field">
-                <label>Label *</label>
+                <label htmlFor="alert-label">Label *</label>
                 <input
+                  id="alert-label" aria-required="true"
                   value={form.label}
                   maxLength={60}
                   onChange={(e) => setForm({ ...form, label: e.target.value })}
@@ -314,8 +336,9 @@ const AlertsPage = ({ user, authLoading }: Props) => {
               </div>
 
               <div className="form-field">
-                <label>Radius (km) *</label>
+                <label htmlFor="alert-radius">Radius (km) *</label>
                 <input
+                  id="alert-radius" aria-required="true"
                   type="number"
                   min={10}
                   max={5000}
@@ -326,8 +349,9 @@ const AlertsPage = ({ user, authLoading }: Props) => {
               </div>
 
               <div className="form-field">
-                <label>Latitude *</label>
+                <label htmlFor="alert-lat">Latitude *</label>
                 <input
+                  id="alert-lat" aria-required="true"
                   type="number"
                   step="any"
                   min={-90}
@@ -339,8 +363,9 @@ const AlertsPage = ({ user, authLoading }: Props) => {
               </div>
 
               <div className="form-field">
-                <label>Longitude *</label>
+                <label htmlFor="alert-lng">Longitude *</label>
                 <input
+                  id="alert-lng" aria-required="true"
                   type="number"
                   step="any"
                   min={-180}

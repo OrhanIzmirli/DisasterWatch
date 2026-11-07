@@ -48,7 +48,7 @@ function stubApi(feed: ReturnType<typeof item>[] | "offline") {
       const url = String(input);
       const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
       if (url.includes("/api/disasters")) return feed === "offline" ? json({ message: "down" }, 503) : json(feedPayload(feed));
-      if (url.includes("/users/me")) return json({ message: "signed out" }, 401);
+      if (url.includes("/users/session")) return json({ user: null });
       if (url.includes("/health")) return json({ ok: true });
       return json({ message: "no" }, 404);
     })

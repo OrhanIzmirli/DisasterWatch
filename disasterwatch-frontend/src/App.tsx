@@ -109,9 +109,9 @@ export default function App() {
         return;
       }
       try {
-        const res = await fetch("/api/users/me", { credentials: "include" });
+        // 200 { user | null }: "signed out" is an answer, not a 401 (no failed request in the console)
+        const res = await fetch("/api/users/session", { credentials: "include" });
         if (!res.ok) {
-          if (res.status === 401) writeSessionHint("out");
           if (!cancelled) setUser(null);
           return;
         }
@@ -217,6 +217,8 @@ export default function App() {
                   title={user.email}
                 >
                   <span className="nav-user-email">{shortEmail(user.email)}</span>
+                  {/* phones: a short label keeps the signed-in header to two rows; the address is in the title and on the page */}
+                  <span className="nav-user-short">Account</span>
                   {isAdmin && <span className="nav-user-badge">Admin</span>}
                 </NavLink>
                 <button type="button" className="nav-btn" onClick={signOut}>

@@ -88,6 +88,28 @@ docker run --rm -v "$PWD":/work -v /work/disasterwatch-frontend/node_modules -w 
 
 The extra `node_modules` volume keeps the container's Linux packages out of the local install. On Windows and macOS the behaviour and accessibility tests run directly (`npx playwright test e2e/behaviour.spec.ts e2e/a11y.spec.ts`); the screenshot comparisons belong to the Linux image.
 
+### End-to-end flows (local stack)
+
+`disasterwatch-frontend/e2e-stack/` drives the write flows through the UI against a local Docker Compose stack: sign-up, sign-in and a refused wrong password, creating and deleting alerts (with an axe check of the open form), the e-mail switch, an `ADMIN_EMAILS` address becoming admin only after confirming while signed in, disabling and re-enabling a user with the audit log, an event published to Kafka reaching the user's bell, and account deletion. They create accounts, so `playwright.stack.config.ts` refuses any URL that is not localhost.
+
+```bash
+docker compose up -d --build            # with local values only, see below
+cd disasterwatch-frontend
+npx playwright test -c playwright.stack.config.ts
+```
+
+Run them with local values only: `backend/.env` may hold cloud settings, so override them for the run (an extra compose file with `environment:` entries for `JWT_SECRET` (the `.env.example` placeholder), `KAFKA_BROKER*` (`dw-kafka:9092`), empty `KAFKA_SASL_*` and `GUARDIAN_API_KEY`, `ADMIN_EMAILS=admin@example.com`), and give the notification service a dummy `RESEND_API_KEY`, an `example.com` sender and `extra_hosts: ["api.resend.com:127.0.0.1"]` so the e-mail channel counts as configured while nothing can leave the machine. A separate database volume keeps an older local schema out of the way (`prisma db push` stops on its data-loss warning otherwise). Sign-in is rate limited (10 attempts per 15 minutes per client): restart the backend container between repeated runs.
+
+### Read-only checks (live site)
+
+`disasterwatch-frontend/e2e-live/` checks the live site without writing: every request that is not a GET is aborted. It covers the feed, type filters, search, severity sort, paging, the map and its clusters, the drawer and "Show on map", the news panel with its hazard and region filters, privacy, 404 and the phone views. Live data changes, so the tests check consistency (a filter keeps only its type, search results name the place), not exact values.
+
+```bash
+cd disasterwatch-frontend
+npx playwright test -c playwright.live.config.ts      # DW_LIVE_URL overrides the address
+```
+
+
 ---
 
 ## Environment variables

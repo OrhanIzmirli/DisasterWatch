@@ -1,11 +1,11 @@
 /**
  * Whether this browser last had a session. The session cookie is httpOnly, so
- * the page cannot see it; without a hint every signed-out visit asks
- * /api/users/me, gets the expected 401, and the browser logs that response as
- * a console error (which page code cannot suppress).
+ * the page cannot see it; without a hint every visit asks /api/users/session
+ * (200 { user | null }). The hint saves that request for browsers that were
+ * signed out last time.
  *
  * "in"  set on sign-in and on a successful session check
- * "out" set on sign-out and on a 401 from the session check
+ * "out" set on sign-out and when the session check finds no user
  * null  never checked in this browser (or storage unavailable): check once
  *
  * The hint only decides whether to ask; the server's answer always wins.

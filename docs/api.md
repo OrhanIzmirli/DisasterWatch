@@ -14,6 +14,7 @@ All paths are relative to the backend (`http://localhost:5000`) or to the proxy 
 | `GET /news?type=&region=&event=` | – | cached news articles, linked to feed events and placed in a region ([News](news.md)) |
 | `POST /users/register`, `POST /users/login`, `POST /users/logout` | – | `{ email, password }`; sets or clears the session cookie. Rate limited |
 | `GET /users/me` | user | the signed-in user |
+| `GET /users/session` | – | the page's session check: `200 { user }` for a signed-in browser (the same user as `GET /users/me`) or `200 { user: null }`, so a signed-out first visit logs no failed request; a stale cookie is cleared |
 | `DELETE /users/me` | user | `{ password }`: deletes the account with its subscriptions and notifications (cascade); its e-mail delivery rows stay anonymised (no user, message or provider id; a pending one is cancelled) because the daily limit and the confirmation cap are counted from them; audit rows about it and manual entries it wrote keep only the masked address; clears the cookie. 403 wrong password; rate limited like sign-in |
 | `GET /alerts`, `POST /alerts`, `PATCH /alerts/:id`, `DELETE /alerts/:id` | user | alert subscriptions (`type`, `minSeverity`, `label`, `centerLat`, `centerLng`, `radiusKm`, `active`) |
 | `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` | user | in-app notifications of the signed-in user |

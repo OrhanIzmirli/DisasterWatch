@@ -1058,7 +1058,8 @@
   font-size: 0.8rem;
 }
 
-.form-field label {
+.form-field label,
+.form-field .form-label {
   font-weight: 500;
 }
 
@@ -1901,6 +1902,20 @@ body {
   text-overflow: ellipsis;
 }
 
+.nav-user-short {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .nav-user-email {
+    display: none;
+  }
+
+  .nav-user-short {
+    display: inline;
+  }
+}
+
 .nav-user-badge {
   display: inline-block;
   margin-left: 0.3rem;
@@ -1948,6 +1963,11 @@ body {
   border: 1px solid rgba(246, 232, 217, 0.15);
   border-radius: 12px;
   padding: 1.4rem;
+}
+
+/* the session-check placeholder takes the signed-out card's height, so nothing below moves */
+.alerts-checking {
+  min-height: 9.5rem;
 }
 
 .alerts-signed-out h2 {
@@ -2229,7 +2249,8 @@ body {
   gap: 0.6rem 1rem;
 }
 
-.form-field label {
+.form-field label,
+.form-field .form-label {
   color: var(--dw-text);
 }
 

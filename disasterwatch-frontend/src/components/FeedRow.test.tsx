@@ -18,7 +18,7 @@ const props = {
 describe("FeedRow keyboard interaction", () => {
   it("is a list item holding a real button with an accessible name", () => {
     render(<ul><FeedRow {...props} onSelect={() => {}} /></ul>);
-    const row = screen.getByRole("button", { name: "Wildfire: Wildfire in Australia, low" });
+    const row = screen.getByRole("button", { name: "Wildfire: Wildfire in Australia, Wildfires · 2 days ago, low" });
     expect(row.tagName).toBe("BUTTON");
     expect(row.closest("li")).not.toBeNull();
     expect(row.tabIndex).toBe(0);
@@ -56,11 +56,21 @@ describe("FeedRow keyboard interaction", () => {
   });
 });
 
+describe("FeedRow accessible name", () => {
+  it("contains all the visible text in its order (WCAG 2.5.3, label in name)", () => {
+    render(<ul><FeedRow {...props} onSelect={() => {}} /></ul>);
+    const button = screen.getByRole("button");
+    const visible = (button.textContent ?? "").replace(/[^A-Za-z0-9]+/g, "").toLowerCase();
+    const name = (button.getAttribute("aria-label") ?? "").replace(/[^A-Za-z0-9]+/g, "").toLowerCase();
+    expect(name).toBe(visible);
+  });
+});
+
 describe("FeedRow subtitle", () => {
   it("shows the subtitle under the title and includes it in the accessible name", () => {
     render(<ul><FeedRow {...props} subtitle="≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct" onSelect={() => {}} /></ul>);
     expect(screen.getByText("≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct").className).toBe("disaster-subtitle");
-    expect(screen.getByRole("button", { name: "Wildfire: Wildfire in Australia, ≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct, low" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wildfire: Wildfire in Australia, ≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct, Wildfires · 2 days ago, low" })).toBeTruthy();
   });
 
   it("renders no subtitle line when there is none", () => {

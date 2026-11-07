@@ -69,6 +69,7 @@ describe("Alerts page e-mail channel", () => {
     mockApi(settings("not-configured"));
     renderPage();
     expect(await screen.findByText("E-mail: not available yet (not set up on this server)")).toBeTruthy();
+    expect(screen.getByText(/E-mail is not set up on this server yet, so the switch cannot be turned on/)).toBeTruthy();
     expect(((await screen.findByRole("switch")) as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByText("E-mail: active")).toBeNull();
   });

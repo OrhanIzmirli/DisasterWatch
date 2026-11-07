@@ -3,6 +3,7 @@
 Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
 
 **2026-11-07**
+- Full frontend audit (write flows on a local stack, read-only flows live, design review at 1440 px and 390 px, axe and Lighthouse): the Alert center and admin forms label every field and the admin page has a main landmark; feed rows name their visible text in order (WCAG 2.5.3); the session check no longer logs a 401 (`GET /users/session`); the Alert center no longer jumps while the session is checked; the phone header keeps to two rows when signed in; news tags no longer repeat the type; the bell says "1 unread notification"; the disabled e-mail switch says why; the basemap host is preconnected; the local nginx proxy survives a recreated backend; CI actions on Node 24. New local write-flow and live read-only test suites.
 - Feed ids no longer collide: the 32-bit hash gave five pairs of earthquakes in one week the same id, so the list showed wrong rows after paging and a click could open the other event; ids are now a 53-bit hash of `source:sourceId`.
 - Event drawer data: the nearest place of an earthquake (from the USGS place), the countries GDACS lists for wildfires and floods, a storm's development chart (EONET advisory series), and GDACS impact figures (people in the affected area, reported casualties and damage) from the new `GET /disasters/impact`; each shows "unknown" when the source does not publish it.
 - The drawer's severity scale reads the thresholds the backend serves with the feed (`severityRules`); the frontend copy is gone.

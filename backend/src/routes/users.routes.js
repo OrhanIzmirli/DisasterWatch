@@ -3,10 +3,10 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import prisma from "../prisma.js";
-import { requireAuth } from "../middleware/auth.middleware.js";
+import { requireAuth, sessionUserId } from "../middleware/auth.middleware.js";
 import { roleFor } from "../utils/adminEmails.js";
 import { eraseAccount } from "../utils/accountDeletion.js";
-import { setSessionCookie, clearSessionCookie } from "../utils/session.js";
+import { COOKIE_NAME, setSessionCookie, clearSessionCookie } from "../utils/session.js";
 
 // Brute-force protection for credential endpoints: 10 attempts per IP per 15 minutes
 const DEFAULT_AUTH_RATE_LIMIT = { windowMs: 15 * 60 * 1000, limit: 10 };
@@ -177,6 +177,31 @@ export function createUsersRouter(options = {}) {
       res.json({ user: publicUser(user) });
     } catch (err) {
       console.error("ME ERROR:", err?.message || err);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  /* ===========================
+     GET /users/session  -> 200 { user } | 200 { user: null }
+     The page's session check. Same user as GET /users/me, but "not signed in" is
+     an answer rather than a 401, so a first visit does not log a failed request
+     in the browser console. A stale cookie (old token, disabled or deleted
+     account) is cleared.
+  =========================== */
+  router.get("/session", async (req, res) => {
+    try {
+      const id = await sessionUserId(req);
+      if (id === null) {
+        if (req.cookies?.[COOKIE_NAME]) clearSessionCookie(res);
+        return res.json({ user: null });
+      }
+      const user = await prisma.user.findUnique({
+        where: { id },
+        select: { email: true, emailConfirmedSignedInAt: true, createdAt: true, _count: { select: { subscriptions: true } } },
+      });
+      res.json({ user: user ? publicUser(user) : null });
+    } catch (err) {
+      console.error("SESSION ERROR:", err?.message || err);
       res.status(500).json({ message: "Server error" });
     }
   });
