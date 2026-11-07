@@ -35,6 +35,8 @@ test("event drawer", async ({ page }) => {
 test("news panel", async ({ page }) => {
   await openDashboard(page, isPhone(page) ? "feed" : "map");
   await page.getByRole("button", { name: "News", exact: true }).click();
+  // the panel is its own chunk, loaded on this first click
+  await expect(page.getByRole("dialog", { name: "Latest news" })).toBeVisible();
   await audit(page, ".news-panel");
 });
 
