@@ -1,13 +1,7 @@
 // backend/src/utils/normalizeDisasters.js
 import { buildEonetDetails, cleanTitle } from "./eventDetails.js";
 import { countryFromPlace } from "./country.js";
-
-function toId(str) {
-  // Stable numeric id from string
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
-  return h;
-}
+import { feedId } from "./feedId.js";
 
 function minutesAgo(isoDate) {
   const t = new Date(isoDate).getTime();
@@ -177,7 +171,7 @@ export function normalizeNasaEvents(events) {
     const meta = `${catTitle} • ${mins} min ago`;
 
     out.push({
-      id: toId(String(ev?.id ?? location)),
+      id: feedId("nasa", String(ev?.id ?? location)),
       type,
       location,
       meta,

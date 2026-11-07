@@ -8,6 +8,8 @@ export async function open(page: Page, path: string) {
   await mockApi(page);
   await page.goto(path);
   await expect(page.locator(".status-right")).toContainText("News:");
+  // pages are loaded lazily: wait for the page itself, not just the app shell ("Loading…")
+  await expect(page.locator("main h1, main h2").first()).toBeVisible();
 }
 
 export const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1440) < 600;
