@@ -18,6 +18,7 @@ import { createInternalRouter } from "./routes/internal.routes.js";
 import { gdacsClient } from "./services/gdacs.js";
 import { createEmailRouter } from "./routes/email.routes.js";
 import { emailChannelStatus } from "./services/emailChannel.js";
+import { createV1Router } from "./routes/v1.routes.js";
 
 /**
  * Build the Express app without starting a server or touching Kafka,
@@ -31,6 +32,8 @@ import { emailChannelStatus } from "./services/emailChannel.js";
  *   (defaults to CORS_ORIGINS from the environment, else the built-in list).
  * @param {object} [options.internal] options for the scheduled-wake router
  *   (routes/internal.routes.js); defaults read INGEST_WAKE_SECRET.
+ * @param {false | { windowMs?: number, limit?: number }} [options.v1RateLimit]
+ *   Per-IP limit of the public API v1 (default 60/min); `false` disables it (tests only).
  */
 export function createApp(options = {}) {
   const app = express();
@@ -50,6 +53,12 @@ export function createApp(options = {}) {
       hsts: false,
     })
   );
+
+  // Public read-only API v1: its own CORS (any origin, GET only, no credentials) and rate limit.
+  // /api/v1 is the documented path; the site's /api/* rewrite delivers it here as /v1.
+  const v1 = createV1Router({ rateLimit: options.v1RateLimit });
+  app.use("/v1", v1);
+  app.use("/api/v1", v1);
 
   // Allow-listed origins only (CORS_ORIGINS, see utils/corsOrigins.js); never "*".
   app.use(cors(corsOptions(parseCorsOrigins(options.corsOrigins ?? process.env.CORS_ORIGINS))));

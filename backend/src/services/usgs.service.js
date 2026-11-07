@@ -10,14 +10,17 @@ import { feedId } from "../utils/feedId.js";
 export { severityFromMag };
 
 /**
- * USGS summary feed: every M4.5+ earthquake of the last 7 days (about 100-150
- * features, ~90 kB), the same window as the rest of the public feed. Smaller
- * quakes are not in it, so minMag below 4.5 changes nothing (the feed clamps it).
+ * USGS summary feeds of M4.5+ earthquakes. Smaller quakes are in neither, so
+ * minMag below 4.5 changes nothing (the feed clamps it).
+ *  - week (about 100-150 features, ~90 kB): the ingestion job (alerts). It stays on
+ *    the week so a switch never sends 8-30 day old quakes into the alert outbox.
+ *  - month (about 400-600 features): the public feed and API v1, so every type
+ *    covers the same 30 days as EONET.
  */
 export const USGS_FEED_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson";
+export const USGS_MONTH_FEED_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_month.geojson";
 
-export async function fetchUsgsEarthquakes() {
-  const url = USGS_FEED_URL;
+export async function fetchUsgsEarthquakes(url = USGS_FEED_URL) {
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);

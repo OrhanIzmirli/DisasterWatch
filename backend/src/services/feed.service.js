@@ -24,7 +24,7 @@
  */
 import { fetchNasaEventsFast } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
-import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
+import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes, USGS_MONTH_FEED_URL } from "./usgs.service.js";
 import { withSubtitles } from "../utils/eventSubtitle.js";
 import { SEVERITY_RULES } from "../utils/severity.js";
 
@@ -108,7 +108,7 @@ export function countEvents(events) {
 
 export function createFeedService({
   fetchNasa = fetchNasaEventsFast, // EONET events with the GDACS answers known so far; the rest arrive in the background
-  fetchUsgs = fetchUsgsEarthquakes,
+  fetchUsgs = () => fetchUsgsEarthquakes(USGS_MONTH_FEED_URL), // 30 days, like EONET (the ingestion job keeps the week)
   now = () => Date.now(), // read through the global so fake timers in tests apply
   log = console,
   cacheMs = FEED_CACHE_MS,
@@ -201,12 +201,14 @@ export function createFeedService({
    *   source:           "CACHE" | "NASA + USGS" | "NASA" | "USGS" | "CACHE-FALLBACK"
    * Throws FeedUnavailableError when both sources fail and nothing is cached.
    */
-  async function getFeed({
-    minutesWindow = FEED_PARAM_LIMITS.minutes.fallback,
-    limit = FEED_PARAM_LIMITS.limit.fallback,
-    minMag = FEED_PARAM_LIMITS.minMag.fallback,
-  } = {}) {
-    const params = { minutesWindow, limit, minMag };
+  /**
+   * Brings both sources up to date and decides what is served from each:
+   * -> { served: { nasa, usgs } raw payloads or null, sources, sourcesUpdatedAt,
+   *      updatedAt (ISO), stale, partial, label, liveNow, anyOk }
+   * Throws FeedUnavailableError when both sources fail and nothing is cached.
+   * Shared by getFeed (the dashboard) and the public API v1 (routes/v1).
+   */
+  async function snapshot() {
     const t = now();
     const [nasaState, usgsState] = await Promise.all([refresh("nasa", t), refresh("usgs", t)]);
     const states = { nasa: nasaState, usgs: usgsState };
@@ -236,26 +238,44 @@ export function createFeedService({
       if (v[name].status === "error" && sources[name].lastError) log.warn(`[feed] ${name} unavailable (${sources[name].lastError}); its items are dropped`);
     }
 
-    const { items, counts } = buildItems(served, params);
-    const partial = served.nasa === null || served.usgs === null;
-    const status = { nasa: v.nasa.status, usgs: v.usgs.status };
-    const sourcesUpdatedAt = {
-      nasa: served.nasa !== null ? iso(sources.nasa.updatedAt) : null,
-      usgs: served.usgs !== null ? iso(sources.usgs.updatedAt) : null,
-    };
     const updatedAt = Math.max(served.nasa !== null ? sources.nasa.updatedAt : 0, served.usgs !== null ? sources.usgs.updatedAt : 0);
-    const label = served.nasa !== null && served.usgs !== null ? "NASA + USGS" : served.nasa !== null ? "NASA" : "USGS";
+    return {
+      served,
+      sources: { nasa: v.nasa.status, usgs: v.usgs.status },
+      sourcesUpdatedAt: {
+        nasa: served.nasa !== null ? iso(sources.nasa.updatedAt) : null,
+        usgs: served.usgs !== null ? iso(sources.usgs.updatedAt) : null,
+      },
+      updatedAt: iso(updatedAt),
+      stale: !anyOk,
+      partial: served.nasa === null || served.usgs === null,
+      label: served.nasa !== null && served.usgs !== null ? "NASA + USGS" : served.nasa !== null ? "NASA" : "USGS",
+      liveNow,
+      anyOk,
+    };
+  }
+
+  async function getFeed({
+    minutesWindow = FEED_PARAM_LIMITS.minutes.fallback,
+    limit = FEED_PARAM_LIMITS.limit.fallback,
+    minMag = FEED_PARAM_LIMITS.minMag.fallback,
+  } = {}) {
+    const params = { minutesWindow, limit, minMag };
+    const snap = await snapshot();
+    const { served } = snap;
+
+    const { items, counts } = buildItems(served, params);
 
     return {
       items,
       count: items.length,
       counts, // whole window, before the limit: KPIs must not depend on the page size
-      source: !anyOk ? "CACHE-FALLBACK" : liveNow ? label : "CACHE",
-      stale: !anyOk,
-      partial,
-      sources: status,
-      sourcesUpdatedAt,
-      updatedAt: iso(updatedAt),
+      source: !snap.anyOk ? "CACHE-FALLBACK" : snap.liveNow ? snap.label : "CACHE",
+      stale: snap.stale,
+      partial: snap.partial,
+      sources: snap.sources,
+      sourcesUpdatedAt: snap.sourcesUpdatedAt,
+      updatedAt: snap.updatedAt,
       params,
       severityRules: SEVERITY_RULES, // the thresholds that rated these items (utils/severity.js)
     };
@@ -278,7 +298,7 @@ export function createFeedService({
     }
   }
 
-  return { getFeed, status, reset };
+  return { getFeed, snapshot, status, reset };
 }
 
 /** Process-wide instance used by the route. */
