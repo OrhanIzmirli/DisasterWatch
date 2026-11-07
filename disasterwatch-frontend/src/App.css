@@ -4369,7 +4369,7 @@ h2.card-title {
   color: var(--dw-cream);
 }
 
-.api-section a,
+.api-section a:not(.btn),
 .api-reference-section > p a {
   color: #93c5fd;
 }
@@ -4502,4 +4502,65 @@ h2.card-title {
 .api-reference .swagger-ui .opblock-summary .view-line-link.copy-to-clipboard button {
   width: 24px;
   height: 24px;
+}
+
+/* ---- optional API key (/api#developer) ---- */
+.api-key-message {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--dw-border);
+  border-radius: 8px;
+}
+
+.api-key-muted {
+  color: var(--dw-text-muted);
+}
+
+.api-key-new {
+  margin: 0.75rem 0;
+}
+
+.api-key-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.api-key-input {
+  flex: 1 1 18rem;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--dw-border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--dw-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.api-key-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.api-key-facts dt {
+  color: var(--dw-text-muted);
+}
+
+.api-key-facts dd {
+  margin: 0;
+}
+
+.api-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.api-key-delete {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--dw-border);
 }

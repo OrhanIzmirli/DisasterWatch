@@ -132,6 +132,35 @@ export default function PrivacyPage() {
         </ul>
       </section>
 
+      <section className="card privacy-section" id="privacy-api-keys" aria-labelledby="privacy-api-keys-title">
+        <h2 id="privacy-api-keys-title" className="privacy-heading">
+          Public API keys (GitHub sign-in)
+        </h2>
+        <p>
+          The public API works without an account. Only if you sign in with GitHub on the <Link to="/api" className="text-link">API
+          page</Link> to get an optional key, we store:
+        </p>
+        <ul>
+          <li>
+            <strong>From GitHub:</strong> your numeric GitHub user id and your login (user name), when you first signed in and when you
+            last signed in. DisasterWatch asks GitHub for no permissions; GitHub's access token is used once to read your id and login
+            and is not stored. Your e-mail address, name and other profile data are not stored.
+          </li>
+          <li>
+            <strong>Your key:</strong> only a one-way hash of it and its first 12 characters, when it was created, when it was last used
+            (to the hour) and when it was revoked. The key itself is shown once and cannot be recovered.
+          </li>
+          <li>
+            <strong>A sign-in cookie</strong> for the API page (7 days), separate from the account cookie.
+          </li>
+        </ul>
+        <p>
+          It is kept until you delete it. <strong>To delete it:</strong> on the API page choose "Delete developer account": your GitHub id, login and every key are
+          deleted immediately. You can also revoke DisasterWatch's access on GitHub under Settings → Applications → Authorized OAuth
+          Apps; that stops new sign-ins but does not delete what is stored here, so delete the developer account first.
+        </p>
+      </section>
+
       <section className="card privacy-section" aria-labelledby="privacy-delete">
         <h2 id="privacy-delete" className="privacy-heading">
           How to delete it
