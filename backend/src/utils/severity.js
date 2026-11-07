@@ -34,6 +34,19 @@ export const STORM_MEDIUM_KTS = 64;
 export const WILDFIRE_HIGH_HA = 10_000;
 export const WILDFIRE_MEDIUM_HA = 7_000;
 
+/**
+ * The thresholds above, served with the feed (`severityRules` on GET /disasters) so the
+ * frontend draws its severity scale from the same numbers that rate the events and keeps
+ * no copy of its own. Each rated quantity: `medium` and `high` are the lower bounds of
+ * those levels, `step` the display precision; GDACS levels map one to one.
+ */
+export const SEVERITY_RULES = Object.freeze({
+  earthquake: Object.freeze({ basis: "magnitude", unit: "M", medium: EARTHQUAKE_MEDIUM_MAG, high: EARTHQUAKE_HIGH_MAG, step: 0.1 }),
+  wildfire: Object.freeze({ basis: "burnedArea", unit: "ha", medium: WILDFIRE_MEDIUM_HA, high: WILDFIRE_HIGH_HA, step: 1 }),
+  storm: Object.freeze({ basis: "peakWind", unit: "kts", medium: STORM_MEDIUM_KTS, high: STORM_HIGH_KTS, step: 1 }),
+  gdacs: Object.freeze({ levels: GDACS_LEVEL_SEVERITY, appliesTo: Object.freeze(["wildfire", "flood"]) }),
+});
+
 /** 1 acre = 0.40469 ha. */
 export const ACRES_TO_HA = 0.40469;
 

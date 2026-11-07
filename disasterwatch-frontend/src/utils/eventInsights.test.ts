@@ -1,8 +1,16 @@
 import { describe, it, expect } from "vitest";
 import type { DrawerEvent } from "../components/EventDetailDrawer";
+import type { SeverityRules } from "../services/feedCache";
 import { depthClass, distanceKm, lifecycle, nearbyEvents, quakeClass, severityScale, stormCategory, summarySentence } from "./eventInsights";
 
 const NOW = new Date("2026-11-06T12:00:00Z");
+// the shape GET /disasters serves as `severityRules` (backend/src/utils/severity.js)
+const RULES: SeverityRules = {
+  earthquake: { basis: "magnitude", unit: "M", medium: 5.0, high: 6.0, step: 0.1 },
+  wildfire: { basis: "burnedArea", unit: "ha", medium: 7000, high: 10000, step: 1 },
+  storm: { basis: "peakWind", unit: "kts", medium: 64, high: 96, step: 1 },
+  gdacs: { levels: { green: "low", orange: "medium", red: "high" }, appliesTo: ["wildfire", "flood"] },
+};
 const base = (over: Partial<DrawerEvent>, details: Record<string, unknown> = {}): DrawerEvent =>
   ({
     id: 1,
@@ -46,24 +54,35 @@ describe("stormCategory (Saffir-Simpson)", () => {
 
 describe("severityScale", () => {
   it("shows the magnitude thresholds of the backend rule for a quake and marks its level", () => {
-    const s = severityScale(base({ type: "earthquake", severity: "medium" }));
+    const s = severityScale(base({ type: "earthquake", severity: "medium" }), RULES);
     expect(s.current).toBe("medium");
     expect(s.steps.map((x) => x.range)).toEqual(["below M 5.0", "M 5.0–5.9", "M 6.0 and above"]);
   });
 
   it("uses the GDACS levels when GDACS rated the event", () => {
-    const s = severityScale(base({ type: "wildfire", severity: "low" }, { gdacsLevel: "green" }));
+    const s = severityScale(base({ type: "wildfire", severity: "low" }, { gdacsLevel: "green" }), RULES);
     expect(s.basis).toMatch(/GDACS/);
     expect(s.steps[0].range).toBe("GDACS Green");
   });
 
   it("uses burned area for a fire GDACS does not cover, and peak wind for storms", () => {
-    expect(severityScale(base({ type: "wildfire" })).steps[2].range).toBe("10,000 ha and above");
-    expect(severityScale(base({ type: "storm" })).steps[1].range).toBe("64–95 kts (Cat 1–2)");
+    expect(severityScale(base({ type: "wildfire" }), RULES).steps[2].range).toBe("10,000 ha and above");
+    expect(severityScale(base({ type: "storm" }), RULES).steps[1].range).toBe("64–95 kts (Cat 1–2)");
+  });
+
+  it("draws the ranges from the served rules, so a changed threshold shows up without a frontend change", () => {
+    const moved = { ...RULES, earthquake: { ...RULES.earthquake, medium: 5.5 } };
+    expect(severityScale(base({ type: "earthquake" }), moved).steps.map((x) => x.range)).toEqual(["below M 5.5", "M 5.5–5.9", "M 6.0 and above"]);
+  });
+
+  it("shows the levels without ranges when the feed carried no rules", () => {
+    const s = severityScale(base({ type: "storm", severity: "high" }), null);
+    expect(s.current).toBe("high");
+    expect(s.steps.map((x) => x.range)).toEqual(["", "", ""]);
   });
 
   it("marks nothing for a not-rated event", () => {
-    expect(severityScale(base({ type: "flood", severity: "unrated" })).current).toBeNull();
+    expect(severityScale(base({ type: "flood", severity: "unrated" }), RULES).current).toBeNull();
   });
 });
 

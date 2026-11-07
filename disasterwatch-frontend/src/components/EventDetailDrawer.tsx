@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { SeverityRules } from "../services/feedCache";
 import { formatDateTime, relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime } from "../utils/eventText";
 import {
@@ -82,6 +83,8 @@ type Props = {
   nearby?: { event: DrawerEvent; distanceKm: number }[];
   /** Opens another event in the drawer (used by the nearby list). */
   onSelectEvent?: (id: number) => void;
+  /** Rating thresholds served with the feed; the scale shows levels without ranges when absent. */
+  severityRules?: SeverityRules | null;
 };
 
 const TYPE_LABELS: Record<DrawerEvent["type"], string> = {
@@ -150,7 +153,7 @@ function Fact({ label, value, note }: { label: string; value: React.ReactNode; n
   );
 }
 
-const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews, nearby, onSelectEvent }: Props) => {
+const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews, nearby, onSelectEvent, severityRules = null }: Props) => {
   const d = event.details;
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -206,7 +209,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews, nearby, onSe
     : { label: "Size", value: null };
 
   const depth = isQuake && d?.depthKm !== null && d?.depthKm !== undefined ? d.depthKm : null;
-  const scale = severityScale(event);
+  const scale = severityScale(event, severityRules);
   const life = lifecycle(event);
   const hasImpact =
     isQuake && d && (d.pagerAlert !== null || d.tsunami === true || (d.feltReports !== null && d.feltReports > 0));
@@ -270,7 +273,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews, nearby, onSe
                   aria-current={scale.current === s.level ? "true" : undefined}
                 >
                   <span className="edd-scale-label">{s.label}</span>
-                  <span className="edd-scale-range">{s.range}</span>
+                  {s.range && <span className="edd-scale-range">{s.range}</span>}
                 </li>
               ))}
             </ol>

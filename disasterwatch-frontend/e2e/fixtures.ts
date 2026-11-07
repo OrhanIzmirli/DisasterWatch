@@ -167,6 +167,13 @@ function feedPayload() {
     sourcesUpdatedAt: { nasa: hoursAgo(0.05), usgs: hoursAgo(0.05) },
     updatedAt: hoursAgo(0.05),
     params: { minutesWindow: 10080, limit: 200, minMag: 4.5 },
+    // as served by backend/src/utils/severity.js (SEVERITY_RULES)
+    severityRules: {
+      earthquake: { basis: "magnitude", unit: "M", medium: 5.0, high: 6.0, step: 0.1 },
+      wildfire: { basis: "burnedArea", unit: "ha", medium: 7000, high: 10000, step: 1 },
+      storm: { basis: "peakWind", unit: "kts", medium: 64, high: 96, step: 1 },
+      gdacs: { levels: { green: "low", orange: "medium", red: "high" }, appliesTo: ["wildfire", "flood"] },
+    },
   };
 }
 

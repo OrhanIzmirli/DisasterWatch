@@ -29,7 +29,7 @@ function bounded(val, { min, max, fallback }, parse = toInt) {
 /* =====================================================
    PUBLIC FEED (NASA EONET + USGS, 5-minute server-side cache)
    GET /disasters?minutes=10080&limit=50&minMag=4.5
-   -> { items, count, counts, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params }
+   -> { items, count, counts, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params, severityRules }
    counts = { total, bySeverity, byType } over the whole window, independent of limit (dashboard KPIs)
    The cache lifetime is fixed on the server: there is no query parameter to
    force a live fetch or shorten the cache, so anonymous callers cannot make

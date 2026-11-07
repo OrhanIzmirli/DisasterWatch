@@ -2,6 +2,8 @@
 
 How events are rated LOW / MEDIUM / HIGH or NOT RATED, and how the thresholds were derived. The rules themselves are summarised under [Features in detail](architecture.md#features-in-detail). Back to the [README](../README.md).
 
+The thresholds live in one place, `backend/src/utils/severity.js` (`SEVERITY_RULES`); the feed serves them as `severityRules` ([feed contract](api.md#feed-contract-get-disasters)) and the event drawer draws its severity scale from that, so a threshold change needs no frontend change.
+
 How the thresholds were derived (2026-10-15, full analysis in the review notes):
 
 - **EONET exposes no alert level.** Its events carry only id, title, link, status, categories, sources and a geometry series with `magnitudeValue`/`magnitudeUnit`. But every GDACS-sourced event links to its GDACS report (`https://www.gdacs.org/report.aspx?eventtype=WF&eventid=…`), and GDACS's public API (`https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=WF&eventid=…`, no key) answers with the impact level GDACS assigned (Green / Orange / Red, based on population exposed and country capacity). In EONET's last 90 days, 915 of 1,000 wildfires and 180 of 180 floods are GDACS-sourced; storms come from JTWC/NOAA and have no GDACS key. Over the last 12 months GDACS rated 15 wildfires and 18 floods Orange or Red; the rest are Green.
