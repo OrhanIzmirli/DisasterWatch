@@ -297,6 +297,8 @@ export async function mockApi(page: Page) {
       return json({ message: "GDACS is not reachable right now" }, 503);
     }
     if (path === "/v1/openapi.json") return json(OPENAPI);
+    // newest event for the /api page's "One event" example (invented id)
+    if (path === "/v1/disasters") return json({ data: [{ id: "usgs:ex000001" }], meta: { count: 1 }, attribution: {} });
     if (path === "/v1/developer/session") return json({ enabled: true, developer: null, key: null });
     if (path === "/health") return json({ ok: true, service: "backend", kafka: "connected" });
     if (path === "/users/session") return json({ user: null });
