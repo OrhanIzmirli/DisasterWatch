@@ -135,6 +135,7 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | `GDELT_TIMEOUT_MS` | no | `30000` | per-request timeout for GDELT searches (answers take 15–18 s) |
 | `GDACS_TIMEOUT_MS` | no | `4000` | per-request timeout for GDACS impact-level lookups ([Severity](severity.md)) |
 | `DISABLE_GDACS` | no | – | `1` switches the GDACS lookups off (wildfires fall back to the size rule, floods are not rated) |
+| `DISABLE_FUSION_SOURCES` | no | – | `1` switches the confirming sources (EMSC, NHC) off; the feed is unchanged ([Data sources](sources.md)) |
 | `CORS_ORIGINS` | no | live frontend + `localhost:8080/5173/4173` | browser origins allowed to call the API directly; the `/api` proxy never needs it |
 | `DISABLE_NEWS_JOB` | no | – | `1` switches off the background news refresh |
 | `DISABLE_INGESTION` | no | – | `1` switches off the NASA/USGS ingestion job (no events reach Kafka) |

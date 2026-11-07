@@ -169,6 +169,7 @@ The full list with measurements: [Limits](docs/operations.md#limits).
 | [Architecture](docs/architecture.md) | services, methodology, features in detail, notification pipeline, event contract, Kafka demo, repository layout |
 | [HTTP API](docs/api.md) | endpoints and the `GET /disasters` feed contract |
 | [Severity](docs/severity.md) | how events are rated and how the thresholds were derived |
+| [Data sources](docs/sources.md) | primary and confirming sources, licences, how often each is asked |
 | [News](docs/news.md) | providers, relevance rules, event linking, regions, Guardian licence |
 | [Operations](docs/operations.md) | limits, running outside Docker, tests, environment variables, cloud deployment, scheduled wake-up, e-mail alerts, deploy order |
 | [Screenshots](docs/screenshots.md) | the app and the local stack |
