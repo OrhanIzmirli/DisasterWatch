@@ -3,6 +3,7 @@
 Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
 
 **2026-11-07**
+- Multi-source fusion, step 5: public API v1 events carry `sources`, `ambiguousSources`, `confidence` and `priority` after the original fields (unchanged, contract-tested); new filters `minConfidence` and `minPriority`; `meta.confirmingSources` and `meta.scoreVersion`; attribution lists EMSC, NOAA NHC, NASA FIRMS and GeoNames.
 - Multi-source fusion, step 4: open confidence and priority scores (0–100) with every term returned; exposure from the GeoNames `cities5000` gazetteer (CC BY 4.0), downloaded when the Docker image is built. README section "Scoring methodology" and [Scoring](docs/scoring.md) sections 2–4.
 - Multi-source fusion, step 3: cross-source matching (EMSC to USGS quakes, NHC to EONET storms, FIRMS and GDACS to EONET events) with one-to-one, mutual-best and ambiguity rules, roles that tell independent confirmations from relays, and a live evaluation script; [Scoring](docs/scoring.md) documents the rules and the first evaluation (715 of 729 quakes confirmed or listed by EMSC, none ambiguous).
 - Multi-source fusion, step 2: NASA FIRMS satellite fire detections near each wildfire (10 km, 48 h), looked up in the background once an hour per fire; off until `FIRMS_MAP_KEY` is set.

@@ -51,7 +51,7 @@ describe("GET /api/v1/disasters", () => {
       expect(res.status).toBe(200);
       expect(res.body.data.map((e) => e.id)).toEqual(["usgs:us1", "eonet:EONET_1"]);
       expect(res.body.meta).toMatchObject({ count: 2, total: 2, limit: 50, nextCursor: null, stale: false, partial: false, sources: { usgs: "ok", eonet: "ok" } });
-      expect(res.body.attribution.sources.map((s) => s.id)).toEqual(["usgs", "eonet", "gdacs"]);
+      expect(res.body.attribution.sources.map((s) => s.id)).toEqual(["usgs", "eonet", "gdacs", "emsc", "nhc", "firms", "geonames"]);
       expect(res.body.attribution.disclaimer).toMatch(/not an official warning/);
     }
   });
@@ -83,13 +83,13 @@ describe("GET /api/v1/disasters", () => {
   });
 
   it("503 with Retry-After when both sources fail and nothing is cached", async () => {
-    mocks.nasa.mockRejectedValue(new Error("down"));
-    mocks.usgs.mockRejectedValue(new Error("down"));
+    mocks.nasa.mockRejectedValue(new Error("upstream-detail-x1"));
+    mocks.usgs.mockRejectedValue(new Error("upstream-detail-x1"));
     const res = await request(app).get("/api/v1/disasters");
     expect(res.status).toBe(503);
     expect(res.headers["retry-after"]).toBe("60");
     expect(res.body.error.code).toBe("unavailable");
-    expect(JSON.stringify(res.body)).not.toMatch(/down/); // upstream details stay in the log
+    expect(JSON.stringify(res.body)).not.toMatch(/upstream-detail-x1/); // upstream details stay in the log
   });
 
   it("a failed source is reported as partial, the other still served", async () => {

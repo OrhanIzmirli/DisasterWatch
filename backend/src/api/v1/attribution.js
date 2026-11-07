@@ -15,7 +15,18 @@
  *    the GDACS alert level (green/orange/red) and the link to the GDACS report,
  *    never GDACS impact figures, scores, affected countries or coordinates.
  *    https://www.gdacs.org/About/termofuse.aspx
+ *  - EMSC: data under CC BY 4.0 with credit "EMSC-CSEM SeismicPortal";
+ *    https://www.seismicportal.eu/terms.html
+ *  - NOAA NHC: public domain, no implied NOAA endorsement; https://www.weather.gov/disclaimer
+ *  - NASA FIRMS: open sharing; third parties acknowledge FIRMS/LANCE/ESDIS
+ *    (only detection counts and times are passed on); https://www.earthdata.nasa.gov/data/tools/firms
+ *  - GeoNames: CC BY 4.0 (exposure term of the priority score);
+ *    https://download.geonames.org/export/dump/readme.txt
+ * The confirming sources and GeoNames feed the `sources`, `confidence` and
+ * `priority` fields (docs/scoring.md).
  */
+import { FIRMS_ACKNOWLEDGEMENT } from "../../services/sources/firms.js";
+
 export const ATTRIBUTION = Object.freeze({
   sources: Object.freeze([
     Object.freeze({
@@ -45,8 +56,45 @@ export const ATTRIBUTION = Object.freeze({
       terms: "https://www.gdacs.org/About/termofuse.aspx",
       provides: "Alert level (green, orange, red) of some wildfires and floods",
     }),
+    Object.freeze({
+      id: "emsc",
+      name: "European-Mediterranean Seismological Centre (EMSC), SeismicPortal",
+      url: "https://www.seismicportal.eu/",
+      credit: "Credit: EMSC-CSEM SeismicPortal, https://www.seismicportal.eu",
+      licence: "CC BY 4.0",
+      terms: "https://www.seismicportal.eu/terms.html",
+      provides: "Independent earthquake solutions that confirm USGS events (sources, confidence)",
+    }),
+    Object.freeze({
+      id: "nhc",
+      name: "NOAA National Hurricane Center",
+      url: "https://www.nhc.noaa.gov/",
+      credit: "Advisories: NOAA National Hurricane Center",
+      licence: "U.S. public domain; no NOAA endorsement implied",
+      terms: "https://www.weather.gov/disclaimer",
+      provides: "Active tropical cyclones (Atlantic, eastern and central Pacific) that confirm EONET storms",
+    }),
+    Object.freeze({
+      id: "firms",
+      name: "NASA Fire Information for Resource Management System (FIRMS)",
+      url: "https://earthdata.nasa.gov/firms",
+      credit: FIRMS_ACKNOWLEDGEMENT,
+      licence: "NASA open data; only counts and times of detections are included",
+      terms: "https://www.earthdata.nasa.gov/data/tools/firms",
+      provides: "Counts of satellite fire detections near EONET wildfires (sources, confidence)",
+    }),
+    Object.freeze({
+      id: "geonames",
+      name: "GeoNames",
+      url: "https://www.geonames.org/",
+      credit: "Population of places: GeoNames, CC BY 4.0",
+      licence: "CC BY 4.0",
+      terms: "https://download.geonames.org/export/dump/readme.txt",
+      provides: "Population of places near an event (exposure term of the priority score)",
+    }),
   ]),
   disclaimer:
     "Indicative information only, not an official warning: check your national or local authorities before acting. " +
-    "DisasterWatch is not affiliated with or endorsed by NASA, USGS or GDACS.",
+    "DisasterWatch is not affiliated with or endorsed by NASA, USGS, NOAA, EMSC, GDACS or GeoNames. " +
+    "Confidence and priority scores are DisasterWatch's own, computed by documented formulas (docs/scoring.md).",
 });

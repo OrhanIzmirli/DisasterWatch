@@ -8,6 +8,14 @@
  */
 import { ATTRIBUTION } from "./attribution.js";
 import { KEY_RATE_LIMIT, PAGE_LIMIT, RATE_LIMIT, SEVERITIES, TYPES, WINDOW_DAYS } from "./events.js";
+import { SCORE_VERSION } from "../../services/fusion/scores.js";
+
+const SCORING_DOC = "https://github.com/OrhanIzmirli/DisasterWatch/blob/main/docs/scoring.md";
+const CONFIRMING_STATUS = {
+  type: "string",
+  enum: ["ok", "stale", "error", "off", "empty", "pending"],
+  description: "ok: fresh; stale: last good data; error: unavailable; off: not configured; empty: not fetched yet; pending: still loading, joins on a later request",
+};
 
 const OPENAPI_LIMITS = { requestsPerMinute: RATE_LIMIT.limit, requestsPerMinuteWithKey: KEY_RATE_LIMIT.limit };
 
@@ -77,6 +85,8 @@ export function buildOpenApi() {
             { $ref: "#/components/parameters/type" },
             { $ref: "#/components/parameters/severity" },
             { $ref: "#/components/parameters/minSeverity" },
+            { $ref: "#/components/parameters/minConfidence" },
+            { $ref: "#/components/parameters/minPriority" },
             { $ref: "#/components/parameters/from" },
             { $ref: "#/components/parameters/to" },
             { $ref: "#/components/parameters/bbox" },
@@ -182,6 +192,18 @@ export function buildOpenApi() {
           description: "Lowest severity to include (unrated events are left out).",
           schema: { type: "string", enum: ["low", "medium", "high"] },
         },
+        minConfidence: {
+          name: "minConfidence",
+          in: "query",
+          description: `Lowest confidence score (0-100) to include: how well independent sources confirm the event and how recently it was seen. Formula: ${SCORING_DOC}`,
+          schema: { type: "integer", minimum: 0, maximum: 100 },
+        },
+        minPriority: {
+          name: "minPriority",
+          in: "query",
+          description: `Lowest priority score (0-100) to include: severity, people living nearby and confidence. Formula: ${SCORING_DOC}`,
+          schema: { type: "integer", minimum: 0, maximum: 100 },
+        },
         from: {
           name: "from",
           in: "query",
@@ -240,7 +262,7 @@ export function buildOpenApi() {
         Event: {
           type: "object",
           additionalProperties: false,
-          required: ["id", "source", "type", "severity", "severityReason", "title", "place", "country", "lat", "lng", "occurredAt", "updatedAt", "status", "measurements", "alerts", "links"],
+          required: ["id", "source", "type", "severity", "severityReason", "title", "place", "country", "lat", "lng", "occurredAt", "updatedAt", "status", "measurements", "alerts", "links", "sources", "ambiguousSources", "confidence", "priority"],
           properties: {
             id: { type: "string", description: "Stable id: the source and its own id", examples: ["usgs:us7000abcd"] },
             source: { type: "string", enum: ["usgs", "eonet"] },
@@ -283,11 +305,91 @@ export function buildOpenApi() {
               description: "The source's page for the event and, for EONET events, the organisations it was curated from",
               items: { type: "object", additionalProperties: false, required: ["name", "url"], properties: { name: { type: "string" }, url: { type: "string", format: "uri" } } },
             },
+            sources: { type: "array", description: "The primary source first, then every source matched to this event", items: ref("SourceMatch") },
+            ambiguousSources: { type: "array", description: "Sources left unmatched because two candidates fitted almost equally well", items: { type: "string", enum: ["emsc", "nhc"] } },
+            confidence: { anyOf: [ref("Confidence"), { type: "null" }], description: "null when the scores cannot be computed (meta.confirmingSources says why)" },
+            priority: { anyOf: [ref("Priority"), { type: "null" }], description: "null when the scores cannot be computed" },
+          },
+        },
+        SourceMatch: {
+          type: "object",
+          additionalProperties: false,
+          required: ["source", "role", "sourceEventId", "url", "matchedBy", "distanceKm", "timeDeltaSec"],
+          description: "primary: the event's own source; confirming: an independent source that reports it; listed: a source that reports it but relays the primary (e.g. an EMSC entry computed by the USGS)",
+          properties: {
+            source: { type: "string", enum: ["usgs", "eonet", "emsc", "nhc", "firms", "gdacs"] },
+            role: { type: "string", enum: ["primary", "confirming", "listed"] },
+            sourceEventId: nullable({ type: "string" }),
+            url: nullable({ type: "string", format: "uri" }),
+            matchedBy: nullable({ type: "string", enum: ["rule", "name", "proximity", "reference", null], description: "rule: time/distance/magnitude; name: storm name; proximity: detections near the event; reference: the event links to it" }),
+            distanceKm: nullable({ type: "number", minimum: 0 }),
+            timeDeltaSec: nullable({ type: "number" }),
+            agency: nullable({ type: "string", description: "EMSC: the agency that computed the solution" }),
+            magnitude: { type: "number", description: "EMSC magnitude" },
+            windKts: nullable({ type: "number", description: "NHC intensity" }),
+            classification: nullable({ type: "string", description: "NHC classification" }),
+            observedAt: { type: "string", format: "date-time", description: "NHC advisory time" },
+            detections: { type: "integer", minimum: 1, description: "FIRMS detections within 10 km in 48 h" },
+            level: { type: "string", enum: ["green", "orange", "red"], description: "GDACS level" },
+          },
+        },
+        Confidence: {
+          type: "object",
+          additionalProperties: false,
+          required: ["score", "components"],
+          description: `Is the event real and current? primary + confirmations (at most 40) - staleness. ${SCORING_DOC}`,
+          properties: {
+            score: { type: "integer", minimum: 0, maximum: 100 },
+            components: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["term", "points", "reason"],
+                properties: {
+                  term: { type: "string", enum: ["primary", "confirmation", "cap", "staleness"] },
+                  source: { type: "string" },
+                  role: { type: "string", enum: ["confirming", "listed"] },
+                  points: { type: "integer" },
+                  reason: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        Priority: {
+          type: "object",
+          additionalProperties: false,
+          required: ["score", "components", "exposure"],
+          description: `Which events matter most now? 0.45 severity + 0.35 exposure + 0.20 confidence. ${SCORING_DOC}`,
+          properties: {
+            score: { type: "integer", minimum: 0, maximum: 100 },
+            components: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["term", "value", "weight", "basis"],
+                properties: {
+                  term: { type: "string", enum: ["severity", "exposure", "confidence"] },
+                  value: nullable({ type: "integer", minimum: 0, maximum: 100 }),
+                  weight: { type: "number", minimum: 0, maximum: 1 },
+                  basis: { type: "string" },
+                },
+              },
+            },
+            exposure: nullable({
+              type: "object",
+              additionalProperties: false,
+              required: ["population", "radiusKm"],
+              description: "People living in places within the radius (GeoNames); null when unknown",
+              properties: { population: { type: "integer", minimum: 0 }, radiusKm: { type: "integer", minimum: 1 } },
+            }),
           },
         },
         SourceMeta: {
           type: "object",
-          required: ["updatedAt", "stale", "partial", "sources"],
+          required: ["updatedAt", "stale", "partial", "sources", "confirmingSources", "scoreVersion"],
           properties: {
             updatedAt: nullable({ type: "string", format: "date-time", description: "When the served data was fetched from the sources" }),
             stale: { type: "boolean", description: "True when no source answered and older data is served" },
@@ -298,6 +400,14 @@ export function buildOpenApi() {
               required: ["usgs", "eonet"],
               properties: { usgs: SOURCE_STATUS, eonet: SOURCE_STATUS },
             },
+            confirmingSources: {
+              type: "object",
+              additionalProperties: false,
+              required: ["emsc", "nhc", "firms"],
+              description: "State of the sources used to confirm events and compute confidence",
+              properties: { emsc: CONFIRMING_STATUS, nhc: CONFIRMING_STATUS, firms: CONFIRMING_STATUS },
+            },
+            scoreVersion: { type: "integer", const: SCORE_VERSION, description: "Version of the scoring formulas" },
           },
         },
         EventList: {
@@ -363,7 +473,7 @@ export function buildOpenApi() {
         Index: {
           type: "object",
           additionalProperties: false,
-          required: ["name", "version", "documentation", "endpoints", "limits", "attribution"],
+          required: ["name", "version", "documentation", "endpoints", "limits", "scoring", "attribution"],
           properties: {
             name: { type: "string" },
             version: { type: "string" },
@@ -374,6 +484,12 @@ export function buildOpenApi() {
               additionalProperties: false,
               required: ["requestsPerMinute", "requestsPerMinuteWithKey", "windowDays", "maxPageSize"],
               properties: { requestsPerMinute: { type: "integer" }, requestsPerMinuteWithKey: { type: "integer" }, windowDays: { type: "integer" }, maxPageSize: { type: "integer" } },
+            },
+            scoring: {
+              type: "object",
+              additionalProperties: false,
+              required: ["version", "documentation"],
+              properties: { version: { type: "integer" }, documentation: { type: "string", format: "uri" } },
             },
             attribution: ref("Attribution"),
           },

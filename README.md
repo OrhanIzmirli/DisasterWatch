@@ -46,12 +46,12 @@ Read-only JSON for the events of the last 30 days, no key needed (an optional ke
 curl "https://disasterwatch-frontend.onrender.com/api/v1/disasters?type=earthquake&minSeverity=high&limit=20"
 ```
 
-Filters: `type`, `severity`, `minSeverity`, `from`/`to`, `bbox`, `country`; paging with `meta.nextCursor`. Also `/api/v1/disasters/{id}` and `/api/v1/types`.
+Filters: `type`, `severity`, `minSeverity`, `minConfidence`, `minPriority`, `from`/`to`, `bbox`, `country`; paging with `meta.nextCursor`. Also `/api/v1/disasters/{id}` and `/api/v1/types`. Each event lists the sources that confirm it (`sources`) and carries its `confidence` and `priority` scores with the terms behind them ([Scoring methodology](#scoring-methodology)); these fields were added after the original ones, so existing clients are unaffected.
 
 **Design decisions**
 - **No key needed, 60 requests a minute per IP** (429 + `Retry-After`): the data is public and served from a 5-minute cache, so API traffic never reaches the sources. **Optional key for 600 a minute**, counted per key: sign in with GitHub on the API page (no permissions asked, only the GitHub id and login stored); the key is stored only as a SHA-256 hash and shown once, and can be renewed or revoked.
 - **ETag and `Cache-Control`:** `If-None-Match` gets a 304, and clients and proxies may reuse a response for a minute.
-- **Attribution in every response:** USGS (public domain, credit requested) and NASA EONET (no endorsement implied; each event lists the organisations EONET took it from).
+- **Attribution in every response:** USGS (public domain, credit requested), NASA EONET (no endorsement implied; each event lists the organisations EONET took it from), and the sources behind the scores: EMSC (CC BY 4.0), NOAA NHC (public domain), NASA FIRMS (acknowledgement) and GeoNames (CC BY 4.0).
 - **No GDACS impact figures:** GDACS's terms grant no redistribution licence, so the API carries only its alert level and the link to its report.
 - **Contract-tested:** every status code is validated against the OpenAPI document in CI; the dashboard feed and the Kafka contract are separate and unchanged.
 
