@@ -9,8 +9,13 @@ import {
   useNavigate,
 } from "react-router-dom";
 
-import DashboardPage from "./pages/DashboardPage";
-import NewsPanel from "./components/NewsPanel";
+// The dashboard is its own chunk, so the other pages do not download and run it; on "/"
+// its import starts as soon as this module runs, in parallel with the first render.
+const loadDashboard = () => import("./pages/DashboardPage");
+if (typeof window !== "undefined" && window.location.pathname === "/") void loadDashboard();
+const DashboardPage = lazy(loadDashboard);
+// loaded on the first "News" click, then kept mounted so its filters survive closing it
+const NewsPanel = lazy(() => import("./components/NewsPanel"));
 import StatusBar from "./components/StatusBar";
 import NotificationBell from "./components/NotificationBell";
 import NotFoundPage from "./pages/NotFoundPage";
@@ -91,6 +96,9 @@ export default function App() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [isNewsOpen, setIsNewsOpen] = useState(false);
+  // true from the first time the panel is opened (see the lazy NewsPanel import)
+  const [newsLoaded, setNewsLoaded] = useState(false);
+  if (isNewsOpen && !newsLoaded) setNewsLoaded(true);
 
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -292,7 +300,11 @@ export default function App() {
         {pathname !== "/" && <SiteFooter />}
       </div>
 
-      <NewsPanel isOpen={isNewsOpen} onClose={() => setIsNewsOpen(false)} />
+      {newsLoaded && (
+        <Suspense fallback={null}>
+          <NewsPanel isOpen={isNewsOpen} onClose={() => setIsNewsOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

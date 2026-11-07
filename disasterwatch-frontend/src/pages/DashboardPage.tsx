@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import FeedRow from "../components/FeedRow";
 import { kpiFromCounts, kpiFromItems, readCounts, type FeedCounts } from "../utils/kpi";
 import RelatedNews from "../components/RelatedNews";
-import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
+import type { EventDetails } from "../components/EventDetailDrawer";
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
 import { getCachedFeed, isFeedFresh, readSeverityRules, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt, type SeverityRules } from "../services/feedCache";
@@ -18,6 +18,10 @@ import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 
 // Leaflet and the map code load on demand, only when a map is on screen.
 const MapView = lazy(() => import("../components/MapChunk"));
+// The event drawer (details, GDACS impact, development chart) is loaded on first use and
+// fetched ahead while the browser is idle, so the first click does not wait for it.
+const loadDrawer = () => import("../components/EventDetailDrawer");
+const EventDetailDrawer = lazy(loadDrawer);
 
 type DisasterType = "earthquake" | "flood" | "wildfire" | "storm";
 type Severity = "high" | "medium" | "low" | "unrated";
@@ -281,6 +285,17 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
     next.delete("event");
     setSearchParams(next, { replace: true });
   }, [searchParams, disasters, feedSettled, setSearchParams, isPhone, setPhoneView]);
+
+  // Fetch the drawer's code once the page has settled, so opening an event is instant.
+  useEffect(() => {
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(() => void loadDrawer());
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(() => void loadDrawer(), 2000);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // A timeline card opens its event like a feed row does, and brings the map into view:
   // the timeline sits below the feed, often with the map scrolled out of sight.
@@ -1087,6 +1102,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
 
       {/* DETAIL DRAWER (shared by list rows and map markers) */}
       {selectedDisaster && (
+        <Suspense fallback={null}>
         <EventDetailDrawer
           event={selectedDisaster}
           relatedNews={<RelatedNews eventId={selectedDisaster.id} />}
@@ -1113,6 +1129,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
             window.setTimeout(() => setSelectedDisaster(current), 0);
           }}
         />
+        </Suspense>
       )}
     </>
   );

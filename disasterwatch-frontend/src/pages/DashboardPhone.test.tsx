@@ -72,7 +72,7 @@ describe("phone layout: Map | Feed toggle", () => {
     stubViewport(true);
     const user = userEvent.setup();
     await renderApp();
-    const toggle = screen.getByRole("group", { name: "Show map or feed" });
+    const toggle = await screen.findByRole("group", { name: "Show map or feed" });
     const mapBtn = within(toggle).getByRole("button", { name: "Map" });
     const feedBtn = within(toggle).getByRole("button", { name: "Feed" });
     expect(mapBtn.getAttribute("aria-pressed")).toBe("true");
@@ -92,7 +92,7 @@ describe("phone layout: Map | Feed toggle", () => {
     stubViewport(true);
     sessionStorage.setItem("dw.dashboardView", "feed");
     await renderApp();
-    expect(within(screen.getByRole("group", { name: "Show map or feed" })).getByRole("button", { name: "Feed" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(await screen.findByRole("group", { name: "Show map or feed" })).getByRole("button", { name: "Feed" }).getAttribute("aria-pressed")).toBe("true");
     expect(feedPanel().hidden).toBe(false);
     expect(screen.queryByTestId("map")).toBeNull();
   });
