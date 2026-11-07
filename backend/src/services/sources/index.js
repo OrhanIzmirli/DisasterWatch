@@ -9,8 +9,11 @@ import { createEmscFetcher, EMSC_TTL_MS } from "./emsc.js";
 import { createNhcFetcher, NHC_TTL_MS } from "./nhc.js";
 import { createFirmsLookup } from "./firms.js";
 
-/** DISABLE_FUSION_SOURCES=1 switches every confirming source off (operations escape hatch). */
-const disabled = process.env.DISABLE_FUSION_SOURCES === "1";
+/**
+ * DISABLE_FUSION_SOURCES=1 switches every confirming source off (operations escape hatch);
+ * they are also off under NODE_ENV=test, so no test reaches a real source.
+ */
+const disabled = process.env.DISABLE_FUSION_SOURCES === "1" || process.env.NODE_ENV === "test";
 
 export function createConfirmingSources({ fetchImpl, now, log, enabled = !disabled, firmsMapKey = process.env.FIRMS_MAP_KEY } = {}) {
   return {

@@ -28,7 +28,7 @@ export const SEVERITIES = FEED_SEVERITIES; // high, medium, low, unrated
 const RANK = { low: 1, medium: 2, high: 3 };
 
 /** Query parameters GET /v1/disasters accepts; anything else is a 400 (typos should not pass silently). */
-export const LIST_PARAMS = ["type", "severity", "minSeverity", "from", "to", "bbox", "country", "limit", "cursor"];
+export const LIST_PARAMS = ["type", "severity", "minSeverity", "minConfidence", "minPriority", "from", "to", "bbox", "country", "limit", "cursor"];
 
 export class BadRequest extends Error {
   constructor(message) {
@@ -159,6 +159,14 @@ function limit(v) {
   return n;
 }
 
+/** minConfidence / minPriority: an integer 0-100. */
+function score(v, name) {
+  const s = one(v, name);
+  if (s === undefined) return undefined;
+  if (!/^\d{1,3}$/.test(s) || Number(s) > 100) throw new BadRequest(`${name} must be an integer from 0 to 100`);
+  return Number(s);
+}
+
 /** Opaque cursor: base64url of [occurredAt, id] of the last event of the previous page. */
 export function encodeCursor(e) {
   return Buffer.from(JSON.stringify([e.occurredAt, e.id])).toString("base64url");
@@ -189,6 +197,8 @@ export function parseListQuery(query) {
     types: list(query.type, "type", TYPES),
     severities: list(query.severity, "severity", SEVERITIES),
     minSeverity: minSeverity?.[0],
+    minConfidence: score(query.minConfidence, "minConfidence"),
+    minPriority: score(query.minPriority, "minPriority"),
     from: isoDate(query.from, "from"),
     to: isoDate(query.to, "to"),
     bbox: bbox(query.bbox),
@@ -214,7 +224,37 @@ export function matches(e, f) {
   if (f.to !== undefined && t > f.to) return false;
   if (f.bbox && !inBox(e, f.bbox)) return false;
   if (f.country && (e.country ?? "").toLowerCase() !== f.country) return false;
+  // events without a score (fusion unavailable) never pass a score minimum
+  if (f.minConfidence !== undefined && !(e.confidence?.score >= f.minConfidence)) return false;
+  if (f.minPriority !== undefined && !(e.priority?.score >= f.minPriority)) return false;
   return true;
+}
+
+/**
+ * Adds the fusion fields (services/fusion) to public events, after the
+ * existing ones, so v1 clients that ignore them see no change:
+ *   sources           the primary and every matched confirming source
+ *   ambiguousSources  sources left unmatched because two candidates were too close
+ *   confidence        { score, components } or null when fusion is unavailable
+ *   priority          { score, components, exposure } or null
+ */
+export function withFusion(events, fused) {
+  return events.map((e) => {
+    const m = fused?.matches.get(e.id);
+    const sc = fused?.scores.get(e.id);
+    return {
+      ...e,
+      sources: m ? m.sources : [primaryOnly(e)],
+      ambiguousSources: m ? m.ambiguous : [],
+      confidence: sc ? sc.confidence : null,
+      priority: sc ? sc.priority : null,
+    };
+  });
+}
+
+function primaryOnly(e) {
+  const own = e.source === "usgs" ? e.links.find((l) => /usgs\.gov/.test(l.url))?.url ?? null : `https://eonet.gsfc.nasa.gov/api/v3/events/${e.id.replace(/^eonet:/, "")}`;
+  return { source: e.source, role: "primary", sourceEventId: e.id.replace(/^(usgs|eonet):/, ""), url: own, matchedBy: null, distanceKm: null, timeDeltaSec: null };
 }
 
 /** Sorted events + filters -> { page, total, nextCursor }. */

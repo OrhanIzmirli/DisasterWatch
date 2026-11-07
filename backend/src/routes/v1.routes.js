@@ -12,6 +12,9 @@
  * - Rate limit: 60/min per client IP (utils/clientIp.js) without a key, 600/min per key with a valid X-API-Key
  *   (a wrong key is a 401); 429 + Retry-After + RateLimit headers.
  * - Cache-Control + ETag (Express): a client that sends If-None-Match gets 304.
+ * - Events carry the fusion fields (sources, ambiguousSources, confidence,
+ *   priority; services/fusion) after the original ones; minConfidence and
+ *   minPriority filter on the scores (docs/scoring.md).
  * - Every body carries `attribution` (sources, credit lines, disclaimer);
  *   errors are { error: { code, message } } with Cache-Control: no-store.
  * The dashboard feed (/disasters) and the Kafka contract are untouched.
@@ -23,7 +26,9 @@ import { keyStore as defaultKeyStore } from "../services/apiKeys.js";
 import { feedService as defaultFeed, FeedUnavailableError } from "../services/feed.service.js";
 import { SEVERITY_RULES } from "../utils/severity.js";
 import { ATTRIBUTION } from "../api/v1/attribution.js";
-import { BadRequest, createEventCache, parseListQuery, selectPage, TYPES, SEVERITIES, WINDOW_DAYS, WINDOW_MS, PAGE_LIMIT, RATE_LIMIT, KEY_RATE_LIMIT } from "../api/v1/events.js";
+import { BadRequest, createEventCache, parseListQuery, selectPage, withFusion, TYPES, SEVERITIES, WINDOW_DAYS, WINDOW_MS, PAGE_LIMIT, RATE_LIMIT, KEY_RATE_LIMIT } from "../api/v1/events.js";
+import { fusion as defaultFusion } from "../services/fusion/index.js";
+import { SCORE_VERSION } from "../services/fusion/scores.js";
 import { buildOpenApi } from "../api/v1/openapi.js";
 
 export const V1_RATE_LIMIT = RATE_LIMIT;
@@ -31,6 +36,8 @@ export const V1_RATE_LIMIT = RATE_LIMIT;
 export const V1_KEY_RATE_LIMIT = KEY_RATE_LIMIT;
 export const LIST_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 export const TYPES_CACHE_CONTROL = "public, max-age=86400";
+/** Where the confidence and priority formulas are documented. */
+export const SCORING_DOC = "https://github.com/OrhanIzmirli/DisasterWatch/blob/main/docs/scoring.md";
 const ID_PATTERN = /^(usgs|eonet):[A-Za-z0-9_.-]{1,80}$/;
 
 const TYPE_INFO = {
@@ -52,10 +59,26 @@ function sendError(res, status, code, message) {
  * @param {() => number} [options.now]
  * @param {{ verify: (key: string) => Promise<number | null> }} [options.keyStore] API key lookup (services/apiKeys.js)
  * @param {number} [options.keyLimit] requests per window with a valid key (default 600)
+ * @param {{ fuse: Function }} [options.fusion] multi-source fusion (services/fusion)
  */
-export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, now = () => Date.now(), keyStore = defaultKeyStore, keyLimit = V1_KEY_RATE_LIMIT.limit } = {}) {
+export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, now = () => Date.now(), keyStore = defaultKeyStore, keyLimit = V1_KEY_RATE_LIMIT.limit, fusion = defaultFusion } = {}) {
   const router = express.Router();
   const eventsFor = createEventCache();
+  let fusedCache = null;
+
+  /** Public events with the fusion fields; when fusion fails the events are served without scores. */
+  async function fuseEvents(events) {
+    try {
+      const r = await fusion.fuse(events);
+      if (!(fusedCache && fusedCache.events === events && fusedCache.matches === r.matches && fusedCache.scores === r.scores)) {
+        fusedCache = { events, matches: r.matches, scores: r.scores, out: withFusion(events, r) };
+      }
+      return { events: fusedCache.out, status: r.status, scored: true };
+    } catch (err) {
+      console.error("[v1] fusion failed, serving events without scores:", err);
+      return { events: withFusion(events, null), status: { emsc: "error", nhc: "error", firms: "error" }, scored: false };
+    }
+  }
 
   router.use(
     cors({
@@ -113,11 +136,12 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
     );
   }
 
-  /** Source snapshot + events; answers 503 itself when nothing can be served. */
+  /** Source snapshot + events with the fusion fields; answers 503 itself when nothing can be served. */
   async function load(res) {
     try {
       const snap = await feed.snapshot();
-      return { snap, events: eventsFor(snap.served, now()) };
+      const fused = await fuseEvents(eventsFor(snap.served, now()));
+      return { snap, events: fused.events, fusion: fused };
     } catch (err) {
       if (err instanceof FeedUnavailableError) {
         res.set("Retry-After", "60");
@@ -128,11 +152,13 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
     }
   }
 
-  const sourceMeta = (snap) => ({
+  const sourceMeta = (snap, fused) => ({
     updatedAt: snap.updatedAt,
     stale: snap.stale,
     partial: snap.partial,
     sources: { usgs: snap.sources.usgs, eonet: snap.sources.nasa },
+    confirmingSources: fused.status,
+    scoreVersion: SCORE_VERSION,
   });
 
   router.get("/", (req, res) => {
@@ -148,6 +174,7 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
         openapi: "/api/v1/openapi.json",
       },
       limits: { requestsPerMinute: V1_RATE_LIMIT.limit, requestsPerMinuteWithKey: keyLimit, windowDays: WINDOW_DAYS, maxPageSize: PAGE_LIMIT.max },
+      scoring: { version: SCORE_VERSION, documentation: SCORING_DOC },
       attribution: ATTRIBUTION,
     });
   });
@@ -162,7 +189,11 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
     }
     const loaded = await load(res);
     if (!loaded) return;
-    const { snap, events } = loaded;
+    const { snap, events, fusion: fused } = loaded;
+    if (!fused.scored && (filters.minConfidence !== undefined || filters.minPriority !== undefined)) {
+      res.set("Retry-After", "60");
+      return sendError(res, 503, "unavailable", "Scores cannot be computed right now, so minConfidence and minPriority cannot be applied; try again in a minute or leave them out");
+    }
     const { page, total, nextCursor } = selectPage(events, filters);
     // to the minute: the body (and so the ETag) only changes when the data or the window does
     const to = Math.floor(now() / 60_000) * 60_000;
@@ -175,7 +206,7 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
         limit: filters.limit,
         nextCursor,
         window: { from: new Date(to - WINDOW_MS).toISOString(), to: new Date(to).toISOString() },
-        ...sourceMeta(snap),
+        ...sourceMeta(snap, fused),
       },
       attribution: ATTRIBUTION,
     });
@@ -189,7 +220,7 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
     const event = loaded.events.find((e) => e.id === id);
     if (!event) return sendError(res, 404, "not_found", `No event ${id} in the last ${WINDOW_DAYS} days`);
     res.set("Cache-Control", LIST_CACHE_CONTROL);
-    res.json({ data: event, meta: sourceMeta(loaded.snap), attribution: ATTRIBUTION });
+    res.json({ data: event, meta: sourceMeta(loaded.snap, loaded.fusion), attribution: ATTRIBUTION });
   });
 
   const openApi = buildOpenApi();

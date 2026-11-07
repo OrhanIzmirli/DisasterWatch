@@ -118,6 +118,19 @@ describe("parseListQuery", () => {
     bad({ type: ["flood", "storm"] }); // repeated parameter
     bad({ cursor: "not-a-cursor" });
     bad({ country: "" });
+    bad({ minConfidence: "101" });
+    bad({ minPriority: "-5" });
+    bad({ minPriority: "1e2" });
+  });
+
+  it("score minimums: integers 0-100; an unscored event never passes one", () => {
+    expect(parseListQuery({ minConfidence: "0", minPriority: "100" })).toMatchObject({ minConfidence: 0, minPriority: 100 });
+    const scored = { type: "earthquake", severity: "high", occurredAt: new Date(NOW).toISOString(), lat: 0, lng: 0, confidence: { score: 70 }, priority: { score: 40 } };
+    expect(matches(scored, parseListQuery({ minConfidence: "70" }))).toBe(true);
+    expect(matches(scored, parseListQuery({ minConfidence: "71" }))).toBe(false);
+    expect(matches(scored, parseListQuery({ minPriority: "41" }))).toBe(false);
+    expect(matches({ ...scored, confidence: null, priority: null }, parseListQuery({ minConfidence: "0" }))).toBe(false);
+    expect(matches({ ...scored, confidence: null }, parseListQuery({}))).toBe(true);
   });
 });
 

@@ -189,3 +189,78 @@ describe("responses match the document", () => {
     expect(validate(res.body), ajv.errorsText(validate.errors)).toBe(true);
   });
 });
+
+const { matchSources } = await import("../src/services/fusion/match.js");
+const { scoreEvents } = await import("../src/services/fusion/scores.js");
+const { createPopulationIndex } = await import("../src/services/fusion/population.js");
+const router = createV1Router;
+
+describe("fusion fields (sources, confidence, priority) match the document", () => {
+  const population = createPopulationIndex([[42.5, 144.4, 250_000], [16, 131, 30_000]]);
+
+  // a fusion that matches invented observations of every confirming source with the real rules and scores
+  const fakeFusion = {
+    async fuse(events) {
+      const quake = events.find((e) => e.type === "earthquake");
+      const storm = events.find((e) => e.type === "storm");
+      const emsc = [{ source: "emsc", sourceId: "20261107_0000001", time: Date.parse(quake.occurredAt) + 2000, lat: quake.lat + 0.05, lng: quake.lng, magnitude: 6.3, agency: "JMA", relaysUsgs: false, url: "https://www.seismicportal.eu/eventdetails.html?unid=20261107_0000001" }];
+      const nhc = [{ source: "nhc", sourceId: "wp992026", name: "Example", lat: storm.lat, lng: storm.lng, time: Date.parse(storm.occurredAt), windKts: 95, classificationLabel: "Hurricane", url: "https://www.nhc.noaa.gov/" }];
+      const matches = matchSources(events, { emsc, nhc, firms: new Map() });
+      return { matches, scores: scoreEvents(events, matches, { now: Date.now(), population }), status: { emsc: "ok", nhc: "ok", firms: "off" } };
+    },
+  };
+  const app2 = express();
+  app2.use("/api/v1", router({ rateLimit: { limit: 100_000 }, fusion: fakeFusion }));
+
+  it("every event carries the fusion fields in the documented shape", async () => {
+    const res = await request(app2).get("/api/v1/disasters");
+    expectContract(res, "/disasters");
+    expect(res.body.meta).toMatchObject({ confirmingSources: { emsc: "ok", nhc: "ok", firms: "off" }, scoreVersion: 1 });
+    const quake = res.body.data.find((e) => e.id === "usgs:us1");
+    expect(quake.sources.map((s) => `${s.source}:${s.role}`)).toEqual(["usgs:primary", "emsc:confirming"]);
+    expect(quake.confidence.score).toBe(80);
+    expect(quake.priority.exposure).toEqual({ population: 250_000, radiusKm: 100 });
+    const storm = res.body.data.find((e) => e.type === "storm");
+    expect(storm.sources.map((s) => s.source)).toEqual(["eonet", "nhc"]);
+    const flood = res.body.data.find((e) => e.type === "flood");
+    expect(flood.sources.map((s) => `${s.source}:${s.role}`)).toEqual(["eonet:primary", "gdacs:listed"]);
+    for (const e of res.body.data) expectContract(await request(app2).get(`/api/v1/disasters/${e.id}`), "/disasters/{id}");
+  });
+
+  it("the fields a v1 client already reads are unchanged and come first", async () => {
+    const before = await request(app).get("/api/v1/disasters"); // fusion sources off: primary only
+    const after = await request(app2).get("/api/v1/disasters");
+    const ORIGINAL = ["id", "source", "type", "severity", "severityReason", "title", "place", "country", "lat", "lng", "occurredAt", "updatedAt", "status", "measurements", "alerts", "links"];
+    for (const e of after.body.data) {
+      expect(Object.keys(e).slice(0, ORIGINAL.length)).toEqual(ORIGINAL);
+      const old = before.body.data.find((x) => x.id === e.id);
+      for (const k of ORIGINAL) expect(e[k], `${e.id}.${k}`).toEqual(old[k]);
+    }
+  });
+
+  it("minConfidence and minPriority filter on the scores and are validated", async () => {
+    const all = await request(app2).get("/api/v1/disasters");
+    const high = await request(app2).get("/api/v1/disasters?minConfidence=80");
+    expectContract(high, "/disasters");
+    expect(high.body.data.map((e) => e.id)).toEqual(all.body.data.filter((e) => e.confidence.score >= 80).map((e) => e.id));
+    const prio = await request(app2).get("/api/v1/disasters?minPriority=1&minConfidence=0");
+    expect(prio.body.meta.total).toBe(all.body.data.filter((e) => e.priority.score >= 1).length);
+    for (const bad of ["minConfidence=101", "minPriority=-1", "minPriority=5.5", "minConfidence=high"]) {
+      const res = await request(app2).get(`/api/v1/disasters?${bad}`);
+      expect(res.status, bad).toBe(400);
+      expectContract(res, "/disasters");
+    }
+  });
+
+  it("without fusion the events are served unscored; a score filter is then a 503", async () => {
+    const broken = express();
+    broken.use("/api/v1", router({ rateLimit: { limit: 100_000 }, fusion: { fuse: async () => { throw new Error("fusion down"); } } }));
+    const res = await request(broken).get("/api/v1/disasters");
+    expectContract(res, "/disasters");
+    expect(res.body.data.every((e) => e.confidence === null && e.priority === null && e.sources.length === 1)).toBe(true);
+    expect(res.body.meta.confirmingSources).toEqual({ emsc: "error", nhc: "error", firms: "error" });
+    const filtered = await request(broken).get("/api/v1/disasters?minConfidence=50");
+    expect(filtered.status).toBe(503);
+    expectContract(filtered, "/disasters");
+  });
+});
