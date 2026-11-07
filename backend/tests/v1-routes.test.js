@@ -159,6 +159,14 @@ describe("read-only, CORS", () => {
     expect(res.headers["access-control-allow-methods"]).toBe("GET,HEAD,OPTIONS");
   });
 
+  it("temporary IP probe answers salted hashes only, and only with a salt", async () => {
+    const plain = await request(app).get("/api/v1/types");
+    expect(plain.headers["x-dw-ip-probe"]).toBeUndefined();
+    const res = await request(app).get("/api/v1/types").set("X-DW-IP-Probe", "abcdefghijklmnop1234").set("X-Forwarded-For", "203.0.113.5");
+    expect(res.headers["x-dw-ip-probe"]).toMatch(/^ip=[0-9a-f]{10};sock=[0-9a-f]{10};xff=[0-9a-f]{10};tci=-;cf=-;real=-$/);
+    expect(res.headers["x-dw-ip-probe"]).not.toMatch(/203\.0\.113/);
+  });
+
   it("the dashboard routes keep their allow-list", async () => {
     const res = await request(app).get("/disasters").set("Origin", "https://someone-else.example");
     expect(res.headers["access-control-allow-origin"]).toBeUndefined();
