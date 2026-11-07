@@ -124,8 +124,9 @@ docker compose down -v       # stop and delete the database volume (fresh start 
 | Backend (Vitest + supertest) | `cd backend && npm test` | `TEST_DATABASE_URL`, a throwaway PostgreSQL |
 | Notification service (Vitest) | `cd notification-service && npm test` | nothing for the unit tests; the e-mail dispatcher tests run only with `TEST_DATABASE_URL` (schema pushed from `backend/prisma`) and are skipped otherwise |
 | Frontend (Vitest + Testing Library, ESLint) | `cd disasterwatch-frontend && npm run lint && npm test && npm run build` | nothing (lint, tests, type check + production build) |
+| Frontend visual and accessibility (Playwright, axe-core) | `cd disasterwatch-frontend && npm run build && npm run test:e2e` | Chromium; screenshots are compared in the Linux image CI uses |
 
-The backend suite refuses to run against the application database. **CI** (`.github/workflows/ci.yml`) runs all three suites on every push and pull request. Details, including a throwaway test database: [Tests and CI in detail](docs/operations.md#tests-and-ci-in-detail).
+The backend suite refuses to run against the application database. **CI** (`.github/workflows/ci.yml`) runs all four on every push and pull request; the visual suite compares every page at 1440 px and 390 px with reviewed screenshots and checks WCAG 2.1 AA with axe-core. Details, including a throwaway test database and how to update the screenshots: [Tests and CI in detail](docs/operations.md#tests-and-ci-in-detail).
 
 ---
 

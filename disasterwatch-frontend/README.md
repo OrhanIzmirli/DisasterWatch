@@ -25,7 +25,8 @@ npm run dev
 | `npm run dev` | Vite dev server on port 5173 with the `/api` proxy |
 | `npm run build` | `tsc -b` type check, then a production build into `dist/` |
 | `npm run preview` | serves `dist/` on port 4173 |
-| `npm run lint` | ESLint (not part of CI yet) |
+| `npm run lint` | ESLint (runs in CI) |
+| `npm run test:e2e` | Playwright visual, behaviour and accessibility tests against the production build (`e2e/`; see the root docs, *Visual tests*) |
 
 Node `24.13.0` (`.nvmrc` in the repository root, `engines` in `package.json`).
 

@@ -121,3 +121,36 @@ jobs:
       - run: npm test
 
       - run: npm run build
+
+  frontend-visual:
+    name: Frontend visual and accessibility
+    runs-on: ubuntu-latest
+    # Same image the baselines are made in, so fonts render identically (see playwright.config.ts)
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+
+    defaults:
+      run:
+        working-directory: disasterwatch-frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npx playwright test
+        env:
+          CI: "1"
+          # Chromium in the container runs as root
+          HOME: /root
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            disasterwatch-frontend/playwright-report/
+            disasterwatch-frontend/test-results/
+          retention-days: 7

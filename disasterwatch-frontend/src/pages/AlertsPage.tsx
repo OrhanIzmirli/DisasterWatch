@@ -210,7 +210,7 @@ const AlertsPage = ({ user, authLoading }: Props) => {
   /* ---------- Signed-out view ---------- */
   if (!authLoading && !user) {
     return (
-      <main className="page alerts-page">
+      <main className="page page-narrow alerts-page">
         <header className="page-header page-header-row">
           <div>
             <h1 className="page-title">Alert center</h1>

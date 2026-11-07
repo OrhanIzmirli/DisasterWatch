@@ -92,7 +92,8 @@ describe("skip link", () => {
     stubApi(BUSY);
     const user = userEvent.setup();
     await renderDashboard();
-    await screen.findByRole("button", { name: /Hurricane Simon/ });
+    // the feed row and its "Today's events" card both open the event
+    await screen.findAllByRole("button", { name: /Hurricane Simon/ });
 
     await user.tab();
     const skip = screen.getByRole("link", { name: "Skip to feed" });
@@ -151,5 +152,32 @@ describe("map liveness", () => {
     await waitFor(() => expect(mapProps.at(-1)?.disasters.length).toBe(3));
     expect(mapProps.at(-1)?.pulseIds?.size).toBe(0);
     expect(screen.queryByText(/Pulsing: newest event/)).toBeNull();
+  });
+});
+
+describe("selected event on the map", () => {
+  // 16 quakes: the map draws the 15 strongest, so the weakest one is left out until selected
+  const quakes = Array.from({ length: 16 }, (_, i) =>
+    item(100 + i, "earthquake", "low", `M ${(5.9 - i * 0.1).toFixed(1)} - test quake ${i}`, 2 + i, { magnitude: 5.9 - i * 0.1, magnitudeLabel: (5.9 - i * 0.1).toFixed(1) })
+  );
+  const weakest = 115;
+
+  it("adds an event the marker caps leave out once it is selected, so the map can fly to it", async () => {
+    stubApi(quakes);
+    const user = userEvent.setup();
+    await renderDashboard();
+    await waitFor(() => expect(mapProps.length).toBeGreaterThan(0));
+    expect(mapProps.at(-1)!.disasters.some((d) => d.id === weakest)).toBe(false);
+
+    await user.click(await screen.findByRole("button", { name: /test quake 15/ }));
+    await waitFor(() => expect(mapProps.at(-1)!.disasters.some((d) => d.id === weakest)).toBe(true));
+  });
+
+  it("opens an event from a Today's events card", async () => {
+    stubApi(BUSY);
+    const user = userEvent.setup();
+    await renderDashboard();
+    await user.click(await screen.findByRole("button", { name: /Hurricane Simon.*Open on the map/ }));
+    expect(await screen.findByRole("dialog", { name: "Hurricane Simon" })).toBeTruthy();
   });
 });
