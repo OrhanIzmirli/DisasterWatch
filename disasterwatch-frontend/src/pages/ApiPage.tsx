@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import DeveloperKeys from "../components/DeveloperKeys";
 
@@ -12,11 +12,17 @@ function baseUrl() {
   return typeof window === "undefined" ? BASE_PATH : `${window.location.origin}${BASE_PATH}`;
 }
 
-const EXAMPLES = (base: string) => [
+/** Shown until the newest live event id has loaded (or when it cannot be loaded). */
+const ID_PLACEHOLDER = "<id from data[].id>";
+
+const EXAMPLES = (base: string, eventId: string | null) => [
   { label: "High-severity events of the last 30 days", cmd: `curl "${base}/disasters?minSeverity=high"` },
   { label: "Earthquakes and storms in a box (Japan), 20 per page", cmd: `curl "${base}/disasters?type=earthquake,storm&bbox=128,30,146,46&limit=20"` },
   { label: "Next page", cmd: `curl "${base}/disasters?type=earthquake,storm&bbox=128,30,146,46&limit=20&cursor=<meta.nextCursor>"` },
-  { label: "One event", cmd: `curl "${base}/disasters/usgs:us7000abcd"` },
+  {
+    label: eventId ? "One event (the newest one in the feed right now)" : "One event",
+    cmd: `curl "${base}/disasters/${eventId ?? ID_PLACEHOLDER}"`,
+  },
   { label: "Only if changed since your last request (304 otherwise)", cmd: `curl -i "${base}/types" -H 'If-None-Match: <ETag>'` },
 ];
 
@@ -37,6 +43,22 @@ export default function ApiPage() {
     document.title = "Public API – DisasterWatch";
     return () => {
       document.title = previous;
+    };
+  }, []);
+
+  // a real id for the "One event" example: the newest event in the live feed
+  const [eventId, setEventId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${BASE_PATH}/disasters?limit=1`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { data?: { id?: unknown }[] } | null) => {
+        const id = body?.data?.[0]?.id;
+        if (!cancelled && typeof id === "string" && /^(usgs|eonet):[A-Za-z0-9_.-]{1,80}$/.test(id)) setEventId(id);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -64,7 +86,7 @@ export default function ApiPage() {
           <a href={`${BASE_PATH}/openapi.json`}>OpenAPI 3.1 document</a>.
         </p>
         <ul className="api-examples">
-          {EXAMPLES(base).map((e) => (
+          {EXAMPLES(base, eventId).map((e) => (
             <li key={e.label}>
               <span className="api-example-label">{e.label}</span>
               <pre className="api-code" tabIndex={0}>
