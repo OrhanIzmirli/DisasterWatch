@@ -28,6 +28,16 @@ More in [Screenshots](docs/screenshots.md).
 
 ---
 
+## Scoring methodology
+
+Every event is checked against independent sources and gets two open scores (0–100); the full method, with worked examples, is in [Scoring](docs/scoring.md).
+
+- **Matching.** USGS quakes are matched to EMSC entries: at most 60 s, 100 km and 0.8 magnitude apart. EONET storms are matched to NOAA NHC advisories by storm name or proximity, EONET wildfires to NASA FIRMS satellite detections within 10 km, and EONET events to their GDACS reports by reference.
+- **Against false merges.** Matches are one-to-one and mutual best, an ambiguity guard applies, and observations are never chained. A source that only relays the primary (an EMSC entry computed by the USGS, for example) counts as *listed*, not as an independent confirmation.
+- **Confidence** = primary source (USGS reviewed 60 … EONET 40) + independent confirmations (NHC 30, FIRMS 25, EMSC 20, GDACS 15; at most 40 together) − staleness (fires, floods and storms not seen for more than a day lose up to 20).
+- **Priority** = 0.45 × severity (magnitude, wind, burned area, GDACS or PAGER level) + 0.35 × exposure (people living within a type-dependent radius, GeoNames, log scale) + 0.20 × confidence.
+- **Explainable.** Each score is returned with the terms that produced it and a `scoreVersion`. Nothing is learned or hidden; the formulas are tested with worked examples and with properties: a confirmation never lowers confidence, and time never raises it.
+
 ## Public API
 
 Read-only JSON for the events of the last 30 days, no key needed (an optional key raises the limit). Interactive reference: [/api](https://disasterwatch-frontend.onrender.com/api) · OpenAPI 3.1: [`/api/v1/openapi.json`](https://disasterwatch-frontend.onrender.com/api/v1/openapi.json).

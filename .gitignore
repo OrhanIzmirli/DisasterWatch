@@ -26,3 +26,5 @@ screenshots/ui-audit/
 
 # Local evaluation output (real third-party data; never committed)
 reports/
+# GeoNames population table, downloaded at build time (backend/scripts/fetch-population.mjs)
+backend/data/

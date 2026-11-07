@@ -184,6 +184,7 @@ export function matchSources(events, { emsc = null, nhc = null, firms = null } =
         timeDeltaSec: round(fit.dt, 0),
         windKts: o.windKts,
         classification: o.classificationLabel,
+        observedAt: new Date(o.time).toISOString(),
       });
     }
     for (const id of ambiguous) out.get(id).ambiguous.push("nhc");

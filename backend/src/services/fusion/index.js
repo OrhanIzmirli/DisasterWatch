@@ -7,6 +7,8 @@
  */
 import { confirmingSources as defaultSources } from "../sources/index.js";
 import { matchSources } from "./match.js";
+import { scoreEvents } from "./scores.js";
+import { populationIndex } from "./population.js";
 
 export const SOURCE_WAIT_MS = 1500;
 /** Wildfires whose last observation is older than this are not looked up in FIRMS (its window is 48 h). */
@@ -23,12 +25,13 @@ function within(promise, ms) {
  * @param {object} [o]
  * @param {{ emsc, nhc, firms }} [o.sources] confirming sources (sources/index.js)
  */
-export function createFusion({ sources = defaultSources, now = () => Date.now(), waitMs = SOURCE_WAIT_MS } = {}) {
+export function createFusion({ sources = defaultSources, now = () => Date.now(), waitMs = SOURCE_WAIT_MS, population = populationIndex } = {}) {
   let last = null;
+  let lastScores = null;
 
   /**
    * @param {object[]} events public v1 events (api/v1/events.js)
-   * -> { matches: Map<eventId, { sources, ambiguous }>, status: { emsc, nhc, firms } }
+   * -> { matches: Map<eventId, { sources, ambiguous }>, scores: Map<eventId, { confidence, priority }>, status: { emsc, nhc, firms } }
    */
   async function fuse(events) {
     const [emsc, nhc] = await Promise.all([within(sources.emsc.get(), waitMs), within(sources.nhc.get(), waitMs)]);
@@ -42,10 +45,15 @@ export function createFusion({ sources = defaultSources, now = () => Date.now(),
     const firmsKey = firms ? [...firms].map(([id, v]) => `${id}:${v.count}:${v.fetchedAt}`).join("|") : "off";
     const status = { emsc: emsc.status, nhc: nhc.status, firms: firms ? (firms.size ? "ok" : "pending") : "off" };
 
-    if (last && last.events === events && last.emsc === emsc.data && last.nhc === nhc.data && last.firmsKey === firmsKey) return { matches: last.matches, status };
-    const matches = matchSources(events, { emsc: emsc.data, nhc: nhc.data, firms });
-    last = { events, emsc: emsc.data, nhc: nhc.data, firmsKey, matches };
-    return { matches, status };
+    if (!(last && last.events === events && last.emsc === emsc.data && last.nhc === nhc.data && last.firmsKey === firmsKey)) {
+      last = { events, emsc: emsc.data, nhc: nhc.data, firmsKey, matches: matchSources(events, { emsc: emsc.data, nhc: nhc.data, firms }) };
+    }
+    // scores age with the clock (staleness): recomputed once a minute or when the matches change
+    const minute = Math.floor(t / 60_000);
+    if (!(lastScores && lastScores.matches === last.matches && lastScores.minute === minute)) {
+      lastScores = { matches: last.matches, minute, scores: scoreEvents(events, last.matches, { now: t, population: population() }) };
+    }
+    return { matches: last.matches, scores: lastScores.scores, status };
   }
 
   return { fuse };

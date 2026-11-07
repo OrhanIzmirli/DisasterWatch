@@ -15,6 +15,11 @@ RUN npx prisma generate
 # Source code
 COPY . .
 
+# GeoNames population table for the exposure term of the priority score
+# (CC BY 4.0; downloaded here, never committed; a failed download only makes
+# exposure "unknown")
+RUN node scripts/fetch-population.mjs
+
 # Default port (overridable with PORT)
 EXPOSE 5000
 

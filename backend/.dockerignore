@@ -8,3 +8,4 @@ npm-debug.log*
 !.env.example
 Dockerfile
 .dockerignore
+data
