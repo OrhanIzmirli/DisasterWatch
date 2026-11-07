@@ -244,6 +244,25 @@ const NEWS = {
   provider: "gdelt+gdacs",
 };
 
+// A small OpenAPI document for the /api page (invented, shaped like GET /api/v1/openapi.json)
+const OPENAPI = {
+  openapi: "3.1.0",
+  info: { title: "DisasterWatch public API", version: "1.0.0", description: "Example document for the visual tests." },
+  servers: [{ url: "/api/v1", description: "The site serving this document" }],
+  tags: [{ name: "Events" }, { name: "Reference" }],
+  paths: {
+    "/disasters": {
+      get: {
+        tags: ["Events"],
+        summary: "List events",
+        parameters: [{ name: "limit", in: "query", description: "Page size.", schema: { type: "integer", minimum: 1, maximum: 200, default: 50 } }],
+        responses: { 200: { description: "A page of events" } },
+      },
+    },
+    "/types": { get: { tags: ["Reference"], summary: "Event types, severity levels and rating rules", responses: { 200: { description: "Reference data" } } } },
+  },
+};
+
 // 1×1 transparent PNG for every map tile
 const BLANK_TILE = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -277,6 +296,7 @@ export async function mockApi(page: Page) {
         });
       return json({ message: "GDACS is not reachable right now" }, 503);
     }
+    if (path === "/v1/openapi.json") return json(OPENAPI);
     if (path === "/health") return json({ ok: true, service: "backend", kafka: "connected" });
     if (path === "/users/session") return json({ user: null });
     if (path === "/users/me") return json({ message: "Not signed in" }, 401);

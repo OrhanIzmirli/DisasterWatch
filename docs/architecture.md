@@ -43,7 +43,7 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 
 ## Methodology in short
 
-- **Sources.** Earthquakes of the last 7 days from USGS (magnitude 4.5 and above); wildfires, floods and severe storms from NASA EONET (open and closed events of the last 30 days; the feed shows the last 7 days by default). Every feed item keeps its source id and links, and nothing is invented: when the sources fail the feed says so instead of showing demo data.
+- **Sources.** Earthquakes of the last 30 days from USGS (magnitude 4.5 and above, the monthly feed); wildfires, floods and severe storms from NASA EONET (open and closed events of the last 30 days; the feed shows the last 7 days by default). Every feed item keeps its source id and links, and nothing is invented: when the sources fail the feed says so instead of showing demo data.
 - **Location.** USGS gives a point. For EONET events reported by GDACS the GDACS event point wins over the EONET geometry when GDACS can be reached (otherwise the EONET geometry is used, see `ingest.eonetFallbackRecorded`); when the two are more than 100 km apart the event is marked *approximate* and the drawer says why. Countries come from the source place names; an event whose country cannot be derived (open sea) is not counted as a country.
 - **Severity.** Taken from the source wherever it publishes one: GDACS impact level (Green / Orange / Red) for wildfires and floods, magnitude for earthquakes, the Saffir-Simpson scale on the peak advisory wind for storms, burned area for fires GDACS does not cover. An event the source gives no intensity for is shown as *not rated*, never guessed. The wildfire area cut was set from 90 days of EONET data; storms use the Saffir-Simpson boundaries ([Severity](severity.md)).
 - **News.** At most four requests per provider and refresh (up to three combined searches for the most important events plus one general search; GDELT makes only the general one), plus the media lists GDACS keeps for up to 25 GDACS-linked events. Every article passes the same relevance rules (sport, retrospectives, idioms and similar are dropped). GDELT and Guardian articles are linked to an event by headline or story slug; GDACS media articles come with the GDACS event they are listed under. An article gets a country from its linked event, its Guardian tags or its GDACS event, and a country inherited from GDACS is kept only when the headline or slug names it; otherwise the article stays unlocated ([News](news.md)).
@@ -54,7 +54,7 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 ## Features in detail
 
 ### 1) Multi-source disaster feed (NASA EONET + USGS)
-- **USGS** earthquakes (M ≥ 4.5, last 7 days) and **NASA EONET** wildfires, floods and storms.
+- **USGS** earthquakes (M ≥ 4.5, last 30 days; the alert ingestion reads the last 7) and **NASA EONET** wildfires, floods and storms.
 - Heterogeneous responses are normalized into one model (`type`, `severity`, `title`, `lat`/`lng`, `country`, `occurredAt`, source ids).
 - 5-minute server-side cache per source; the two sources are fetched independently, so one failing source degrades the feed instead of killing it (see [Feed contract](api.md#feed-contract-get-disasters)).
 - Pagination and marker caps keep the map responsive: the map shows the 15 strongest earthquakes of the feed page, and when a week has more quakes than the page has room for, the page keeps the strongest, not the newest.

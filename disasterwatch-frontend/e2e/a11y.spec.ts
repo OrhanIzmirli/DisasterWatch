@@ -40,6 +40,13 @@ test("news panel", async ({ page }) => {
   await audit(page, ".news-panel");
 });
 
+test("public API page", async ({ page }) => {
+  await open(page, "/api");
+  // Swagger UI is a lazy chunk: audit once it has drawn the reference
+  await expect(page.locator(".swagger-ui .opblock").first()).toBeVisible();
+  await audit(page);
+});
+
 for (const path of ["/alerts", "/signin", "/signup", "/privacy", "/no-such-page"]) {
   test(`page ${path}`, async ({ page }) => {
     await open(page, path);

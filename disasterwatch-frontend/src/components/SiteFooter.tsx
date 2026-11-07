@@ -9,6 +9,10 @@ export default function SiteFooter() {
       <Link to="/privacy" className="site-footer-link">
         Privacy
       </Link>
+      <span aria-hidden="true">·</span>
+      <Link to="/api" className="site-footer-link">
+        Public API
+      </Link>
     </footer>
   );
 }
