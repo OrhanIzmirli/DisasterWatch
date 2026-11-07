@@ -45,4 +45,65 @@ Only confirming sources raise the confidence score fully.
 - **Distant pairs:** the three pairs over 50 km were remote mid-ocean and Tonga quakes 1–5 s apart with matching magnitudes.
 - **Near misses:** 19 EMSC entries came within 5 min and 300 km of an unmatched quake. On review they were either aftershocks outside the rule or entries already taken by a closer quake.
 
-Confidence and priority scores: section 2 and 3 follow with the scores step.
+## 2. Confidence (0–100): is the event real and current?
+
+`confidence = clamp(primary + min(40, confirmations) − staleness, 0, 100)`
+
+| Term | Points |
+|---|---|
+| Primary: USGS reviewed by a seismologist / USGS automatic | 60 / 45 |
+| Primary: NASA EONET reported by an official agency (IRWIN, InciWeb, CAL FIRE, JTWC, NOAA NHC, FEMA, Canadian provincial fire services, NSW RFS, NIFC, CEMS) / other EONET | 45 / 40 |
+| NOAA NHC: confirming / listed | +30 / +10 |
+| NASA FIRMS: 3+ detections (confirming) / 1–2 (listed) | +25 / +10 |
+| EMSC: independent agency (confirming) / USGS solution relayed (listed) | +20 / +5 |
+| GDACS: confirming / listed | +15 / +5 |
+| Confirmations together | at most +40 |
+| Staleness (not for earthquakes): per full 6 h past 24 h since the event was last seen by any source (EONET, a later FIRMS detection or NHC advisory) | −1, at most −20 |
+
+Worked examples (both are tests in `backend/tests/fusion-scores.test.js`):
+- **Reviewed quake.** A reviewed USGS earthquake that EMSC confirms with its own solution scores 60 + 20 = **80**. When the EMSC entry is the USGS solution relayed, it scores 60 + 5 = 65.
+- **Fire last seen 50 hours ago.** EONET took it from GDACS and FIRMS sees 7 detections near it: 40 + 25 + 5 − ⌊(50 − 24) / 6⌋ = 70 − 4 = **66**.
+
+## 3. Priority (0–100): which events matter most now?
+
+`priority = round(0.45 × severity + 0.35 × exposure + 0.20 × confidence)`
+
+**Severity (0–100).** The highest of what the event has:
+
+| Basis | Points |
+|---|---|
+| magnitude | M4.5 → 20, M7.5 → 100, linear |
+| wind (EONET peak or current, NHC intensity) | 34 kt → 20, 137 kt → 100, linear |
+| burned area | 100 ha → 20, 100,000 ha → 100, log scale |
+| GDACS level | green 20, orange 60, red 100 |
+| USGS PAGER level | green 20, yellow 50, orange 75, red 100 |
+
+An event with none of these takes 70, 45, 25 or 15 from its rating (high, medium, low, unrated).
+
+**Exposure (0–100).**
+- **Formula:** `round(20 × log10(people / 1,000))`, from 0 to 100: 10,000 people → 20, 1 million → 60, 100 million → 100.
+- **People counted:** those in places within a radius set by type and size. Earthquakes count within 25, 50, 100 or 200 km, at magnitude below 5, 5–6, 6–7 and 7 or more. Storms count within 200 km, floods 50 km and wildfires 25 km.
+- **Data:** places come from the GeoNames `cities5000` gazetteer (CC BY 4.0), downloaded when the image is built. Sections of a city and historical places are left out.
+- **Not counted:** places under about 5,000 people, so sparsely settled areas read low. It is an indicator of how many people live near the event, not an estimate of who was affected.
+- **When the table is missing:** exposure is *unknown* (never 0), and the other two weights are scaled up to sum to 1.
+
+**Worked example.** An M6.2 quake with 1 million people within 100 km and confidence 80: severity 20 + 1.7 × 80/3 = 65. So 0.45 × 65 + 0.35 × 60 + 0.20 × 80 = **66**.
+
+Confidence carries a fifth of the weight, so an unconfirmed event cannot reach the top on severity alone.
+
+**Live check, 2026-11-07** (GDACS off and no FIRMS key in this run):
+- **Earthquakes:** median confidence 80, median priority 27.
+- **Highest priority:** an M7.7 near populated Panama (79), then storms near the Indian and Mexican coasts (64–71).
+- **Wildfires and floods:** confidence 20. Most EONET events in the 30-day window were last updated days ago; GDACS levels and FIRMS detections raise current ones.
+
+## 4. Versions and limits
+
+Every response that carries scores names `scoreVersion`, currently 1. A change to any number above raises it and is listed in the [Changelog](../CHANGELOG.md).
+
+**Limits.**
+- The scores rank what the sources publish. They are not an official warning, and not an impact assessment.
+- **Source coverage:**
+  - NHC covers only the Atlantic and the eastern and central Pacific.
+  - FIRMS needs a key.
+  - GDACS rates only some events.
+- **Exposure:** it counts residents near the event, not people affected.
