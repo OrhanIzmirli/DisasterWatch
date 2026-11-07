@@ -21,6 +21,7 @@ import { createEmailRouter } from "./routes/email.routes.js";
 import { emailChannelStatus } from "./services/emailChannel.js";
 import { createV1Router } from "./routes/v1.routes.js";
 import { createDeveloperRouters } from "./routes/developer.routes.js";
+import { confirmingSourcesStatus } from "./services/sources/index.js";
 
 /**
  * Build the Express app without starting a server or touching Kafka,
@@ -112,6 +113,8 @@ export function createApp(options = {}) {
       ingest: ingestRunner.status(),
       news: newsStatus(),
       gdacs: gdacsClient.status(),
+      // confirming sources of the fusion (EMSC, NHC): times and counts only
+      sources: confirmingSourcesStatus(),
       email,
       time: new Date().toISOString(),
     });
