@@ -4269,3 +4269,52 @@ h2.card-title {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== EVENT DRAWER: impact figures and development chart ===== */
+.edd-where-rows {
+  margin-top: 0.5rem;
+}
+
+.edd-reported {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.edd-timeline {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.edd-timeline-chart {
+  width: 100%;
+  height: auto;
+  max-height: 120px;
+}
+
+.edd-timeline-axis {
+  stroke: rgba(203, 213, 225, 0.35);
+  stroke-width: 1;
+}
+
+.edd-timeline-tick {
+  fill: var(--dw-text-muted);
+  font-size: 9px;
+}
+
+.edd-timeline-line {
+  fill: none;
+  stroke: #93c5fd;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.edd-timeline-peak {
+  fill: #fca5a5;
+}
+
+.edd-timeline-latest {
+  fill: #f3f4f6;
+}

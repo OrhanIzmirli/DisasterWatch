@@ -1,5 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { SeverityRules } from "../services/feedCache";
+import EventImpact from "./EventImpact";
+import { gdacsRefFromSources } from "../utils/gdacsRef";
+import EventTimeline, { type TimelinePoint } from "./EventTimeline";
 import { formatDateTime, relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime } from "../utils/eventText";
 import {
@@ -54,6 +57,12 @@ export type EventDetails = {
   locationOffsetKm?: number | null;
   severityReason: string;
   severitySource: string;
+  /** Earthquakes: the named place USGS measures from; null when USGS names a region only. */
+  nearestPlace?: { name: string; distanceKm: number; direction: string } | null;
+  /** Wildfires and floods: ISO 3166-1 alpha-2 codes GDACS lists; null when GDACS has no answer. */
+  affectedCountries?: string[] | null;
+  /** Storms and wildfires: the EONET series, oldest first; null when the source gives one entry only. */
+  timeline?: TimelinePoint[] | null;
 };
 
 export type DrawerEvent = {
@@ -105,6 +114,15 @@ const PAGER_TEXT: Record<NonNullable<EventDetails["pagerAlert"]>, string> = {
 };
 
 const NOT_REPORTED = "Not reported by source";
+
+const REGION_NAMES = typeof Intl !== "undefined" && "DisplayNames" in Intl ? new Intl.DisplayNames(["en"], { type: "region" }) : null;
+function countryName(code: string) {
+  try {
+    return REGION_NAMES?.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
 
 const UNIT_LABELS: Record<string, string> = {
   hectare: "hectares",
@@ -211,6 +229,7 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews, nearby, onSe
   const depth = isQuake && d?.depthKm !== null && d?.depthKm !== undefined ? d.depthKm : null;
   const scale = severityScale(event, severityRules);
   const life = lifecycle(event);
+  const gdacsRef = gdacsRefFromSources(d?.sources);
   const hasImpact =
     isQuake && d && (d.pagerAlert !== null || d.tsunami === true || (d.feltReports !== null && d.feltReports > 0));
 
@@ -336,7 +355,65 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews, nearby, onSe
               <p className="edd-sub edd-approx">Approximate location — sources disagree on the exact area</p>
             )}
             {life && <p className="edd-sub edd-life">{life}</p>}
+            {isQuake && (
+              <dl className="edd-rows edd-where-rows">
+                <Row label="Nearest place">
+                  {d?.nearestPlace ? (
+                    <>
+                      {d.nearestPlace.name}
+                      <div className="edd-sub">
+                        {Math.round(d.nearestPlace.distanceKm).toLocaleString("en-GB")} km {d.nearestPlace.direction} of it (USGS)
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      Unknown
+                      <div className="edd-sub">USGS names a region here, not a place to measure from</div>
+                    </>
+                  )}
+                </Row>
+              </dl>
+            )}
+            {(event.type === "wildfire" || event.type === "flood") && (
+              <dl className="edd-rows edd-where-rows">
+                <Row label="Countries">
+                  {d?.affectedCountries?.length ? (
+                    <>
+                      {d.affectedCountries.map(countryName).join(", ")}
+                      <div className="edd-sub">Affected countries listed by GDACS</div>
+                    </>
+                  ) : (
+                    <>
+                      Unknown
+                      <div className="edd-sub">GDACS has no answer for this event</div>
+                    </>
+                  )}
+                </Row>
+              </dl>
+            )}
           </Section>
+
+          {(event.type === "wildfire" || event.type === "flood" || event.type === "storm") && (
+            <Section title="Impact">
+              {gdacsRef ? (
+                <EventImpact eventtype={gdacsRef.eventtype} eventid={gdacsRef.eventid} />
+              ) : (
+                <p className="edd-sub">Unknown: GDACS does not cover this event, and no other source reports its impact.</p>
+              )}
+            </Section>
+          )}
+
+          {(isStorm || event.type === "wildfire") && (
+            <Section title="How it developed">
+              {d?.timeline?.length ? (
+                <EventTimeline points={d.timeline} unitLabel={isStorm ? "kts" : "ha"} />
+              ) : (
+                <p className="edd-sub">
+                  Unknown: the source reports this {isStorm ? "storm" : "fire"} once, without a series to show its development.
+                </p>
+              )}
+            </Section>
+          )}
 
           {nearby && nearby.length > 0 && (
             <Section title="Nearby in this feed">

@@ -64,3 +64,24 @@ test("map tooltip and its pointer", async ({ page }) => {
     clip: { x: box.x - 8, y: box.y - 8, width: box.width + 16, height: box.height + 28 },
   });
 });
+
+test("event drawer: flood with GDACS impact figures", async ({ page }) => {
+  await openEvent(page, /Flood in Indonesia/);
+  await expect(page.getByRole("dialog")).toContainText("people evacuated");
+  await expect(page.getByRole("dialog")).toHaveScreenshot("drawer-flood.png");
+});
+
+test("event drawer sections: GDACS impact and storm development", async ({ page }) => {
+  await openEvent(page, /Flood in Indonesia/);
+  const impact = page.locator(".edd-section").filter({ has: page.getByRole("heading", { name: "Impact" }) });
+  await expect(impact).toContainText("houses damaged");
+  await impact.scrollIntoViewIfNeeded();
+  await expect(impact).toHaveScreenshot("drawer-section-impact.png");
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Tropical Cyclone Arnab/ }).first().click();
+  const development = page.locator(".edd-section").filter({ has: page.getByRole("heading", { name: "How it developed" }) });
+  await development.scrollIntoViewIfNeeded();
+  await expect(development.getByRole("img")).toBeVisible();
+  await expect(development).toHaveScreenshot("drawer-section-development.png");
+});
