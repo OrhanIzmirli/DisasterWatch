@@ -9,14 +9,13 @@
  *
  * - GET/HEAD only (OPTIONS answers CORS preflights); any other method is 405.
  * - CORS: any origin, no credentials; cookies are never read or set here.
- * - Rate limit: 60/min per client IP without a key, 600/min per key with a valid X-API-Key
+ * - Rate limit: 60/min per client IP (utils/clientIp.js) without a key, 600/min per key with a valid X-API-Key
  *   (a wrong key is a 401); 429 + Retry-After + RateLimit headers.
  * - Cache-Control + ETag (Express): a client that sends If-None-Match gets 304.
  * - Every body carries `attribution` (sources, credit lines, disclaimer);
  *   errors are { error: { code, message } } with Cache-Control: no-store.
  * The dashboard feed (/disasters) and the Kafka contract are untouched.
  */
-import { createHash } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -74,21 +73,6 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
     res.set("Allow", "GET, HEAD, OPTIONS");
     sendError(res, 405, "method_not_allowed", "The public API is read-only: use GET");
-  });
-
-  // TEMPORARY diagnostic (to be removed in the follow-up fix): which request header carries the
-  // client IP behind Render/Cloudflare and the site's /api rewrite. Only when the caller sends its
-  // own random salt; answers salted SHA-256 prefixes, never an address, and only about this request.
-  router.use((req, res, next) => {
-    const salt = req.get("X-DW-IP-Probe");
-    if (!salt || !/^[A-Za-z0-9]{16,64}$/.test(salt)) return next();
-    const h = (v) => (v ? createHash("sha256").update(`${salt}:${String(v).trim()}`).digest("hex").slice(0, 10) : "-");
-    const xff = (req.get("X-Forwarded-For") || "").split(",").filter(Boolean);
-    res.set(
-      "X-DW-IP-Probe",
-      [`ip=${h(req.ip)}`, `sock=${h(req.socket?.remoteAddress)}`, `xff=${xff.map(h).join("|") || "-"}`, `tci=${h(req.get("True-Client-IP"))}`, `cf=${h(req.get("CF-Connecting-IP"))}`, `real=${h(req.get("X-Real-IP"))}`].join(";")
-    );
-    next();
   });
 
   // Optional key: a valid one raises the limit and is counted per key; a wrong one is a 401

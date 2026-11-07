@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { corsOptions, parseCorsOrigins } from "./utils/corsOrigins.js";
+import { useClientIp } from "./utils/clientIp.js";
 
 import eventsRoutes from "./routes/events.routes.js";
 import disasterRoutes from "./routes/disaster.routes.js";
@@ -42,10 +43,12 @@ import { createDeveloperRouters } from "./routes/developer.routes.js";
 export function createApp(options = {}) {
   const app = express();
 
-  // Render / other reverse proxies sit in front of the app: trust the first hop so
-  // req.ip (used by the rate limiter) and secure cookies see the real client.
+  // Render's proxies sit in front of the app: trust the first hop so secure cookies
+  // see https. The client address comes from Cloudflare's headers (utils/clientIp.js):
+  // with several hops, req.ip alone is an internal address that changes per request.
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
+  app.use(useClientIp);
 
   // Security headers for a JSON API that is served behind the frontend's /api
   // proxy: no framing, no sniffing, a CSP that allows nothing to load (the API
