@@ -235,3 +235,128 @@ export function spiderPositions(count: number, centerPx: { x: number; y: number 
   }
   return out;
 }
+
+/* =========================================================================
+   Overlap resolution (display only)
+   supercluster's clusters can still touch on screen: cluster centres are
+   weighted means that drift towards each other, and two large icons (up to
+   32 px radius each) need more room than the clustering radius. A target
+   partly hidden under another fails WCAG 2.5.8 (target size) and is hard to
+   hit, so icons that touch are shown as one cluster that holds both.
+   ========================================================================= */
+
+/** One cluster icon on screen: one or more supercluster clusters plus any single events that touched it. */
+export type DisplayCluster = {
+  kind: "cluster";
+  /** stable React key */
+  key: string;
+  clusterIds: number[];
+  /** single events absorbed because their marker touched the cluster */
+  pointIds: number[];
+  count: number;
+  lat: number;
+  lng: number;
+  props: ClusterProps;
+};
+export type DisplayFeature = DisplayCluster | PointFeature;
+
+/** Free space kept between a cluster icon and any other icon, in px. */
+export const OVERLAP_GAP_PX = 2;
+
+const ZERO_PROPS = (): ClusterProps => ({ earthquake: 0, flood: 0, wildfire: 0, storm: 0, high: 0, medium: 0, low: 0, unrated: 0 });
+
+function addProps(into: ClusterProps, from: ClusterProps) {
+  for (const k of Object.keys(into) as (keyof ClusterProps)[]) into[k] += from[k];
+}
+
+/**
+ * Merges every cluster whose icon touches another cluster icon or a single
+ * marker, until no cluster touches anything (single markers may still touch
+ * each other, as before). The merged icon stays where the larger cluster was.
+ * `project` maps lat/lng to screen px at the current zoom.
+ */
+export function mergeOverlapping(
+  features: Array<ClusterFeature | PointFeature>,
+  {
+    project,
+    pointRadius,
+    pointKind,
+    gap = OVERLAP_GAP_PX,
+  }: {
+    project: (lat: number, lng: number) => { x: number; y: number };
+    pointRadius: (pointId: number) => number;
+    pointKind: (pointId: number) => { type: ClusterType; severity: ClusterSeverity } | undefined;
+    gap?: number;
+  }
+): DisplayFeature[] {
+  type C = DisplayCluster & { x: number; y: number };
+  type P = PointFeature & { x: number; y: number; r: number };
+  const clusters: C[] = [];
+  let points: P[] = [];
+  for (const f of features) {
+    const at = project(f.lat, f.lng);
+    if (f.kind === "cluster") {
+      clusters.push({ kind: "cluster", key: `c${f.clusterId}`, clusterIds: [f.clusterId], pointIds: [], count: f.count, lat: f.lat, lng: f.lng, props: { ...f.props }, ...at });
+    } else {
+      points.push({ ...f, ...at, r: pointRadius(f.pointId) });
+    }
+  }
+  const touches = (a: { x: number; y: number }, ra: number, b: { x: number; y: number }, rb: number) => Math.hypot(a.x - b.x, a.y - b.y) < ra + rb + gap;
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    // largest first, so small clusters join big ones and the big icon keeps its place
+    clusters.sort((a, b) => b.count - a.count);
+    outer: for (let i = 0; i < clusters.length; i++) {
+      for (let j = i + 1; j < clusters.length; j++) {
+        const a = clusters[i];
+        const b = clusters[j];
+        if (touches(a, clusterRadius(a.count), b, clusterRadius(b.count))) {
+          a.clusterIds.push(...b.clusterIds);
+          a.pointIds.push(...b.pointIds);
+          a.count += b.count;
+          addProps(a.props, b.props);
+          clusters.splice(j, 1);
+          changed = true;
+          break outer;
+        }
+      }
+    }
+    if (changed) continue;
+    const kept: P[] = [];
+    for (const p of points) {
+      const host = clusters.find((c) => touches(c, clusterRadius(c.count), p, p.r));
+      const kind = host ? pointKind(p.pointId) : undefined;
+      if (!host || !kind) {
+        kept.push(p);
+        continue;
+      }
+      host.pointIds.push(p.pointId);
+      host.count += 1;
+      const one = ZERO_PROPS();
+      one[kind.type] = 1;
+      one[kind.severity] = 1;
+      addProps(host.props, one);
+      changed = true; // the grown icon may now touch another cluster
+    }
+    points = kept;
+  }
+  for (const c of clusters) {
+    if (c.clusterIds.length > 1 || c.pointIds.length) c.key = `c${[...c.clusterIds].sort((a, b) => a - b).join("-")}${c.pointIds.length ? `p${[...c.pointIds].sort((a, b) => a - b).join("-")}` : ""}`;
+  }
+  return [
+    ...clusters.map((c): DisplayCluster => ({ kind: "cluster", key: c.key, clusterIds: c.clusterIds, pointIds: c.pointIds, count: c.count, lat: c.lat, lng: c.lng, props: c.props })),
+    ...points.map((p): PointFeature => ({ kind: "point", pointId: p.pointId, lat: p.lat, lng: p.lng })),
+  ];
+}
+
+/** Every event a display cluster stands for. */
+export function displayLeaves(index: ClusterIndex, c: DisplayCluster, pointAt: (pointId: number) => { lat: number; lng: number } | undefined): PointFeature[] {
+  const leaves = c.clusterIds.flatMap((id) => clusterLeaves(index, id));
+  for (const id of c.pointIds) {
+    const at = pointAt(id);
+    if (at) leaves.push({ kind: "point", pointId: id, lat: at.lat, lng: at.lng });
+  }
+  return leaves;
+}

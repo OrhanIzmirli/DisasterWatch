@@ -10,7 +10,8 @@ import { isPhone, open, openDashboard, openEvent } from "./pages";
 async function audit(page: Page, include?: string) {
   // label-content-name-mismatch (WCAG 2.5.3) is "experimental" in axe-core and off by default; Lighthouse runs it
   let builder = new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "experimental"])
+    // wcag22aa brings target-size (2.5.8): map cluster icons must not hide one another
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "experimental"])
     .options({ rules: { "label-content-name-mismatch": { enabled: true } } });
   // map tiles and Leaflet's own controls are third-party markup
   builder = builder.exclude(".leaflet-tile-container").exclude(".leaflet-control-attribution");
