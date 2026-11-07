@@ -10,19 +10,19 @@ test("the feed loads with KPIs and rows", async ({ page }) => {
   await liveDashboard(page);
   const kpis = page.getByRole("region", { name: "Key figures" });
   await expect(kpis).toContainText(/\d/);
-  expect(await page.locator(".disaster-row").count()).toBeGreaterThan(0);
+  expect(await page.locator("button.disaster-row").count()).toBeGreaterThan(0);
 });
 
 test("type filters keep only that type, and All brings everything back", async ({ page }) => {
   await liveDashboard(page);
-  const total = await page.locator(".disaster-row").count();
+  const total = await page.locator("button.disaster-row").count();
   for (const [button, tag] of [["Earthquakes", "EARTHQUAKE"], ["Wildfires", "WILDFIRE"]] as const) {
     await page.getByRole("button", { name: button, exact: true }).click();
     const types = await rowTypes(page);
     for (const t of types) expect(t.toUpperCase()).toBe(tag);
   }
   await page.getByRole("button", { name: "All", exact: true }).click();
-  await expect.poll(async () => page.locator(".disaster-row").count()).toBe(total);
+  await expect.poll(async () => page.locator("button.disaster-row").count()).toBe(total);
 });
 
 test("search keeps rows that name the place", async ({ page }) => {
@@ -34,7 +34,7 @@ test("search keeps rows that name the place", async ({ page }) => {
   const country = [...counts.entries()].filter(([c, n]) => n >= 2 && /^[A-Za-z ]+$/.test(c)).sort((a, b) => b[1] - a[1])[0]?.[0];
   test.skip(!country, "no country named twice in the live feed");
   await page.getByLabel("Search city or country").fill(country!);
-  const labels = await page.locator(".disaster-row").evaluateAll((rows) => rows.map((r) => r.getAttribute("aria-label") ?? ""));
+  const labels = await page.locator("button.disaster-row").evaluateAll((rows) => rows.map((r) => r.getAttribute("aria-label") ?? ""));
   expect(labels.length).toBeGreaterThan(0);
   for (const l of labels) expect(l.toLowerCase()).toContain(country!.toLowerCase());
 });
@@ -43,7 +43,7 @@ test("sorting by severity puts the most severe first", async ({ page }) => {
   await liveDashboard(page);
   await page.getByRole("combobox").filter({ hasText: "Sort" }).selectOption("severity");
   const rank = { high: 3, medium: 2, low: 1, "not rated": 0 } as Record<string, number>;
-  const sev = await page.locator(".disaster-row").evaluateAll((rows) => rows.map((r) => (r.getAttribute("aria-label") ?? "").split(",").at(-1)!.trim().toLowerCase()));
+  const sev = await page.locator("button.disaster-row").evaluateAll((rows) => rows.map((r) => (r.getAttribute("aria-label") ?? "").split(",").at(-1)!.trim().toLowerCase()));
   const values = sev.map((s) => rank[s] ?? -1);
   for (let i = 1; i < values.length; i++) expect(values[i]).toBeLessThanOrEqual(values[i - 1]);
 });
@@ -52,12 +52,12 @@ test("pagination moves between pages", async ({ page }) => {
   await liveDashboard(page);
   const next = page.getByRole("button", { name: /Next/ });
   test.skip(await next.isDisabled(), "a single page of events");
-  const firstBefore = await page.locator(".disaster-row").first().getAttribute("aria-label");
+  const firstBefore = await page.locator("button.disaster-row").first().getAttribute("aria-label");
   await next.click();
   await expect(page.getByText(/Page\s*2/)).toBeVisible();
-  expect(await page.locator(".disaster-row").first().getAttribute("aria-label")).not.toBe(firstBefore);
+  expect(await page.locator("button.disaster-row").first().getAttribute("aria-label")).not.toBe(firstBefore);
   await page.getByRole("button", { name: /Prev/ }).click();
-  expect(await page.locator(".disaster-row").first().getAttribute("aria-label")).toBe(firstBefore);
+  expect(await page.locator("button.disaster-row").first().getAttribute("aria-label")).toBe(firstBefore);
 });
 
 test("the map draws markers and clusters; a cluster zooms in on click", async ({ page }) => {
@@ -76,7 +76,7 @@ test("the map draws markers and clusters; a cluster zooms in on click", async ({
 
 test("the drawer opens from a row and Show on map highlights the event", async ({ page }) => {
   await liveDashboard(page);
-  await page.locator(".disaster-row").first().click();
+  await page.locator("button.disaster-row").first().click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.locator(".edd-summary")).toBeVisible();
   await dialog.getByRole("button", { name: "Show on map" }).click();
@@ -112,8 +112,8 @@ test("phone: Map and Feed views switch, and the drawer opens as a sheet", async 
   await liveDashboard(page, "map");
   await expect(page.getByRole("button", { name: "Map", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Feed", exact: true }).click();
-  await expect(page.locator(".disaster-row").first()).toBeVisible();
-  await page.locator(".disaster-row").first().click();
+  await expect(page.locator("button.disaster-row").first()).toBeVisible();
+  await page.locator("button.disaster-row").first().click();
   const box = await page.getByRole("dialog").boundingBox();
   expect(box!.y).toBeGreaterThan(100); // a bottom sheet, not a full-height side drawer
 });

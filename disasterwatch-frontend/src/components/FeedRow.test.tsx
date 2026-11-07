@@ -60,9 +60,10 @@ describe("FeedRow accessible name", () => {
   it("contains all the visible text in its order (WCAG 2.5.3, label in name)", () => {
     render(<ul><FeedRow {...props} onSelect={() => {}} /></ul>);
     const button = screen.getByRole("button");
-    const visible = (button.textContent ?? "").replace(/[^A-Za-z0-9]+/g, "").toLowerCase();
-    const name = (button.getAttribute("aria-label") ?? "").replace(/[^A-Za-z0-9]+/g, "").toLowerCase();
-    expect(name).toBe(visible);
+    // words stay apart in the text itself ("Wildfire Wildfire in Australia", not "WildfireWildfire…"),
+    // and the name says the same words in the same order
+    const words = (t: string) => t.replace(/[^A-Za-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+    expect(words(button.textContent ?? "")).toBe(words(button.getAttribute("aria-label") ?? ""));
   });
 });
 

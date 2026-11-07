@@ -10,5 +10,7 @@ export default defineConfig({
     environment: "node",
     css: false,
     setupFiles: ["src/test-setup.ts"],
+    // whole-dashboard tests take a few seconds; under load they passed the 5 s default
+    testTimeout: 15_000,
   },
 });

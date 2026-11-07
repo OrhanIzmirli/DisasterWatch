@@ -28,14 +28,15 @@ export default function FeedRow({ typeLabel, typeClass, title, subtitle, meta, s
         aria-label={`${typeLabel}: ${title}${subtitle ? `, ${subtitle}` : ""}${meta ? `, ${meta}` : ""}, ${severityLabel.replace(/^[^A-Za-z]+/, "").toLowerCase()}`}
         onClick={(e) => onSelect(e.currentTarget)}
       >
+        {/* the {" "} keep words apart in the text (accessible name, copy, search); flex ignores them visually */}
         <span className="disaster-row-main">
           <span className="disaster-row-top">
-            <span className={`disaster-type-tag ${typeClass}`}>{typeLabel}</span>
+            <span className={`disaster-type-tag ${typeClass}`}>{typeLabel}</span>{" "}
             <span className="disaster-location">{title}</span>
-          </span>
-          {subtitle && <span className="disaster-subtitle">{subtitle}</span>}
+          </span>{" "}
+          {subtitle && <span className="disaster-subtitle">{subtitle}</span>}{" "}
           <span className="disaster-meta">{meta}</span>
-        </span>
+        </span>{" "}
         <span className={`disaster-severity ${severityClass}`}>{severityLabel}</span>
       </button>
     </li>

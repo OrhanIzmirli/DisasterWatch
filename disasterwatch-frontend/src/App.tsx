@@ -242,7 +242,7 @@ export default function App() {
       <StatusBar />
 
       <div className="page-content">
-        <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+        <Suspense fallback={<div className="auth-loading route-loading">Loading…</div>}>
           <Routes>
             <Route path="/" element={<DashboardPage signedIn={Boolean(user)} />} />
 
