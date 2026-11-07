@@ -19,10 +19,13 @@ import {
   clusterTooltip,
   expansionZoom,
   getClustersInView,
+  mergeOverlapping,
+  displayLeaves,
   clusterBackground,
   spiderPositions,
   zoomToReveal,
   type ClusterFeature,
+  type DisplayCluster,
   type ClusterPoint,
   type ClusterProps,
   type PointFeature,
@@ -166,7 +169,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
 
   // ---- viewport state (drives re-clustering) ----
   const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
-  const [spider, setSpider] = useState<{ clusterId: number; center: L.LatLng; leaves: PointFeature[] } | null>(null);
+  const [spider, setSpider] = useState<{ clusterIds: number[]; center: L.LatLng; leaves: PointFeature[] } | null>(null);
   useMapEvents({
     moveend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }),
     zoomend: () => setSpider(null),
@@ -192,16 +195,29 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
       Math.min(180, b.getEast()),
       Math.min(85, b.getNorth()),
     ];
-    return getClustersInView(viewIndex, bbox, view.zoom);
-  }, [viewIndex, view]);
+    // icons that would touch are shown as one cluster (WCAG 2.5.8 target size; see utils/clustering)
+    return mergeOverlapping(getClustersInView(viewIndex, bbox, view.zoom), {
+      project: (lat, lng) => map.project([lat, lng], view.zoom),
+      pointRadius: (id) => getRadiusBySeverity(byId.get(id)?.severity ?? "low"),
+      pointKind: (id) => byId.get(id),
+    });
+  }, [viewIndex, view, map, byId]);
 
   // ---- cluster interaction ----
-  const openCluster = (f: ClusterFeature) => {
-    const leaves = clusterLeaves(viewIndex, f.clusterId);
-    const z = expansionZoom(viewIndex, f.clusterId, maxZoom);
+  const leavesOf = (f: DisplayCluster) => displayLeaves(viewIndex, f, (id) => byId.get(id));
+  /** Zoom that separates the cluster, or null when its events share a place (they are fanned out instead). */
+  const expansionOf = (f: DisplayCluster, leaves = leavesOf(f)) => {
+    if (f.clusterIds.length === 1 && f.pointIds.length === 0) return expansionZoom(viewIndex, f.clusterIds[0], maxZoom);
+    // merged icons: zooming in separates them unless every event sits on the same spot
+    const together = leaves.every((l) => l.lat === leaves[0].lat && l.lng === leaves[0].lng);
+    return together ? null : Math.min(maxZoom, Math.floor(map.getZoom()) + 1);
+  };
+  const openCluster = (f: DisplayCluster) => {
+    const leaves = leavesOf(f);
+    const z = expansionOf(f, leaves);
     if (z === null) {
       // cannot be separated by zooming: fan the events out around the cluster
-      setSpider({ clusterId: f.clusterId, center: L.latLng(f.lat, f.lng), leaves });
+      setSpider({ clusterIds: f.clusterIds, center: L.latLng(f.lat, f.lng), leaves });
       return;
     }
     const bounds = L.latLngBounds(leaves.map((l) => [l.lat, l.lng] as [number, number]));
@@ -215,8 +231,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
   // proportionally to the type counts (conic-gradient) with the count on a
   // dark disc in the centre so the number stays readable on every colour.
   // A cluster that holds a pulsing event pulses too (its ring is drawn by CSS, off with reduced motion).
-  const clusterPulses = (clusterId: number) =>
-    pulseIds.size > 0 && clusterLeaves(viewIndex, clusterId).some((leaf) => pulseIds.has(leaf.pointId));
+  const clusterPulses = (f: DisplayCluster) => pulseIds.size > 0 && leavesOf(f).some((leaf) => pulseIds.has(leaf.pointId));
   const clusterIcon = (count: number, props: ClusterProps, pulse = false) => {
     const r = clusterRadius(count);
     const background = clusterBackground(props);
@@ -288,7 +303,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
           const eps = 1e-6;
           const around = getClustersInView(viewIndex, [target.lng - eps, target.lat - eps, target.lng + eps, target.lat + eps], maxZoom);
           const cluster = around.find((f): f is ClusterFeature => f.kind === "cluster");
-          if (cluster) setSpider({ clusterId: cluster.clusterId, center: L.latLng(cluster.lat, cluster.lng), leaves: clusterLeaves(viewIndex, cluster.clusterId) });
+          if (cluster) setSpider({ clusterIds: [cluster.clusterId], center: L.latLng(cluster.lat, cluster.lng), leaves: clusterLeaves(viewIndex, cluster.clusterId) });
         });
       }
       if (guard !== null) window.clearTimeout(guard);
@@ -435,12 +450,13 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
           const d = byId.get(f.pointId);
           return d ? [renderPulse(d, [d.lat, d.lng]), renderPoint(d, [d.lat, d.lng], false)] : null;
         }
-        if (spider && spider.clusterId === f.clusterId) return null; // replaced by the spider below
+        if (spider && f.clusterIds.some((id) => spider.clusterIds.includes(id))) return null; // replaced by the spider below
+        const fansOut = expansionOf(f) === null;
         return (
           <Marker
-            key={`c${f.clusterId}`}
+            key={f.key}
             position={[f.lat, f.lng]}
-            icon={clusterIcon(f.count, f.props, clusterPulses(f.clusterId))}
+            icon={clusterIcon(f.count, f.props, clusterPulses(f))}
             keyboard={true}
             alt={clusterTooltip(f.count, f.props)}
             eventHandlers={{
@@ -450,7 +466,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
                 const el = (e.target as L.Marker).getElement();
                 if (el) {
                   el.setAttribute("role", "button");
-                  el.setAttribute("aria-label", `${clusterTooltip(f.count, f.props)}. Press Enter to ${expansionZoom(viewIndex, f.clusterId, maxZoom) === null ? "fan out" : "zoom in"}`);
+                  el.setAttribute("aria-label", `${clusterTooltip(f.count, f.props)}. Press Enter to ${fansOut ? "fan out" : "zoom in"}`);
                   // Enter / Space open the cluster (Leaflet only maps keypress to click; be explicit)
                   el.onkeydown = (ev: KeyboardEvent) => {
                     if (ev.key === "Enter" || ev.key === " ") {
@@ -465,7 +481,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
             <Tooltip direction="top" offset={[0, -clusterRadius(f.count)]} opacity={1} className="dw-tooltip">
               <div className="dw-tooltip-inner">
                 <div className="dw-tooltip-title">{clusterTooltip(f.count, f.props)}</div>
-                <div className="dw-tooltip-hint">{expansionZoom(viewIndex, f.clusterId, maxZoom) === null ? "Click to fan out" : "Click to zoom in"}</div>
+                <div className="dw-tooltip-hint">{fansOut ? "Click to fan out" : "Click to zoom in"}</div>
               </div>
             </Tooltip>
           </Marker>

@@ -15,6 +15,10 @@ import {
   TYPE_ORDER,
   TYPE_COLORS,
   type ClusterPoint,
+  mergeOverlapping,
+  displayLeaves,
+  OVERLAP_GAP_PX,
+  type DisplayCluster,
 } from "./clustering";
 
 // Eight wildfires within ~150 km in Queensland + one flood nearby + a quake far away (Fiji).
@@ -193,5 +197,79 @@ describe("performance with 300 points", () => {
     expect(ms).toBeLessThan(200);
     const atWorld = getClustersInView(index, WORLD, 2);
     expect(atWorld.reduce((n, f) => n + (f.kind === "cluster" ? f.count : 1), 0)).toBe(300);
+  });
+});
+
+describe("overlap resolution (WCAG 2.5.8 target size)", () => {
+  // deterministic pseudo-random points, dense in a few hot spots like real fire seasons
+  const rand = (seed: number) => () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+  const synthetic = (n: number, seed: number): ClusterPoint[] => {
+    const r = rand(seed);
+    const spots = [[-20, 130], [-3, 115], [35, 26], [37, 140], [10, 20]];
+    const types = ["wildfire", "earthquake", "flood", "storm"] as const;
+    const sevs = ["high", "medium", "low", "unrated"] as const;
+    return Array.from({ length: n }, (_, i) => {
+      const [lat, lng] = spots[i % spots.length];
+      return { id: i + 1, type: types[Math.floor(r() * 4)], severity: sevs[Math.floor(r() * 4)], lat: lat + (r() - 0.5) * 30, lng: lng + (r() - 0.5) * 40 };
+    });
+  };
+  const markerR = { high: 11, medium: 8, low: 6, unrated: 6 } as const;
+  const project = (z: number) => (lat: number, lng: number) => {
+    const s = 256 * 2 ** z;
+    const sin = Math.sin((lat * Math.PI) / 180);
+    return { x: ((lng + 180) / 360) * s, y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * s };
+  };
+
+  for (const seed of [1, 7, 42]) {
+    it(`leaves no cluster icon touching another icon, and loses no event (seed ${seed})`, () => {
+      const points = synthetic(300, seed);
+      const byId = new Map(points.map((p) => [p.id, p]));
+      const index = buildClusterIndex(points, { maxZoom: 10 });
+      for (let z = 1; z <= 10; z++) {
+        const raw = getClustersInView(index, [-180, -85, 180, 85], z);
+        const shown = mergeOverlapping(raw, { project: project(z), pointRadius: (id) => markerR[byId.get(id)!.severity], pointKind: (id) => byId.get(id) });
+        const at = project(z);
+        const items = shown.map((f) => ({ ...at(f.lat, f.lng), r: f.kind === "cluster" ? clusterRadius(f.count) : markerR[byId.get(f.pointId)!.severity], cluster: f.kind === "cluster" }));
+        for (let i = 0; i < items.length; i++)
+          for (let j = i + 1; j < items.length; j++) {
+            if (!items[i].cluster && !items[j].cluster) continue; // single markers may touch, as before
+            expect(Math.hypot(items[i].x - items[j].x, items[i].y - items[j].y)).toBeGreaterThanOrEqual(items[i].r + items[j].r + OVERLAP_GAP_PX);
+          }
+        const total = (fs: typeof raw | typeof shown) => fs.reduce((n, f) => n + (f.kind === "cluster" ? f.count : 1), 0);
+        expect(total(shown)).toBe(total(raw));
+      }
+    });
+  }
+
+  it("a merged cluster adds up the types and severities and lists every event it holds", () => {
+    const points: ClusterPoint[] = [
+      { id: 1, type: "wildfire", severity: "low", lat: 0, lng: 0 },
+      { id: 2, type: "wildfire", severity: "high", lat: 0.01, lng: 0.01 },
+      { id: 3, type: "flood", severity: "medium", lat: 0.5, lng: 0.5 },
+    ];
+    const byId = new Map(points.map((p) => [p.id, p]));
+    // one cluster (1+2) and a single marker (3) a few px away at zoom 3
+    const raw = getClustersInView(buildClusterIndex(points, { maxZoom: 10, radius: 4 }), [-180, -85, 180, 85], 3);
+    expect(raw.filter((f) => f.kind === "cluster")).toHaveLength(1);
+    const shown = mergeOverlapping(raw, { project: project(3), pointRadius: () => 8, pointKind: (id) => byId.get(id) });
+    expect(shown).toHaveLength(1);
+    const c = shown[0] as DisplayCluster;
+    expect(c.count).toBe(3);
+    expect(c.props).toMatchObject({ wildfire: 2, flood: 1, high: 1, medium: 1, low: 1 });
+    expect(c.pointIds).toEqual([3]);
+    const index = buildClusterIndex(points, { maxZoom: 10, radius: 4 });
+    expect(displayLeaves(index, c, (id) => byId.get(id)).map((l) => l.pointId).sort()).toEqual([1, 2, 3]);
+  });
+
+  it("changes nothing when no icons touch", () => {
+    const points: ClusterPoint[] = [
+      { id: 1, type: "storm", severity: "low", lat: 0, lng: 0 },
+      { id: 2, type: "storm", severity: "low", lat: 0, lng: 0.001 },
+      { id: 3, type: "flood", severity: "low", lat: 40, lng: 100 },
+    ];
+    const byId = new Map(points.map((p) => [p.id, p]));
+    const raw = getClustersInView(buildClusterIndex(points, { maxZoom: 10 }), [-180, -85, 180, 85], 2);
+    const shown = mergeOverlapping(raw, { project: project(2), pointRadius: () => 6, pointKind: (id) => byId.get(id) });
+    expect(shown.map((f) => (f.kind === "cluster" ? f.key : `p${f.pointId}`)).sort()).toEqual(raw.map((f) => (f.kind === "cluster" ? `c${f.clusterId}` : `p${f.pointId}`)).sort());
   });
 });
