@@ -2,6 +2,12 @@
 
 Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
 
+**2026-11-07**
+- Map focus: "Zoom to" (now "Show on map"), the news panel's "Show on map" and a click on a Today's events card fly the map to the event even when the marker caps (15 strongest quakes, wildfires per country) or the type filter had left it off the map; on a phone they switch to the Map view. A news link to an event the feed no longer has says so instead of waiting silently.
+- Event drawer rewritten for readers: a one-sentence summary, key facts, the severity scale with the event's level and the rule's thresholds, plain-language context (USGS magnitude and depth classes, Saffir-Simpson category, GDACS level meaning, how long the source tracked the event) and nearby events; raw values moved to a folded "Technical details" section. Frontend only, from the data the feed already carries.
+- Today's events cards open their event; the signed-out Alert center is centred like the other single-column pages; the map tooltip's pointer is a triangle again (all four borders were coloured, which drew a square).
+- Visual regression and accessibility tests (Playwright, axe-core) for every page at 1440 px and 390 px, in CI.
+
 **2026-10-26**
 - Scheduled wake-up: `POST /internal/ingest` answers within 60 seconds (202 while a long run goes on, the workflow follows it on `/health`); the ingestion job rates only the EONET events it has not recorded yet instead of refreshing every lookup of the last 30 days. Every backup run that cold-started the backend had failed on a 90-second timeout before.
 - Scheduler: GitHub's scheduled workflow is the only wake-up (the external cron service was dropped: Render's edge refused its requests to a sleeping service, `hibernate-wake-error`); it runs every few hours in practice, so the Alerts page and this README say that alerts can be hours late. The e-mail channel counts as "unknown" after 12 hours without a report (was 3).

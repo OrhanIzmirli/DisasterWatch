@@ -58,6 +58,7 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/disasterwatch KAFKA_B
 | Backend (Vitest + supertest) | `cd backend && npm test` | `TEST_DATABASE_URL`, a throwaway PostgreSQL |
 | Notification service (Vitest) | `cd notification-service && npm test` | nothing for the unit tests; the e-mail dispatcher tests run only with `TEST_DATABASE_URL` (schema pushed from `backend/prisma`) and are skipped otherwise |
 | Frontend (Vitest + Testing Library, ESLint) | `cd disasterwatch-frontend && npm run lint && npm test && npm run build` | nothing (lint, tests, type check + production build) |
+| Frontend visual and accessibility (Playwright, axe-core) | `cd disasterwatch-frontend && npm run build && npm run test:e2e` | Chromium (`npx playwright install chromium`); screenshots compare only inside the Linux image, see [Visual tests](#visual-tests) |
 
 The backend suite **refuses to run against the application database**: `TEST_DATABASE_URL` must be set, must not share a host with `DATABASE_URL` (from the environment or `backend/.env`), and the target must not contain any user whose e-mail is not `@example.com`. It pushes the Prisma schema into that database and truncates the tables before every file. A throwaway database for local runs:
 
@@ -69,7 +70,23 @@ TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/dwtest npm test
 
 `GET /disasters` (external NASA/USGS) is not covered by tests on purpose.
 
-**CI** (`.github/workflows/ci.yml`, on every push and pull request): backend tests and notification-service tests, each against its own `postgres:16` service container, and frontend lint, tests and build. All jobs use the Node version from `.nvmrc`.
+**CI** (`.github/workflows/ci.yml`, on every push and pull request): backend tests and notification-service tests, each against its own `postgres:16` service container, frontend lint, tests and build, and the frontend visual and accessibility tests in the Playwright image (a failed run uploads the report with the image diffs). The Node jobs use the version from `.nvmrc`.
+
+### Visual tests
+
+`disasterwatch-frontend/e2e/` runs the production build in Chromium at 1440 px and 390 px with fixed data (`e2e/fixtures.ts`: every API call is answered there, map tiles are blank, the clock is frozen at 2026-11-06 12:00 UTC, invented titles and example.com links only), so a test fails only when the UI changes:
+
+- `visual.spec.ts`: each page, the open drawer (earthquake, wildfire, storm), the news panel and the map tooltip, compared with the reviewed baselines in `e2e/__screenshots__/` (up to 0.2 % of pixels may differ, for anti-aliasing). The status bar's measured API latency is masked.
+- `behaviour.spec.ts`: "Show on map" in the drawer and in the news panel, the Today's events cards, and the note for a news link to an event the feed no longer has.
+- `a11y.spec.ts`: axe-core with the WCAG 2.1 A and AA rules on every page, the drawer and the news panel; serious and critical findings fail.
+
+Font rendering differs between operating systems, so the baselines are made in the image CI uses. After an intended UI change, update them and review the new images in the pull request:
+
+```bash
+docker run --rm -v "$PWD":/work -v /work/disasterwatch-frontend/node_modules -w /work/disasterwatch-frontend   mcr.microsoft.com/playwright:v1.56.1-noble   bash -lc "npm ci && npm run build && npx playwright test --update-snapshots"
+```
+
+The extra `node_modules` volume keeps the container's Linux packages out of the local install. On Windows and macOS the behaviour and accessibility tests run directly (`npx playwright test e2e/behaviour.spec.ts e2e/a11y.spec.ts`); the screenshot comparisons belong to the Linux image.
 
 ---
 

@@ -1948,7 +1948,6 @@ body {
   border: 1px solid rgba(246, 232, 217, 0.15);
   border-radius: 12px;
   padding: 1.4rem;
-  max-width: 640px;
 }
 
 .alerts-signed-out h2 {
@@ -2414,10 +2413,25 @@ body {
   line-height: 1.3;
 }
 
+/* The pointer is Leaflet's 6px border triangle: only the side facing the marker may be
+   coloured. Colouring all four sides turned it into a 12px square under the tooltip. */
 .map-leaflet-container .leaflet-tooltip.dw-tooltip::before {
+  border-color: transparent;
+}
+
+.map-leaflet-container .leaflet-tooltip-top.dw-tooltip::before {
   border-top-color: #001523;
+}
+
+.map-leaflet-container .leaflet-tooltip-bottom.dw-tooltip::before {
   border-bottom-color: #001523;
+}
+
+.map-leaflet-container .leaflet-tooltip-left.dw-tooltip::before {
   border-left-color: #001523;
+}
+
+.map-leaflet-container .leaflet-tooltip-right.dw-tooltip::before {
   border-right-color: #001523;
 }
 
@@ -4023,4 +4037,235 @@ h2.card-title {
 
 .account-delete-form .form-field {
   max-width: 22rem;
+}
+
+/* Today's events: the whole card opens the event (drawer + map), like a feed row */
+.timeline-open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.timeline-open:focus-visible {
+  outline: 2px solid #669bbc;
+  outline-offset: 2px;
+}
+
+/* keyboard users get the same details card as the mouse */
+.timeline-upgraded .timeline-item:focus-within .timeline-hovercard {
+  display: block;
+}
+
+.timeline-upgraded .timeline-item:focus-within .timeline-item-summary {
+  display: none;
+}
+
+/* Shown above the map when a news link points at an event the feed no longer has */
+.map-note {
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(193, 18, 31, 0.35);
+  background: rgba(193, 18, 31, 0.08);
+  color: #3f0d12;
+  font-size: 0.85rem;
+}
+
+.map-note-dismiss {
+  margin-left: 0.4rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ===== EVENT DRAWER: summary, facts, severity scale, context, nearby ===== */
+.edd-intro {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.edd-summary {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--dw-text);
+}
+
+.edd-map-btn {
+  justify-self: start;
+}
+
+.edd-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.edd-fact {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(102, 155, 188, 0.35);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 0;
+}
+
+.edd-fact-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dw-text-muted);
+}
+
+.edd-fact-value {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--dw-text);
+  overflow-wrap: anywhere;
+}
+
+.edd-fact-note {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--dw-text-muted);
+}
+
+/* three-step scale; the event's level is filled, the others outlined */
+.edd-scale {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.edd-scale-step {
+  padding: 0.4rem 0.45rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(203, 213, 225, 0.25);
+  color: var(--dw-text-muted);
+  min-width: 0;
+}
+
+.edd-scale-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.edd-scale-range {
+  display: block;
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+.edd-scale-step.is-current {
+  color: #0b1220;
+}
+
+.edd-scale-low.is-current { background: #6ee7b7; border-color: #6ee7b7; }
+.edd-scale-medium.is-current { background: #fcd34d; border-color: #fcd34d; }
+.edd-scale-high.is-current { background: #fca5a5; border-color: #fca5a5; }
+
+.edd-context {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--dw-text);
+}
+
+.edd-impact {
+  margin-top: 0.6rem;
+}
+
+.edd-life {
+  margin: 0.25rem 0 0;
+}
+
+.edd-nearby {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.edd-nearby-btn {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(102, 155, 188, 0.3);
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--dw-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.edd-nearby-btn:hover {
+  border-color: rgba(102, 155, 188, 0.8);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.edd-nearby-btn:focus-visible {
+  outline: 2px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+
+.edd-nearby-dot {
+  flex: none;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-top: 0.35rem;
+  border-radius: 50%;
+  background: #a8a29e;
+}
+
+.edd-nearby-dot.sev-high { background: #f87171; }
+.edd-nearby-dot.sev-medium { background: #fbbf24; }
+.edd-nearby-dot.sev-low { background: #34d399; }
+
+.edd-nearby-main {
+  display: grid;
+  min-width: 0;
+}
+
+.edd-nearby-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* raw values stay available, folded away */
+.edd-tech > summary {
+  cursor: pointer;
+  list-style: revert;
+}
+
+.edd-tech[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 380px) {
+  .edd-facts {
+    grid-template-columns: 1fr;
+  }
 }

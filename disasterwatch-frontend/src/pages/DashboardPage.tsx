@@ -12,6 +12,7 @@ import HeadlineStrip from "../components/HeadlineStrip";
 import { headlineText } from "../utils/headline";
 import { pulseIds } from "../utils/liveness";
 import { strongestEarthquakes } from "../utils/mapEarthquakes";
+import { nearbyEvents } from "../utils/eventInsights";
 import { usePrefersReducedMotion } from "../utils/usePrefersReducedMotion";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 
@@ -84,6 +85,7 @@ const SOURCE_LABEL = { nasa: "NASA EONET", usgs: "USGS" } as const;
 const SOURCE_ITEMS = { nasa: "wildfires, storms and floods", usgs: "earthquakes" } as const;
 
 type TimelineEvent = {
+  id: number;
   time: string;
   title: string;
   summary: string;
@@ -197,6 +199,9 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
   // list is empty and the skeleton is shown until the backend answers. Never demo rows.
   const [disasters, setDisasters] = useState<DisasterItem[]>(() => getCachedFeed<DisasterItem>()?.items ?? []);
   const [feedStatus, setFeedStatus] = useState<FeedStatus>(() => (getCachedFeed() ? "ready" : "loading"));
+  // True once the items on screen are current: a fresh cache, or the live answer (or its failure) has arrived.
+  // A cached feed shown while the live request runs may lack an event the live one has.
+  const [feedSettled, setFeedSettled] = useState<boolean>(() => isFeedFresh());
   const [feedStale, setFeedStale] = useState(() => getCachedFeed()?.stale ?? false);
   // Per-source status from the backend; a feed with one source in error is "partial"
   const [feedSources, setFeedSources] = useState<FeedSources | null>(() => getCachedFeed()?.sources ?? null);
@@ -249,12 +254,23 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
     return () => window.removeEventListener("dw:skip-to", onSkip);
   }, [isPhone, setPhoneView]);
 
+  // Set when a news link points at an event the current feed no longer contains
+  const [missingEventNote, setMissingEventNote] = useState<string | null>(null);
   useEffect(() => {
     const raw = searchParams.get("event");
     if (!raw) return;
     const id = Number(raw);
     const hit = disasters.find((d) => d.id === id);
-    if (!hit) return; // feed not loaded yet (or unknown id): keep waiting
+    if (!hit) {
+      if (!feedSettled) return; // live feed not in yet: keep waiting
+      // The feed is loaded and the event is not in it (it left the 7-day window or the source closed it)
+      setMissingEventNote("That event is no longer in the live feed, so it cannot be shown on the map.");
+      const next = new URLSearchParams(searchParams);
+      next.delete("event");
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    setMissingEventNote(null);
     if (isPhone) setPhoneView("map");
     setSelectedDisaster(hit);
     // On narrow layouts the map sits below the KPI cards: bring it into view so the flyTo is seen.
@@ -262,7 +278,18 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
     const next = new URLSearchParams(searchParams);
     next.delete("event");
     setSearchParams(next, { replace: true });
-  }, [searchParams, disasters, setSearchParams, isPhone, setPhoneView]);
+  }, [searchParams, disasters, feedSettled, setSearchParams, isPhone, setPhoneView]);
+
+  // A timeline card opens its event like a feed row does, and brings the map into view:
+  // the timeline sits below the feed, often with the map scrolled out of sight.
+  const openFromTimeline = (id: number, opener: HTMLElement) => {
+    const hit = disasters.find((d) => d.id === id);
+    if (!hit) return;
+    openerRef.current = opener;
+    setSelectedDisaster(hit);
+    if (isPhone) setPhoneView("map");
+    else mapPanelRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  };
 
   // Phone: the event opens as a bottom sheet over the lower half of the screen; the map is
   // scrolled to the top of the viewport so the selected marker stays visible above the sheet.
@@ -324,6 +351,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
       setFeedSourcesUpdatedAt(sourcesUpdatedAt);
       setFeedUpdatedAt(updatedAt);
       setFeedStatus("ready");
+      setFeedSettled(true);
     } catch {
       if (signal?.aborted) return;
       const cached = getCachedFeed<DisasterItem>();
@@ -339,6 +367,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
         setDisasters([]);
         setFeedStatus("error");
       }
+      setFeedSettled(true);
     }
   }, []);
 
@@ -437,6 +466,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
     // Same relative-time and clean-title helpers as the feed rows, so no
     // "240m ago" or "Flood in Nepal 1104225" shows up here either.
     return top.map((d) => ({
+      id: d.id,
       time: eventRelativeTime(d) ?? "Now",
       title: `${getTypeLabel(d.type)} reported`,
       summary: d.description ? cleanTitle(d.description) : eventTitle(d),
@@ -535,7 +565,14 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
     const merged = [...eq, ...nonEq].slice(0, MAP_MAX_MARKERS);
     return { list: merged, earthquakesShown: eq.length, earthquakesTotal: showEarthquakes ? filteredDisasters.filter((d) => d.type === "earthquake").length : 0 };
   }, [filteredDisasters, activeFilter]);
-  const mapDisasters = mapMarkers.list;
+  // The selected event is always on the map, even when the caps above (15 strongest
+  // earthquakes, wildfires per country, total markers) or the type filter leave it out:
+  // otherwise "Zoom to", "Show on map" and a click on a timeline card find no marker to fly to.
+  const mapDisasters = useMemo(() => {
+    const list = mapMarkers.list;
+    if (!selectedDisaster || list.some((d) => d.id === selectedDisaster.id)) return list;
+    return [...list, selectedDisaster];
+  }, [mapMarkers.list, selectedDisaster]);
 
   /* =========================
      MAP LIVENESS
@@ -671,6 +708,15 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
                 )}
               </span>
             </div>
+
+            {missingEventNote && (
+              <p className="map-note" role="status">
+                {missingEventNote}{" "}
+                <button type="button" className="map-note-dismiss" onClick={() => setMissingEventNote(null)}>
+                  Dismiss
+                </button>
+              </p>
+            )}
 
             {/* Reset to work around Leaflet marker cache issues */}
             <Suspense fallback={<div className="map-leaflet-container map-loading" aria-hidden="true" />}>
@@ -962,7 +1008,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
           <section className="timeline timeline-upgraded">
             <div className="timeline-header">
               <h3 className="timeline-title">Today&apos;s events</h3>
-              <span className="timeline-hint">Hover on an item for details</span>
+              <span className="timeline-hint">Select an event to open it on the map</span>
             </div>
 
             {feedStatus !== "ready" && <p className="muted timeline-empty">{feedStatus === "loading" ? "Loading…" : "Unavailable while the feed is offline."}</p>}
@@ -970,13 +1016,20 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
               <p className="muted timeline-empty">{disasters.length === 0 ? "Nothing reported yet in this feed window." : "No events for this filter or search."}</p>
             )}
             <ul className="timeline-list">
-              {todayEvents.map((ev, idx) => (
-                <li key={idx} className="timeline-item">
+              {todayEvents.map((ev) => (
+                <li key={ev.id} className="timeline-item">
                   <div className="timeline-timewrap">
                     <span className="timeline-time">{ev.time}</span>
                   </div>
 
                   <div className="timeline-card">
+                    {/* Covers the whole card: opens the event drawer and flies the map to it, like a feed row */}
+                    <button
+                      type="button"
+                      className="timeline-open"
+                      aria-label={`${getTypeLabel(ev.type)}: ${ev.summary}, ${ev.time}. Open on the map`}
+                      onClick={(e) => openFromTimeline(ev.id, e.currentTarget)}
+                    />
                     <div className="timeline-line">
                       <span className={"timeline-dot " + sevDotClass(ev.severity)} />
                       <span className={"timeline-type-icon icon-" + ev.type}>
@@ -1033,6 +1086,11 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
         <EventDetailDrawer
           event={selectedDisaster}
           relatedNews={<RelatedNews eventId={selectedDisaster.id} />}
+          nearby={nearbyEvents(selectedDisaster, disasters, 500, 4)}
+          onSelectEvent={(id) => {
+            const hit = disasters.find((d) => d.id === id);
+            if (hit) setSelectedDisaster(hit);
+          }}
           onClose={() => {
             setSelectedDisaster(null);
             // back to the row (or marker) that opened the drawer, for keyboard users
@@ -1041,6 +1099,9 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
             if (opener && document.contains(opener)) window.setTimeout(() => opener.focus(), 0);
           }}
           onZoomTo={() => {
+            // The map may be out of sight: the Feed view on a phone, scrolled away on a desktop
+            if (isPhone) setPhoneView("map");
+            else mapPanelRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
             // Re-trigger the map's flyTo for the same id by clearing and re-setting the selection
             const current = selectedDisaster;
             setSelectedDisaster(null);

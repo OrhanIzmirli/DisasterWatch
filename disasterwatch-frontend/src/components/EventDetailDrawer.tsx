@@ -1,6 +1,15 @@
 import { useEffect, useRef } from "react";
 import { formatDateTime, relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime } from "../utils/eventText";
+import {
+  GDACS_MEANING,
+  depthClass,
+  lifecycle,
+  quakeClass,
+  severityScale,
+  stormCategory,
+  summarySentence,
+} from "../utils/eventInsights";
 
 export type EventSource = { name: string; url: string };
 
@@ -69,6 +78,10 @@ type Props = {
    * section is rendered. Nothing is shown while it is undefined.
    */
   relatedNews?: React.ReactNode;
+  /** Other feed events close to this one, nearest first (see utils/eventInsights). */
+  nearby?: { event: DrawerEvent; distanceKm: number }[];
+  /** Opens another event in the drawer (used by the nearby list). */
+  onSelectEvent?: (id: number) => void;
 };
 
 const TYPE_LABELS: Record<DrawerEvent["type"], string> = {
@@ -125,7 +138,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => {
+function Fact({ label, value, note }: { label: string; value: React.ReactNode; note?: React.ReactNode }) {
+  return (
+    <div className="edd-fact">
+      <dt className="edd-fact-label">{label}</dt>
+      <dd className="edd-fact-value">
+        {value}
+        {note && <span className="edd-fact-note">{note}</span>}
+      </dd>
+    </div>
+  );
+}
+
+const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews, nearby, onSelectEvent }: Props) => {
   const d = event.details;
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -146,29 +171,43 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
   const occurredAt = d?.occurredAt ?? null;
   const occurredRelative = eventRelativeTime(event); // falls back to the feed's minutes-ago counter
   const isQuake = event.type === "earthquake";
-
   const isStorm = event.type === "storm";
-  const sizeLabel = isQuake ? "Magnitude" : isStorm ? "Wind" : "Size";
-  const stormCategory = (kts: number) =>
-    kts >= 137 ? "Cat-5" : kts >= 113 ? "Cat-4" : kts >= 96 ? "Cat-3" : kts >= 83 ? "Cat-2" : kts >= 64 ? "Cat-1" : "tropical storm";
-  // The magnitude text comes pre-formatted from the backend so this row, the
-  // title, the feed row, the tooltip and the severity reason all agree.
-  // Wildfire areas are shown in hectares (normalised by the backend); when the
-  // source reported acres the original figure follows in brackets.
-  const sizeValue = isQuake
-    ? d?.magnitudeLabel
-      ? `M ${d.magnitudeLabel}${d.magType ? ` (${d.magType})` : ""}`
-      : null
-    : isStorm && d?.peakKts !== null && d?.peakKts !== undefined
-    ? `Peaked ${Math.round(d.peakKts).toLocaleString("en-GB")} kts (${stormCategory(d.peakKts)}), now ${Math.round(d.currentKts ?? d.peakKts).toLocaleString("en-GB")} kts`
-    : event.type === "wildfire" && d?.areaHa !== null && d?.areaHa !== undefined
-    ? `${Math.round(d.areaHa).toLocaleString("en-GB")} ha${
-        d.magnitudeUnit && /^acres?$/i.test(d.magnitudeUnit) && d.magnitudeValue !== null ? ` (${d.magnitudeValue.toLocaleString("en-GB")} acres)` : ""
-      }`
-    : d?.magnitudeValue !== null && d?.magnitudeValue !== undefined
-    ? `${d.magnitudeValue.toLocaleString("en-GB")} ${UNIT_LABELS[d.magnitudeUnit ?? ""] ?? d.magnitudeUnit ?? ""}`.trim()
-    : null;
 
+  // The magnitude text comes pre-formatted from the backend so this panel, the
+  // title, the feed row, the tooltip and the severity reason all agree.
+  const quakeMag = isQuake && d?.magnitude !== null && d?.magnitude !== undefined ? d.magnitude : null;
+  const sizeFact: { label: string; value: string | null; note?: string } = isQuake
+    ? {
+        label: "Magnitude",
+        value: d?.magnitudeLabel ? `M ${d.magnitudeLabel}` : null,
+        note: quakeMag !== null ? quakeClass(quakeMag).label : undefined,
+      }
+    : isStorm && d?.peakKts !== null && d?.peakKts !== undefined
+    ? {
+        label: "Peak wind",
+        value: `${Math.round(d.peakKts).toLocaleString("en-GB")} kts`,
+        note: stormCategory(d.peakKts),
+      }
+    : event.type === "wildfire" && d?.areaHa !== null && d?.areaHa !== undefined
+    ? {
+        label: "Burned area",
+        value: `${Math.round(d.areaHa).toLocaleString("en-GB")} ha`,
+        note: `${(d.areaHa / 100).toLocaleString("en-GB", { maximumFractionDigits: 1 })} km²${
+          d.magnitudeUnit && /^acres?$/i.test(d.magnitudeUnit) && d.magnitudeValue !== null
+            ? ` · reported as ${d.magnitudeValue.toLocaleString("en-GB")} acres`
+            : ""
+        }`,
+      }
+    : d?.magnitudeValue !== null && d?.magnitudeValue !== undefined
+    ? {
+        label: "Size",
+        value: `${d.magnitudeValue.toLocaleString("en-GB")} ${UNIT_LABELS[d.magnitudeUnit ?? ""] ?? d.magnitudeUnit ?? ""}`.trim(),
+      }
+    : { label: "Size", value: null };
+
+  const depth = isQuake && d?.depthKm !== null && d?.depthKm !== undefined ? d.depthKm : null;
+  const scale = severityScale(event);
+  const life = lifecycle(event);
   const hasImpact =
     isQuake && d && (d.pagerAlert !== null || d.tsunami === true || (d.feltReports !== null && d.feltReports > 0));
 
@@ -194,56 +233,86 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
         </div>
 
         <div className="detail-body edd-body">
-          <Section title="When">
-            <dl className="edd-rows">
-              <Row label="Occurred">
-                {occurredRelative ? (
-                  <>
-                    <strong>{occurredRelative}</strong>
-                    {occurredAt && (
-                      <div className="edd-sub">
-                        {formatDateTime(occurredAt)} local · {utcString(occurredAt)}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  NOT_REPORTED
-                )}
-              </Row>
-              {d?.updatedAt && d.updatedAt !== occurredAt && (
-                <Row label="Last update">
-                  {relativeTime(d.updatedAt)}
-                  <div className="edd-sub">{utcString(d.updatedAt)}</div>
-                </Row>
-              )}
-            </dl>
-          </Section>
-
-          <Section title="Where">
-            <dl className="edd-rows">
-              <Row label="Place">{d?.place ?? (cleanTitle(event.location) || NOT_REPORTED)}</Row>
-              <Row label="Coordinates">
-                {fmtCoord(event.lat)}, {fmtCoord(event.lng)}
-                {d?.locationPrecision === "approximate" && (
-                  <div className="edd-sub edd-approx">Approximate location — sources disagree on the exact area</div>
-                )}
-              </Row>
-              {isQuake && (
-                <Row label="Depth">{d?.depthKm !== null && d?.depthKm !== undefined ? `${d.depthKm.toFixed(1)} km` : NOT_REPORTED}</Row>
-              )}
-            </dl>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={onZoomTo}>
-              Zoom to
+          <section className="edd-section edd-intro">
+            <p className="edd-summary">{summarySentence(event)}</p>
+            <button type="button" className="btn btn-primary btn-sm edd-map-btn" onClick={onZoomTo}>
+              Show on map
             </button>
+          </section>
+
+          <Section title="At a glance">
+            <dl className="edd-facts">
+              <Fact label={sizeFact.label} value={sizeFact.value ?? NOT_REPORTED} note={sizeFact.note} />
+              {isQuake ? (
+                <Fact
+                  label="Depth"
+                  value={depth !== null ? `${depth.toFixed(1)} km` : NOT_REPORTED}
+                  note={depth !== null ? depthClass(depth).label : undefined}
+                />
+              ) : (
+                <Fact label="Status" value={d?.status ?? NOT_REPORTED} />
+              )}
+              <Fact
+                label="When"
+                value={occurredRelative ?? NOT_REPORTED}
+                note={occurredAt ? `${formatDateTime(occurredAt)} local` : undefined}
+              />
+              <Fact label="Severity" value={SEVERITY_LABELS[event.severity]} note={scale.basis} />
+            </dl>
           </Section>
 
-          <Section title={sizeLabel}>
-            <p className="edd-text">{sizeValue ?? NOT_REPORTED}</p>
-          </Section>
+          <Section title="How serious is it">
+            <ol className="edd-scale" aria-label={`Severity scale by ${scale.basis.toLowerCase()}`}>
+              {scale.steps.map((s) => (
+                <li
+                  key={s.level}
+                  className={`edd-scale-step edd-scale-${s.level}${scale.current === s.level ? " is-current" : ""}`}
+                  aria-current={scale.current === s.level ? "true" : undefined}
+                >
+                  <span className="edd-scale-label">{s.label}</span>
+                  <span className="edd-scale-range">{s.range}</span>
+                </li>
+              ))}
+            </ol>
+            {scale.current === null && (
+              <p className="edd-sub">Not rated: the source reports no intensity for this event, so no level is guessed.</p>
+            )}
+            <p className="edd-text">{d?.severityReason ?? `${SEVERITY_LABELS[event.severity]} severity`}</p>
+            {d?.severitySource && <p className="edd-sub">{d.severitySource}</p>}
 
-          {hasImpact && d && (
-            <Section title="Impact">
-              <dl className="edd-rows">
+            <ul className="edd-context">
+              {quakeMag !== null && (
+                <li>
+                  <strong>{quakeClass(quakeMag).label} earthquake:</strong> {quakeClass(quakeMag).meaning}.
+                </li>
+              )}
+              {depth !== null && (
+                <li>
+                  <strong>{depthClass(depth).label}:</strong> {depthClass(depth).meaning}.
+                </li>
+              )}
+              {isStorm && d?.peakKts !== null && d?.peakKts !== undefined && (
+                <li>
+                  <strong>{stormCategory(d.peakKts)} at its peak</strong>
+                  {d.currentKts !== null && d.currentKts !== undefined && d.currentKts < d.peakKts
+                    ? `; the latest advisory reports ${Math.round(d.currentKts).toLocaleString("en-GB")} kts (${stormCategory(d.currentKts).toLowerCase()}).`
+                    : "."}
+                </li>
+              )}
+              {d?.gdacsLevel && (
+                <li>
+                  <span className={`edd-gdacs edd-gdacs-${d.gdacsLevel}`}>{d.gdacsLevel}</span> GDACS level:{" "}
+                  {GDACS_MEANING[d.gdacsLevel]}
+                  {d.gdacsScore !== null && d.gdacsScore !== undefined ? ` (score ${d.gdacsScore})` : ""} ·{" "}
+                  <a href="https://www.gdacs.org/" target="_blank" rel="noreferrer" className="text-link">
+                    gdacs.org
+                  </a>
+                </li>
+              )}
+            </ul>
+
+            {hasImpact && d && (
+              <dl className="edd-rows edd-impact">
                 {d.pagerAlert && (
                   <Row label="PAGER">
                     <span className={`edd-pager edd-pager-${d.pagerAlert}`}>{d.pagerAlert}</span>
@@ -255,22 +324,37 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
                   <Row label="Felt reports">{d.feltReports.toLocaleString("en-GB")} (USGS "Did You Feel It?")</Row>
                 )}
               </dl>
-            </Section>
-          )}
-
-          <Section title="Why it's on the map">
-            <p className="edd-text">{d?.severityReason ?? `${SEVERITY_LABELS[event.severity]} severity`}</p>
-            {d?.severitySource && <p className="edd-sub">{d.severitySource}</p>}
-            {d?.gdacsLevel && (
-              <p className="edd-sub">
-                <span className={`edd-gdacs edd-gdacs-${d.gdacsLevel}`}>{d.gdacsLevel}</span> GDACS impact level
-                {d.gdacsScore !== null && d.gdacsScore !== undefined ? ` (score ${d.gdacsScore})` : ""} ·{" "}
-                <a href="https://www.gdacs.org/" target="_blank" rel="noreferrer" className="text-link">
-                  gdacs.org
-                </a>
-              </p>
             )}
           </Section>
+
+          <Section title="Where">
+            <p className="edd-text">{d?.place ?? (cleanTitle(event.location) || NOT_REPORTED)}</p>
+            {d?.locationPrecision === "approximate" && (
+              <p className="edd-sub edd-approx">Approximate location — sources disagree on the exact area</p>
+            )}
+            {life && <p className="edd-sub edd-life">{life}</p>}
+          </Section>
+
+          {nearby && nearby.length > 0 && (
+            <Section title="Nearby in this feed">
+              <ul className="edd-nearby">
+                {nearby.map(({ event: n, distanceKm }) => (
+                  <li key={n.id}>
+                    <button type="button" className="edd-nearby-btn" onClick={() => onSelectEvent?.(n.id)}>
+                      <span className={`edd-nearby-dot sev-${n.severity}`} aria-hidden="true" />
+                      <span className="edd-nearby-main">
+                        <span className="edd-nearby-title">{n.details?.cleanTitle || cleanTitle(n.location)}</span>
+                        <span className="edd-sub">
+                          {TYPE_LABELS[n.type]} · {SEVERITY_LABELS[n.severity]} · {Math.round(distanceKm).toLocaleString("en-GB")} km away
+                          {eventRelativeTime(n) ? ` · ${eventRelativeTime(n)}` : ""}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
 
           {relatedNews !== undefined && <Section title="Related news">{relatedNews}</Section>}
 
@@ -290,6 +374,37 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews }: Props) => 
               <p className="edd-text">{NOT_REPORTED}</p>
             )}
           </Section>
+
+          <details className="edd-section edd-tech">
+            <summary className="edd-section-title">Technical details</summary>
+            <dl className="edd-rows">
+              <Row label="Occurred">{occurredAt ? utcString(occurredAt) : NOT_REPORTED}</Row>
+              {d?.updatedAt && d.updatedAt !== occurredAt && (
+                <Row label="Last update">
+                  {utcString(d.updatedAt)}
+                  <div className="edd-sub">{relativeTime(d.updatedAt)}</div>
+                </Row>
+              )}
+              <Row label="Coordinates">
+                {fmtCoord(event.lat)}, {fmtCoord(event.lng)}
+              </Row>
+              {d?.locationSource && (
+                <Row label="Location from">
+                  {d.locationSource === "gdacs" ? "GDACS event point" : "NASA EONET geometry"}
+                  {d.locationOffsetKm !== null && d.locationOffsetKm !== undefined
+                    ? ` (sources ${Math.round(d.locationOffsetKm).toLocaleString("en-GB")} km apart)`
+                    : ""}
+                </Row>
+              )}
+              {isQuake && d?.magType && <Row label="Magnitude type">{d.magType}</Row>}
+              {!isQuake && d?.magnitudeValue !== null && d?.magnitudeValue !== undefined && (
+                <Row label="Source value">
+                  {d.magnitudeValue.toLocaleString("en-GB")} {d.magnitudeUnit ?? ""}
+                </Row>
+              )}
+              {d?.eventId && <Row label="Event id">{d.eventId}</Row>}
+            </dl>
+          </details>
         </div>
       </div>
     </>

@@ -80,3 +80,74 @@ describe("EventDetailDrawer location precision", () => {
     expect(screen.queryByText(/Approximate location/)).toBeNull();
   });
 });
+
+describe("EventDetailDrawer content", () => {
+  const quake: DrawerEvent = {
+    id: 7,
+    type: "earthquake",
+    severity: "low",
+    location: "M 4.7 - 100 km SSE of Palekastro, Greece",
+    meta: "",
+    description: "",
+    lat: 34.3,
+    lng: 26.5,
+    details: {
+      cleanTitle: "M 4.7 - 100 km SSE of Palekastro, Greece",
+      place: "100 km SSE of Palekastro, Greece",
+      magnitude: 4.7,
+      magnitudeLabel: "4.7",
+      magType: "mb",
+      depthKm: 40.2,
+      sources: [],
+      severity: "low",
+      severityReason: "Low: magnitude 4.7 (< 5.0)",
+      severitySource: "Severity rule applied to the USGS magnitude",
+    } as unknown as DrawerEvent["details"],
+  };
+
+  it("opens with a plain-language summary and the key facts", () => {
+    render(<EventDetailDrawer event={quake} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText(/^A magnitude 4\.7 earthquake at 40 km depth, 100 km SSE of Palekastro, Greece/)).toBeTruthy();
+    expect(screen.getByText("M 4.7")).toBeTruthy();
+    expect(screen.getByText("Light")).toBeTruthy();
+    expect(screen.getByText("40.2 km")).toBeTruthy();
+    expect(screen.getByText("Shallow")).toBeTruthy();
+  });
+
+  it("marks the event's level on the severity scale", () => {
+    render(<EventDetailDrawer event={quake} onClose={() => {}} onZoomTo={() => {}} />);
+    const current = document.querySelector(".edd-scale [aria-current='true']");
+    expect(current?.textContent).toContain("Low");
+    expect(current?.textContent).toContain("below M 5.0");
+  });
+
+  it("keeps raw values in a folded technical section", () => {
+    render(<EventDetailDrawer event={quake} onClose={() => {}} onZoomTo={() => {}} />);
+    const tech = document.querySelector("details.edd-tech") as HTMLDetailsElement;
+    expect(tech.open).toBe(false);
+    expect(tech.textContent).toContain("34.300, 26.500");
+    expect(tech.textContent).toContain("mb");
+  });
+
+  it("'Show on map' asks the dashboard to fly to the event", () => {
+    const onZoomTo = vi.fn();
+    render(<EventDetailDrawer event={quake} onClose={() => {}} onZoomTo={onZoomTo} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show on map" }));
+    expect(onZoomTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists nearby events and opens one on click", () => {
+    const onSelectEvent = vi.fn();
+    const other: DrawerEvent = { ...quake, id: 8, location: "M 4.5 - 87 km S of Ierapetra, Greece", details: { ...quake.details!, cleanTitle: "M 4.5 - 87 km S of Ierapetra, Greece" } };
+    render(<EventDetailDrawer event={quake} onClose={() => {}} onZoomTo={() => {}} nearby={[{ event: other, distanceKm: 64.4 }]} onSelectEvent={onSelectEvent} />);
+    fireEvent.click(screen.getByRole("button", { name: /Ierapetra/ }));
+    expect(onSelectEvent).toHaveBeenCalledWith(8);
+    expect(screen.getByText(/64 km away/)).toBeTruthy();
+  });
+
+  it("says why nothing is marked for a not-rated event", () => {
+    render(<EventDetailDrawer event={{ ...event, severity: "unrated" }} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText(/so no level is guessed/)).toBeTruthy();
+    expect(document.querySelector(".edd-scale [aria-current='true']")).toBeNull();
+  });
+});
