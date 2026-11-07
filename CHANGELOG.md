@@ -3,6 +3,7 @@
 Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
 
 **2026-11-07**
+- Multi-source fusion, step 3: cross-source matching (EMSC to USGS quakes, NHC to EONET storms, FIRMS and GDACS to EONET events) with one-to-one, mutual-best and ambiguity rules, roles that tell independent confirmations from relays, and a live evaluation script; [Scoring](docs/scoring.md) documents the rules and the first evaluation (715 of 729 quakes confirmed or listed by EMSC, none ambiguous).
 - Multi-source fusion, step 2: NASA FIRMS satellite fire detections near each wildfire (10 km, 48 h), looked up in the background once an hour per fire; off until `FIRMS_MAP_KEY` is set.
 - Multi-source fusion, step 1: EMSC earthquakes and NOAA NHC active storms are fetched as confirming sources (lazily, cached, incremental for EMSC, with backoff) and reported in `/health`; nothing visible changes yet. [Data sources](docs/sources.md) lists every source with its licence and fetch rate.
 - Rate limits count the real client: behind Cloudflare and Render's hops (and the site's /api rewrite) `req.ip` was an internal address that changed per request, so one client was spread over several counters and unrelated clients could share one. The client address now comes from `True-Client-IP` / `CF-Connecting-IP` (verified live that a client cannot forge either) for every limiter.
