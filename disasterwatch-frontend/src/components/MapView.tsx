@@ -31,6 +31,7 @@ import {
   type PointFeature,
 } from "../utils/clustering";
 import { visibleCenterOffset } from "../utils/mapCentering";
+import { BAND_LABELS, confidenceBand, priorityBand, type Band, type FeedScores } from "../utils/scores";
 
 // Web Mercator world tiles are 256px square per zoom step (256 * 2^z).
 // Below this helper figures out the smallest integer zoom at which the
@@ -90,6 +91,8 @@ export type MapDisaster = {
     peakKts?: number | null;
     currentKts?: number | null;
   };
+  /** Confidence and priority (docs/scoring.md): priority sets the size, confidence the outline. */
+  scores?: FeedScores;
 };
 
 type MapViewProps = {
@@ -152,6 +155,29 @@ const getRadiusBySeverity = (severity: Severity) => {
   }
 };
 
+const RADIUS_BY_BAND: Record<Band, number> = { high: 11, medium: 8, low: 6 };
+
+/** Marker radius: from the priority score when the event has one, else from its severity. */
+const markerRadius = (d: MapDisaster) => (d.scores ? RADIUS_BY_BAND[priorityBand(d.scores.priority)] : getRadiusBySeverity(d.severity));
+
+/**
+ * Outline from the confidence score: solid (70+), dashed (40-69), dotted
+ * (under 40); the legend explains it and the tooltip and screen-reader label
+ * say the numbers, so nothing depends on seeing the dashes.
+ */
+const OUTLINE: Record<Band, { dashArray?: string; weight: number }> = {
+  high: { weight: 2 },
+  medium: { dashArray: "4 3", weight: 2 },
+  low: { dashArray: "1.5 3", weight: 2 },
+};
+
+/** "priority 66 (high), confidence 80 (high), 2 independent confirmations" */
+function scoreText(s: NonNullable<FeedScores>) {
+  return `priority ${s.priority} (${BAND_LABELS[priorityBand(s.priority)]}), confidence ${s.confidence} (${BAND_LABELS[confidenceBand(s.confidence)]}), ${
+    s.confirmations === 0 ? "no independent confirmation" : `${s.confirmations} independent confirmation${s.confirmations === 1 ? "" : "s"}`
+  }`;
+}
+
 /**
  * Marker rendering, clustering and flyTo logic inside the map.
  *
@@ -198,7 +224,10 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
     // icons that would touch are shown as one cluster (WCAG 2.5.8 target size; see utils/clustering)
     return mergeOverlapping(getClustersInView(viewIndex, bbox, view.zoom), {
       project: (lat, lng) => map.project([lat, lng], view.zoom),
-      pointRadius: (id) => getRadiusBySeverity(byId.get(id)?.severity ?? "low"),
+      pointRadius: (id) => {
+        const d = byId.get(id);
+        return d ? markerRadius(d) : getRadiusBySeverity("low");
+      },
       pointKind: (id) => byId.get(id),
     });
   }, [viewIndex, view, map, byId]);
@@ -365,7 +394,7 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
       <CircleMarker
         key={`pulse-${d.id}${extraKey}`}
         center={position}
-        radius={getRadiusBySeverity(d.severity)}
+        radius={markerRadius(d)}
         interactive={false}
         className="map-pulse-ring"
         pathOptions={{ color: getColorByType(d.type), weight: 2, opacity: 0.9, fill: false }}
@@ -374,9 +403,15 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
     ) : null;
 
   const renderPoint = (d: MapDisaster, position: [number, number], isHighlight: boolean, extraKey = "") => {
-    const radius = getRadiusBySeverity(d.severity) + (isHighlight ? 3 : 0);
+    const radius = markerRadius(d) + (isHighlight ? 3 : 0);
+    const outline = d.scores ? OUTLINE[confidenceBand(d.scores.confidence)] : { weight: 1.5 };
     const markerClass =
-      "map-marker map-marker-" + d.type + " map-marker-" + d.severity + (isHighlight ? " map-marker-highlight" : "");
+      "map-marker map-marker-" +
+      d.type +
+      " map-marker-" +
+      d.severity +
+      (d.scores ? " map-marker-confidence-" + confidenceBand(d.scores.confidence) : "") +
+      (isHighlight ? " map-marker-highlight" : "");
     return (
       <CircleMarker
         key={`${d.id}${extraKey}`}
@@ -385,7 +420,9 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
         className={markerClass}
         pathOptions={{
           color: "#F6E8D9",
-          weight: isHighlight ? 2.2 : 1.5,
+          weight: isHighlight ? Math.max(2.2, outline.weight) : outline.weight,
+          dashArray: outline.dashArray,
+          lineCap: "butt",
           fillColor: getColorByType(d.type),
           fillOpacity: isHighlight ? 1 : 0.95,
         }}
@@ -396,7 +433,10 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
             const el = (e.target as L.Path).getElement();
             if (el) {
               el.setAttribute("role", "img");
-              el.setAttribute("aria-label", `${TYPE_LABELS[d.type]}, ${d.severity === "unrated" ? "not rated" : d.severity}, ${tooltipTitle(d)}`);
+              el.setAttribute(
+                "aria-label",
+                `${TYPE_LABELS[d.type]}, ${d.severity === "unrated" ? "not rated" : d.severity}, ${tooltipTitle(d)}${d.scores ? `, ${scoreText(d.scores)}` : ""}`
+              );
             }
           },
         }}
@@ -427,6 +467,12 @@ const MapInner: FC<MapInnerProps> = ({ disasters, highlightId, onSelect, pulseId
               )}
             </div>
             {d.details?.severityReason && <div className="dw-tooltip-reason">{d.details.severityReason}</div>}
+            {d.scores && (
+              <div className="dw-tooltip-scores">
+                Priority {d.scores.priority} · Confidence {d.scores.confidence}
+                {d.scores.confirmations > 0 && <> · ✓ {d.scores.confirmations} independent</>}
+              </div>
+            )}
             <div className="dw-tooltip-hint">Click for details</div>
           </div>
         </Tooltip>

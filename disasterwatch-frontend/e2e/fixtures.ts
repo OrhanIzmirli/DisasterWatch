@@ -169,6 +169,69 @@ export const FEED: Item[] = [
   }),
 ];
 
+// Invented scores, as GET /disasters serves them since the scoring step: every
+// priority size and confidence outline appears on the map.
+const SCORES: Record<number, { confidence: number; priority: number; confirmations: number }> = {
+  1: { confidence: 80, priority: 66, confirmations: 1 },
+  2: { confidence: 65, priority: 27, confirmations: 0 },
+  3: { confidence: 35, priority: 18, confirmations: 0 },
+  4: { confidence: 80, priority: 41, confirmations: 1 },
+  5: { confidence: 60, priority: 33, confirmations: 0 },
+  6: { confidence: 66, priority: 35, confirmations: 1 },
+  7: { confidence: 45, priority: 52, confirmations: 0 },
+  8: { confidence: 25, priority: 71, confirmations: 0 },
+  9: { confidence: 45, priority: 38, confirmations: 0 },
+};
+for (const d of FEED) d.scores = SCORES[d.id] ?? null;
+
+/** GET /api/v1/disasters/{id} for a fixture event: terms that add up to its invented scores. */
+function scoreExplanation(apiId: string) {
+  const item = FEED.find((d) => {
+    const eventId = (d.details as { eventId: string }).eventId;
+    return eventId === apiId || eventId === apiId.replace(/^eonet:/, "nasa:");
+  });
+  const sc = item ? SCORES[item.id] : undefined;
+  if (!item || !sc) return null;
+  const usgs = item.type === "earthquake";
+  const primary = usgs ? 60 : 40;
+  const diff = sc.confidence - primary;
+  const other = usgs ? "emsc" : item.type === "wildfire" ? "firms" : "gdacs";
+  const role = sc.confirmations > 0 ? "confirming" : "listed";
+  const sources: Record<string, unknown>[] = [
+    { source: usgs ? "usgs" : "eonet", role: "primary", sourceEventId: `example${item.id}`, url: `https://example.com/event/${item.id}`, matchedBy: null, distanceKm: null, timeDeltaSec: null },
+  ];
+  const components: Record<string, unknown>[] = [{ term: "primary", source: usgs ? "usgs" : "eonet", points: primary, reason: usgs ? "USGS, reviewed by a seismologist" : "NASA EONET" }];
+  if (diff > 0) {
+    sources.push(
+      other === "emsc"
+        ? { source: "emsc", role, sourceEventId: `ex-${item.id}`, url: `https://example.com/emsc/${item.id}`, matchedBy: "rule", distanceKm: 6.2, timeDeltaSec: 2, agency: role === "confirming" ? "GFZ" : "NEIC", magnitude: 5 }
+        : other === "firms"
+        ? { source: "firms", role, sourceEventId: null, url: "https://example.com/firms", matchedBy: "proximity", distanceKm: null, timeDeltaSec: -3600, detections: 7 }
+        : { source: "gdacs", role, sourceEventId: null, url: "https://example.com/gdacs", matchedBy: "reference", distanceKm: null, timeDeltaSec: null, level: "orange" }
+    );
+    components.push({ term: "confirmation", source: other, role, points: diff, reason: `${other.toUpperCase()}: ${role === "confirming" ? "independent confirmation" : "lists it, not independently"}` });
+  } else if (diff < 0) {
+    components.push({ term: "staleness", points: diff, reason: `last seen ${24 + -diff * 6} h ago` });
+  }
+  const level = Math.max(0, Math.round((sc.priority - 0.2 * sc.confidence) / 0.8));
+  return {
+    data: {
+      sources,
+      ambiguousSources: [],
+      confidence: { score: sc.confidence, components },
+      priority: {
+        score: sc.priority,
+        components: [
+          { term: "severity", value: level, weight: 0.45, basis: usgs ? "magnitude" : "rated by its source" },
+          { term: "exposure", value: level, weight: 0.35, basis: "about 120,000 people in places within 50 km" },
+          { term: "confidence", value: sc.confidence, weight: 0.2, basis: `confidence ${sc.confidence}` },
+        ],
+        exposure: { population: 120000, radiusKm: 50 },
+      },
+    },
+  };
+}
+
 function feedPayload() {
   const bySeverity: Record<string, number> = { high: 0, medium: 0, low: 0, unrated: 0 };
   const byType: Record<string, Record<string, number>> = {};
@@ -189,6 +252,7 @@ function feedPayload() {
     sourcesUpdatedAt: { nasa: hoursAgo(0.05), usgs: hoursAgo(0.05) },
     updatedAt: hoursAgo(0.05),
     params: { minutesWindow: 10080, limit: 200, minMag: 4.5 },
+    scoring: { version: 1, status: { emsc: "ok", nhc: "ok", firms: "off" } },
     // as served by backend/src/utils/severity.js (SEVERITY_RULES)
     severityRules: {
       earthquake: { basis: "magnitude", unit: "M", medium: 5.0, high: 6.0, step: 0.1 },
@@ -297,6 +361,11 @@ export async function mockApi(page: Page) {
       return json({ message: "GDACS is not reachable right now" }, 503);
     }
     if (path === "/v1/openapi.json") return json(OPENAPI);
+    // the event drawer's "Why these scores?" breakdown
+    if (path.startsWith("/v1/disasters/")) {
+      const detail = scoreExplanation(decodeURIComponent(path.slice("/v1/disasters/".length)));
+      return detail ? json(detail) : json({ error: { code: "not_found", message: "No event" } }, 404);
+    }
     // newest event for the /api page's "One event" example (invented id)
     if (path === "/v1/disasters") return json({ data: [{ id: "usgs:ex000001" }], meta: { count: 1 }, attribution: {} });
     if (path === "/v1/developer/session") return json({ enabled: true, developer: null, key: null });

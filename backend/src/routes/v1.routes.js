@@ -26,7 +26,7 @@ import { keyStore as defaultKeyStore } from "../services/apiKeys.js";
 import { feedService as defaultFeed, FeedUnavailableError } from "../services/feed.service.js";
 import { SEVERITY_RULES } from "../utils/severity.js";
 import { ATTRIBUTION } from "../api/v1/attribution.js";
-import { BadRequest, createEventCache, parseListQuery, selectPage, withFusion, TYPES, SEVERITIES, WINDOW_DAYS, WINDOW_MS, PAGE_LIMIT, RATE_LIMIT, KEY_RATE_LIMIT } from "../api/v1/events.js";
+import { BadRequest, createEventCache, sharedEventsFor, parseListQuery, selectPage, withFusion, TYPES, SEVERITIES, WINDOW_DAYS, WINDOW_MS, PAGE_LIMIT, RATE_LIMIT, KEY_RATE_LIMIT } from "../api/v1/events.js";
 import { fusion as defaultFusion } from "../services/fusion/index.js";
 import { SCORE_VERSION } from "../services/fusion/scores.js";
 import { buildOpenApi } from "../api/v1/openapi.js";
@@ -60,10 +60,12 @@ function sendError(res, status, code, message) {
  * @param {{ verify: (key: string) => Promise<number | null> }} [options.keyStore] API key lookup (services/apiKeys.js)
  * @param {number} [options.keyLimit] requests per window with a valid key (default 600)
  * @param {{ fuse: Function }} [options.fusion] multi-source fusion (services/fusion)
+ * @param {Function} [options.eventsFor] event cache; the default (the process-wide feed) is shared with the dashboard scores
  */
-export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, now = () => Date.now(), keyStore = defaultKeyStore, keyLimit = V1_KEY_RATE_LIMIT.limit, fusion = defaultFusion } = {}) {
+export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, now = () => Date.now(), keyStore = defaultKeyStore, keyLimit = V1_KEY_RATE_LIMIT.limit, fusion = defaultFusion, eventsFor: eventsOption } = {}) {
   const router = express.Router();
-  const eventsFor = createEventCache();
+  // the shared cache serves the process-wide feed; a router given its own feed (tests) gets its own cache
+  const eventsFor = eventsOption ?? (feed === defaultFeed ? sharedEventsFor : createEventCache());
   let fusedCache = null;
 
   /** Public events with the fusion fields; when fusion fails the events are served without scores. */

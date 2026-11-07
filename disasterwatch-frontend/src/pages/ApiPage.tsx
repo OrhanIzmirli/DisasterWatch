@@ -17,6 +17,10 @@ const ID_PLACEHOLDER = "<id from data[].id>";
 
 const EXAMPLES = (base: string, eventId: string | null) => [
   { label: "High-severity events of the last 30 days", cmd: `curl "${base}/disasters?minSeverity=high"` },
+  {
+    label: "High-priority events that independent sources confirm (each lists its sources and the terms behind its scores)",
+    cmd: `curl "${base}/disasters?minPriority=60&minConfidence=70"`,
+  },
   { label: "Earthquakes and storms in a box (Japan), 20 per page", cmd: `curl "${base}/disasters?type=earthquake,storm&bbox=128,30,146,46&limit=20"` },
   { label: "Next page", cmd: `curl "${base}/disasters?type=earthquake,storm&bbox=128,30,146,46&limit=20&cursor=<meta.nextCursor>"` },
   {

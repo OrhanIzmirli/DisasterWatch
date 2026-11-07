@@ -143,6 +143,7 @@ describe("priority", () => {
       ["confidence", 80, 0.2],
     ]);
     expect(p.exposure).toEqual({ population: 1_000_000, radiusKm: 100 });
+    expect(priorityScore(quake(), [primary("usgs")], 80, pop(0)).components[1]).toMatchObject({ value: 0, basis: "no places of 5,000 or more people within 100 km" });
   });
 
   it("unknown exposure: the other weights are scaled up, exposure says why", () => {

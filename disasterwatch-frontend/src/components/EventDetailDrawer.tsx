@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { SeverityRules } from "../services/feedCache";
 import EventImpact from "./EventImpact";
+import EventScores from "./EventScores";
+import type { FeedScores } from "../utils/scores";
 import { gdacsRefFromSources } from "../utils/gdacsRef";
 import EventTimeline, { type TimelinePoint } from "./EventTimeline";
 import { formatDateTime, relativeTime } from "../utils/formatDate";
@@ -77,6 +79,8 @@ export type DrawerEvent = {
   /** Feed minutes-ago counter; used for the relative time when `details.occurredAt` is missing. */
   timeMinutesAgo?: number;
   details?: EventDetails;
+  /** Confidence and priority from the feed (null when they could not be computed). */
+  scores?: FeedScores;
 };
 
 type Props = {
@@ -348,6 +352,12 @@ const EventDetailDrawer = ({ event, onClose, onZoomTo, relatedNews, nearby, onSe
               </dl>
             )}
           </Section>
+
+          {event.scores !== undefined && (
+            <Section title="Why these scores?">
+              <EventScores key={d?.eventId ?? event.id} scores={event.scores} eventId={d?.eventId} />
+            </Section>
+          )}
 
           <Section title="Where">
             <p className="edd-text">{d?.place ?? (cleanTitle(event.location) || NOT_REPORTED)}</p>

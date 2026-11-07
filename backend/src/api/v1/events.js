@@ -106,6 +106,9 @@ export function createEventCache(build = buildEvents) {
   };
 }
 
+/** Process-wide event cache shared by API v1 and the dashboard scores (services/fusion/feed.js). */
+export const sharedEventsFor = createEventCache();
+
 /* ---------------- query parsing ---------------- */
 
 const one = (v, name) => {

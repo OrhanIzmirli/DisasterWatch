@@ -55,7 +55,11 @@ for (const [name, path] of [
 test("public API page with its interactive reference", async ({ page }) => {
   await open(page, "/api");
   await expect(page.locator(".swagger-ui .opblock").first()).toBeVisible();
-  await expect(page).toHaveScreenshot("api.png", { fullPage: true, mask: volatile(page) });
+  // the "One event" example swaps in the newest event's id once it has loaded: wait for it, or the page height varies
+  await expect(page.getByText("usgs:ex000001", { exact: false })).toBeVisible();
+  // the main element, not a full-page shot: a full-page capture resizes the viewport to the page height, and the
+  // page's 100vh minimum then grows with it, so successive captures never settle on one height
+  await expect(page.locator("main.api-page")).toHaveScreenshot("api.png", { mask: volatile(page) });
 });
 
 test("map tooltip and its pointer", async ({ page }) => {
@@ -90,4 +94,12 @@ test("event drawer sections: GDACS impact and storm development", async ({ page 
   await development.scrollIntoViewIfNeeded();
   await expect(development.getByRole("img")).toBeVisible();
   await expect(development).toHaveScreenshot("drawer-section-development.png");
+});
+
+test("event drawer section: why these scores", async ({ page }) => {
+  await openEvent(page, /Hasaki/);
+  const scores = page.locator(".edd-section").filter({ has: page.getByRole("heading", { name: "Why these scores?" }) });
+  await expect(scores.getByRole("table", { name: /Confidence 80/ })).toBeVisible();
+  await scores.scrollIntoViewIfNeeded();
+  await expect(scores).toHaveScreenshot("drawer-section-scores.png");
 });
