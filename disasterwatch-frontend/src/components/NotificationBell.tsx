@@ -127,7 +127,7 @@ const NotificationBell = ({ pollMs = 60_000 }: Props) => {
           setOpen((v) => !v);
           if (!open) load();
         }}
-        aria-label={unreadCount ? `${unreadCount} unread notifications` : "Notifications"}
+        aria-label={unreadCount ? `${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}` : "Notifications"}
         aria-expanded={open}
         title="Notifications"
       >

@@ -62,7 +62,9 @@ const EmailAlerts = ({ email, settings, onChange }: Props) => {
         <span>E-mail me a summary of new alerts</span>
       </label>
       <p id="email-consent" className="channel-note">
-        {enabled && !settings?.verified
+        {unavailable
+          ? "E-mail is not set up on this server yet, so the switch cannot be turned on. Your alerts still appear as in-app notifications."
+          : enabled && !settings?.verified
           ? confirmationText(settings?.confirmation?.status, email)
           : enabled
           ? `On: a summary goes to ${email} when new events match your alerts. Turn it off here at any time, or use the unsubscribe link in any of the e-mails.`

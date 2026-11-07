@@ -278,6 +278,7 @@ export async function mockApi(page: Page) {
       return json({ message: "GDACS is not reachable right now" }, 503);
     }
     if (path === "/health") return json({ ok: true, service: "backend", kafka: "connected" });
+    if (path === "/users/session") return json({ user: null });
     if (path === "/users/me") return json({ message: "Not signed in" }, 401);
     if (path.startsWith("/news")) return json(NEWS);
     return json({ message: "Not found" }, 404);

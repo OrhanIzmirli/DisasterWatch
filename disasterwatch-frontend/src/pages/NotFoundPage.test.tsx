@@ -12,7 +12,7 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      const status = url.includes("/users/me") ? 401 : url.includes("/health") ? 200 : 404;
+      const status = url.includes("/users/session") || url.includes("/health") ? 200 : 404;
       return new Response(JSON.stringify(status === 200 ? { ok: true } : { message: "no" }), { status, headers: { "Content-Type": "application/json" } });
     })
   );

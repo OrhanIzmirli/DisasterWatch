@@ -47,10 +47,18 @@ export function locationText(item: NewsItem) {
   return [countries, regions].filter(Boolean).join(" · ");
 }
 
-/** "Earthquake · M 5.2 - 107 km NNE of Hihifo, Tonga · Medium" for an article linked to a feed event. */
+/**
+ * "Earthquake · M 5.2 - 107 km NNE of Hihifo, Tonga · Medium" for an article linked to a feed event;
+ * "Wildfire in Indonesia · High" when the title already names the type.
+ */
 export function eventTagText(item: NewsItem) {
   const e = item.relatedEvent;
   if (!e) return null;
   // the location is the event's clean title; older cached payloads may still carry the raw source id
-  return `${TYPE_LABELS[e.type] ?? capitalise(e.type)} · ${cleanTitle(e.location)} · ${e.severity === "unrated" ? "Not rated" : capitalise(e.severity)}`;
+  const type = TYPE_LABELS[e.type] ?? capitalise(e.type);
+  const title = cleanTitle(e.location);
+  const severity = e.severity === "unrated" ? "Not rated" : capitalise(e.severity);
+  // "Wildfire in Indonesia" already names the type: no "Wildfire · Wildfire in Indonesia"
+  const namesType = title.toLowerCase().startsWith(type.toLowerCase());
+  return namesType ? `${title} · ${severity}` : `${type} · ${title} · ${severity}`;
 }

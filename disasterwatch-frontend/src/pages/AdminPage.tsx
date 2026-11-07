@@ -170,8 +170,8 @@ const DisasterEntriesTab = ({ user }: Props) => {
 
           <form className="admin-form" onSubmit={submit}>
             <div className="form-field">
-              <label>Disaster type</label>
-              <select value={type} onChange={(e) => setType(e.target.value as DisasterType)}>
+              <label htmlFor="manual-type">Disaster type</label>
+              <select id="manual-type" value={type} onChange={(e) => setType(e.target.value as DisasterType)}>
                 <option value="earthquake">Earthquake</option>
                 <option value="flood">Flood</option>
                 <option value="wildfire">Wildfire</option>
@@ -180,8 +180,8 @@ const DisasterEntriesTab = ({ user }: Props) => {
             </div>
 
             <div className="form-field">
-              <label>Title *</label>
-              <input
+              <label htmlFor="manual-title">Title *</label>
+              <input id="manual-title" aria-required="true"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. M5.2 earthquake near Izmir"
@@ -191,8 +191,8 @@ const DisasterEntriesTab = ({ user }: Props) => {
 
             <div className="form-row">
               <div className="form-field">
-                <label>Latitude *</label>
-                <input
+                <label htmlFor="manual-lat">Latitude *</label>
+                <input id="manual-lat" aria-required="true"
                   type="number"
                   step="any"
                   min={-90}
@@ -204,8 +204,8 @@ const DisasterEntriesTab = ({ user }: Props) => {
               </div>
 
               <div className="form-field">
-                <label>Longitude *</label>
-                <input
+                <label htmlFor="manual-lng">Longitude *</label>
+                <input id="manual-lng" aria-required="true"
                   type="number"
                   step="any"
                   min={-180}
@@ -218,8 +218,8 @@ const DisasterEntriesTab = ({ user }: Props) => {
             </div>
 
             <div className="form-field">
-              <label>Date / time *</label>
-              <input
+              <label htmlFor="manual-date">Date / time *</label>
+              <input id="manual-date" aria-required="true"
                 type="datetime-local"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
@@ -227,8 +227,8 @@ const DisasterEntriesTab = ({ user }: Props) => {
             </div>
 
             <div className="form-field">
-              <label>Severity</label>
-              <div className="severity-radio-group">
+              <span id="manual-severity-label" className="form-label">Severity</span>
+              <div className="severity-radio-group" role="radiogroup" aria-labelledby="manual-severity-label">
                 <label>
                   <input
                     type="radio"
@@ -263,8 +263,8 @@ const DisasterEntriesTab = ({ user }: Props) => {
             </div>
 
             <div className="form-field">
-              <label>Description</label>
-              <textarea
+              <label htmlFor="manual-description">Description</label>
+              <textarea id="manual-description"
                 rows={4}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -355,7 +355,7 @@ const AdminPage = ({ user }: Props) => {
   const [tab, setTab] = useState<Tab>("entries");
 
   return (
-    <div className="page admin-page">
+    <main className="page admin-page">
       <header className="page-header">
         <h1 className="page-title">Admin console</h1>
         <p className="page-subtitle">
@@ -387,7 +387,7 @@ const AdminPage = ({ user }: Props) => {
       {tab === "entries" && <DisasterEntriesTab user={user} />}
       {tab === "users" && <UsersTab currentUser={user} />}
       {tab === "audit" && <AuditTab />}
-    </div>
+    </main>
   );
 };
 

@@ -30,7 +30,7 @@ function stubApi() {
       const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
       if (url.includes("/api/disasters"))
         return json({ items: FEED, count: 2, counts: { total: 2, bySeverity: { high: 1, medium: 0, low: 1, unrated: 0 }, byType: {} }, stale: false, sources: { nasa: "ok", usgs: "ok" }, updatedAt: new Date().toISOString() });
-      if (url.includes("/users/me")) return json({ message: "signed out" }, 401);
+      if (url.includes("/users/session")) return json({ user: null });
       if (url.includes("/health")) return json({ ok: true });
       return json({ message: "no" }, 404);
     })

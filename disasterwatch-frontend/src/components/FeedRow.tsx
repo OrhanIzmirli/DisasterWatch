@@ -24,7 +24,8 @@ export default function FeedRow({ typeLabel, typeClass, title, subtitle, meta, s
       <button
         type="button"
         className="disaster-row"
-        aria-label={`${typeLabel}: ${title}${subtitle ? `, ${subtitle}` : ""}, ${severityLabel.replace(/^[^A-Za-z]+/, "").toLowerCase()}`}
+        // the visible text, in its order (WCAG 2.5.3 "label in name"), with separators for speech
+        aria-label={`${typeLabel}: ${title}${subtitle ? `, ${subtitle}` : ""}${meta ? `, ${meta}` : ""}, ${severityLabel.replace(/^[^A-Za-z]+/, "").toLowerCase()}`}
         onClick={(e) => onSelect(e.currentTarget)}
       >
         <span className="disaster-row-main">

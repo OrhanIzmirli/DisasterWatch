@@ -34,7 +34,7 @@ function stubApi(count: number, opts: { me?: 200 | 401 } = {}) {
       const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
       if (url.includes("/api/disasters"))
         return json({ items, count, counts: { total: count, bySeverity: { high: 0, medium: 0, low: count, unrated: 0 }, byType: {} }, stale: false, sources: { nasa: "ok", usgs: "ok" }, updatedAt: new Date().toISOString() });
-      if (url.includes("/users/me")) return opts.me === 200 ? json({ user: USER }) : json({ message: "signed out" }, 401);
+      if (url.includes("/users/session")) return json({ user: opts.me === 200 ? USER : null });
       if (url.includes("/users/login") || url.includes("/users/register")) return json({ user: USER });
       if (url.includes("/users/logout")) return json({ ok: true });
       if (url.includes("/health")) return json({ ok: true });
@@ -83,7 +83,7 @@ describe("feed pager", () => {
 });
 
 describe("session check", () => {
-  const meCalls = (calls: string[]) => calls.filter((u) => u.includes("/users/me")).length;
+  const meCalls = (calls: string[]) => calls.filter((u) => u.includes("/users/session")).length;
 
   it("asks once in a fresh browser and remembers the signed-out answer", async () => {
     const calls = stubApi(1);
