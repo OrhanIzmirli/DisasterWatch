@@ -3,6 +3,7 @@
 Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
 
 **2026-11-07**
+- Multi-source fusion, step 2: NASA FIRMS satellite fire detections near each wildfire (10 km, 48 h), looked up in the background once an hour per fire; off until `FIRMS_MAP_KEY` is set.
 - Multi-source fusion, step 1: EMSC earthquakes and NOAA NHC active storms are fetched as confirming sources (lazily, cached, incremental for EMSC, with backoff) and reported in `/health`; nothing visible changes yet. [Data sources](docs/sources.md) lists every source with its licence and fetch rate.
 - Rate limits count the real client: behind Cloudflare and Render's hops (and the site's /api rewrite) `req.ip` was an internal address that changed per request, so one client was spread over several counters and unrelated clients could share one. The client address now comes from `True-Client-IP` / `CF-Connecting-IP` (verified live that a client cannot forge either) for every limiter.
 - Optional public API keys: sign in with GitHub on the API page (no permissions asked; only the GitHub id and login are stored), create, renew or revoke a key shown once and stored as a hash; 600 requests a minute per key, 60 per IP without one. Privacy page explains what is stored and how to delete it. Dependency advisories in body-parser, qs and zod patched.
