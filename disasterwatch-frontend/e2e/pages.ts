@@ -17,7 +17,7 @@ export const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1440) < 60
 /** Dashboard with the feed loaded; on a phone the feed view is shown. */
 export async function openDashboard(page: Page, view: "map" | "feed" = "feed") {
   await open(page, "/");
-  await expect(page.locator(".disaster-row").first()).toBeAttached();
+  await expect(page.locator("button.disaster-row").first()).toBeAttached();
   if (isPhone(page)) {
     await page.getByRole("button", { name: view === "feed" ? "Feed" : "Map", exact: true }).click();
   }

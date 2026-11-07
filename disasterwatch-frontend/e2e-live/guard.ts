@@ -20,9 +20,9 @@ export const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1440) < 60
 export async function liveDashboard(page: Page, view: "map" | "feed" = "feed") {
   await readOnly(page);
   await page.goto("/", { timeout: 120_000 });
-  await expect(page.locator(".disaster-row").first()).toBeAttached({ timeout: 120_000 });
+  await expect(page.locator("button.disaster-row").first()).toBeAttached({ timeout: 120_000 });
   if (isPhone(page)) await page.getByRole("button", { name: view === "feed" ? "Feed" : "Map", exact: true }).click();
 }
 
 /** Type tags of the feed rows on the current page. */
-export const rowTypes = (page: Page) => page.locator(".disaster-row .disaster-type-tag").allTextContents();
+export const rowTypes = (page: Page) => page.locator("button.disaster-row .disaster-type-tag").allTextContents();
