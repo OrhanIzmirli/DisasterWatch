@@ -32,6 +32,7 @@ const SignUpPage = lazy(() => import("./pages/SignUpPage"));
 const UnsubscribePage = lazy(() => import("./pages/UnsubscribePage"));
 const ConfirmEmailPage = lazy(() => import("./pages/ConfirmEmailPage"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
+const ApiPage = lazy(() => import("./pages/ApiPage"));
 
 export type AuthUser = {
   email: string;
@@ -293,6 +294,7 @@ export default function App() {
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route path="/confirm-email" element={<ConfirmEmailPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/api" element={<ApiPage />} />
 
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

@@ -4344,3 +4344,162 @@ h2.card-title {
 .route-loading {
   min-height: 70vh;
 }
+
+/* ---- public API page (/api) ---- */
+.api-section {
+  line-height: 1.55;
+}
+
+.api-section p,
+.api-section ul {
+  margin: 0 0 0.6rem;
+}
+
+.api-section ul {
+  padding-left: 1.2rem;
+}
+
+.api-section li + li {
+  margin-top: 0.4rem;
+}
+
+.api-heading {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+  color: var(--dw-cream);
+}
+
+.api-section a,
+.api-reference-section > p a {
+  color: #93c5fd;
+}
+
+.api-inline-code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+
+.api-examples {
+  list-style: none;
+  padding-left: 0 !important;
+}
+
+.api-example-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--dw-text-muted);
+}
+
+.api-code {
+  margin: 0 0 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--dw-border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.api-code:focus-visible {
+  outline: 2px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+
+.api-reference-section {
+  margin-top: 1rem;
+}
+
+.api-reference-heading {
+  margin-top: 1.5rem;
+}
+
+.api-reference-note,
+.api-reference-loading {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--dw-text-muted);
+}
+
+/* Swagger UI is drawn for a light page: it gets its own light panel */
+.api-reference {
+  border-radius: 1rem;
+  background: #fff;
+  color: #1f2937;
+  overflow: hidden;
+}
+
+/* the page above already says what Swagger UI's info block says; hidden, it also takes its second
+   <main> and <h1> out of the page (one main landmark, heading levels in order) */
+.api-reference .swagger-ui .information-container {
+  display: none;
+}
+
+.api-reference .swagger-ui .wrapper {
+  padding: 0 1rem;
+}
+
+.api-reference-after {
+  margin-top: 0.75rem;
+}
+
+/* Swagger UI's default colours fall below WCAG AA contrast (2.2-3.75:1): darker shades of the same hues */
+.api-reference .swagger-ui .info .title small {
+  background: #4b5563;
+}
+
+.api-reference .swagger-ui .info .title small.version-stamp {
+  background: #3f6212;
+}
+
+.api-reference .swagger-ui .info a,
+.api-reference .swagger-ui .info .url {
+  color: #1d4ed8;
+}
+
+.api-reference .swagger-ui .opblock.opblock-get .opblock-summary-method {
+  background: #1d4ed8;
+}
+
+.api-reference .swagger-ui .btn.execute {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.api-reference .swagger-ui .response-col_status,
+.api-reference .swagger-ui .parameter__in,
+.api-reference .swagger-ui .prop-format {
+  color: #374151;
+}
+
+.api-reference .swagger-ui .btn.try-out__btn.cancel {
+  color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.api-reference .swagger-ui .download-contents {
+  background: #4b5563;
+}
+
+.api-reference .swagger-ui pre:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+/* the copy-path button is drawn 0 px wide until hover: give it a real 24 px target */
+.api-reference .swagger-ui .opblock-summary .view-line-link.copy-to-clipboard {
+  width: 24px;
+  min-width: 24px;
+}
+
+.api-reference .swagger-ui .opblock-summary .view-line-link.copy-to-clipboard button {
+  width: 24px;
+  height: 24px;
+}

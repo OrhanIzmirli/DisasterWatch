@@ -52,6 +52,12 @@ for (const [name, path] of [
   });
 }
 
+test("public API page with its interactive reference", async ({ page }) => {
+  await open(page, "/api");
+  await expect(page.locator(".swagger-ui .opblock").first()).toBeVisible();
+  await expect(page).toHaveScreenshot("api.png", { fullPage: true, mask: volatile(page) });
+});
+
 test("map tooltip and its pointer", async ({ page }) => {
   test.skip(isPhone(page), "hover tooltips are a pointer-device feature");
   await openDashboard(page, "map");

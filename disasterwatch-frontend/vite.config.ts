@@ -17,7 +17,8 @@ export default defineConfig({
   server: {
     // Same role as nginx/default.conf in Docker: /api/news -> http://localhost:5000/news
     proxy: {
-      '/api': {
+      // '^/api/' (not '/api'): the /api page itself is a route of the app
+      '^/api/': {
         target: 'http://localhost:5000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),

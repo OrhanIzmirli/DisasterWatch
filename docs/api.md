@@ -2,6 +2,8 @@
 
 The backend's HTTP API and the contract of the public feed. Back to the [README](../README.md).
 
+**Public API for other developers:** the versioned, read-only `GET /api/v1/...` endpoints are described by their OpenAPI 3.1 document (`GET /api/v1/openapi.json`, built in `backend/src/api/v1/openapi.js`) and shown interactively on the site's [API page](https://disasterwatch-frontend.onrender.com/api). The endpoints below are the site's own and can change with it.
+
 ## Endpoints
 
 All paths are relative to the backend (`http://localhost:5000`) or to the proxy (`http://localhost:8080/api`). Responses are JSON; errors are `{ message }` (or `{ ok: false, error }` for `/events`).
@@ -35,7 +37,7 @@ Query parameters (anything outside the range is clamped; non-numeric input falls
 
 | Parameter | Default | Range | Meaning |
 |---|---|---|---|
-| `minutes` | `10080` (7 days) | 60 … 43200 | look-back window; earthquakes cover at most the last 7 days (the USGS weekly feed), so a longer window adds only NASA events |
+| `minutes` | `10080` (7 days) | 60 … 43200 | look-back window; every source covers up to 30 days (the USGS monthly M 4.5+ feed and EONET) |
 | `limit` | `50` | 1 … 200 | maximum number of items |
 | `minMag` | `4.5` | 4.5 … 10 | minimum earthquake magnitude (the USGS feed carries M 4.5+ only) |
 

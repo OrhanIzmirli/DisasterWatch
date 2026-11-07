@@ -21,7 +21,8 @@
     "react-dom": "^19.2.0",
     "react-leaflet": "^5.0.0",
     "react-router-dom": "^7.10.1",
-    "supercluster": "^9.1.0"
+    "supercluster": "^9.1.0",
+    "swagger-ui-dist": "5.34.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.0",

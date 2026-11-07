@@ -99,9 +99,8 @@ export function buildOpenApi() {
               name: "id",
               in: "path",
               required: true,
-              description: "The event id from a list response: the source and its own id.",
+              description: "The event id from a list response: the source and its own id, e.g. `usgs:us7000abcd` or `eonet:EONET_1234`.",
               schema: { type: "string", pattern: "^(usgs|eonet):[A-Za-z0-9_.-]{1,80}$" },
-              examples: { earthquake: { value: "usgs:us7000abcd" }, eonet: { value: "eonet:EONET_1234" } },
             },
           ],
           responses: {
@@ -156,16 +155,14 @@ export function buildOpenApi() {
         type: {
           name: "type",
           in: "query",
-          description: "One or more types, comma-separated.",
+          description: "One or more types, comma-separated, e.g. `earthquake,storm`.",
           schema: { type: "string", pattern: `^(${TYPES.join("|")})(,(${TYPES.join("|")}))*$` },
-          example: "earthquake,storm",
         },
         severity: {
           name: "severity",
           in: "query",
-          description: "One or more exact severities, comma-separated. `unrated`: the source reports no intensity the rules can rate.",
+          description: "One or more exact severities, comma-separated, e.g. `high`. `unrated`: the source reports no intensity the rules can rate.",
           schema: { type: "string", pattern: `^(${SEVERITIES.join("|")})(,(${SEVERITIES.join("|")}))*$` },
-          example: "high",
         },
         minSeverity: {
           name: "minSeverity",
@@ -176,30 +173,26 @@ export function buildOpenApi() {
         from: {
           name: "from",
           in: "query",
-          description: "Earliest occurrence time, ISO 8601 date or date-time (UTC unless an offset is given).",
+          description: "Earliest occurrence time, ISO 8601 date or date-time (UTC unless an offset is given), e.g. `2026-11-01`.",
           schema: { type: "string" },
-          example: "2026-11-01",
         },
         to: {
           name: "to",
           in: "query",
           description: "Latest occurrence time, ISO 8601 date or date-time.",
           schema: { type: "string" },
-          example: "2026-11-07T12:00:00Z",
         },
         bbox: {
           name: "bbox",
           in: "query",
-          description: "Bounding box `minLng,minLat,maxLng,maxLat` in degrees. A box with minLng greater than maxLng crosses the antimeridian.",
+          description: "Bounding box `minLng,minLat,maxLng,maxLat` in degrees, e.g. `26,36,45,42` (Türkiye). A box with minLng greater than maxLng crosses the antimeridian.",
           schema: { type: "string" },
-          example: "26,36,45,42",
         },
         country: {
           name: "country",
           in: "query",
-          description: "Country name as in the events' `country` field (case-insensitive). Events whose country could not be derived from the source place have none.",
+          description: "Country name as in the events' `country` field (case-insensitive), e.g. `Japan`. Events whose country could not be derived from the source place have none.",
           schema: { type: "string", minLength: 1, maxLength: 60 },
-          example: "Japan",
         },
         limit: {
           name: "limit",

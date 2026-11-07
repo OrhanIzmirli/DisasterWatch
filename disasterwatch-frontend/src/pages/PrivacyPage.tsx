@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 
-const UPDATED = "21 October 2026";
+const UPDATED = "7 November 2026";
 
 /**
  * Plain-language privacy notice. Every statement here describes what the code
@@ -56,7 +56,8 @@ export default function PrivacyPage() {
         </ul>
         <p>
           We use no analytics, no advertising and no tracking cookies, and the database does not store IP addresses. Like any web
-          server, the hosting provider's request logs and our sign-in rate limit see your IP address.
+          server, the hosting provider's request logs and our rate limits (sign-in and the public API) see your IP address; the rate
+          limits keep it in memory for at most a quarter of an hour.
         </p>
         <p>In your browser we keep:</p>
         <ul>

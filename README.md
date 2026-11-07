@@ -23,7 +23,27 @@ More in [Screenshots](docs/screenshots.md).
 - **Location-based alerts:** subscriptions by hazard type, minimum severity and radius; in-app notifications and opt-in e-mail with double opt-in and one-click unsubscribe.
 - **Event-driven pipeline:** transactional outbox, Kafka topic `disaster-events`, idempotent consumer: at-least-once delivery, at most one notification per user and event ([Architecture](docs/architecture.md#event-driven-notification-pipeline)).
 - **Accounts, privacy and admin:** cookie sessions, self-service account deletion, a privacy page, and an admin console with an audit log.
+- **Public API:** read-only `/api/v1` with filters, cursor paging, ETag caching and a per-IP limit, described by OpenAPI 3.1 with an interactive [API page](https://disasterwatch-frontend.onrender.com/api).
 - **Runs anywhere:** one `docker compose up` locally; the same images run on free cloud tiers (Render, Neon, Aiven, Resend).
+
+---
+
+## Public API
+
+Read-only JSON for the events of the last 30 days, no key needed. Interactive reference: [/api](https://disasterwatch-frontend.onrender.com/api) · OpenAPI 3.1: [`/api/v1/openapi.json`](https://disasterwatch-frontend.onrender.com/api/v1/openapi.json).
+
+```bash
+curl "https://disasterwatch-frontend.onrender.com/api/v1/disasters?type=earthquake&minSeverity=high&limit=20"
+```
+
+Filters: `type`, `severity`, `minSeverity`, `from`/`to`, `bbox`, `country`; paging with `meta.nextCursor`. Also `/api/v1/disasters/{id}` and `/api/v1/types`.
+
+**Design decisions**
+- **No key, 60 requests a minute per IP** (429 + `Retry-After`): the data is public and served from a 5-minute cache, so API traffic never reaches the sources; a key system would add accounts and stored secrets for no gain yet.
+- **ETag and `Cache-Control`:** `If-None-Match` gets a 304, and clients and proxies may reuse a response for a minute.
+- **Attribution in every response:** USGS (public domain, credit requested) and NASA EONET (no endorsement implied; each event lists the organisations EONET took it from).
+- **No GDACS impact figures:** GDACS's terms grant no redistribution licence, so the API carries only its alert level and the link to its report.
+- **Contract-tested:** every status code is validated against the OpenAPI document in CI; the dashboard feed and the Kafka contract are separate and unchanged.
 
 ---
 
