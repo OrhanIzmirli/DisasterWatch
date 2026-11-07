@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Link } from "react-router-dom";
+import DeveloperKeys from "../components/DeveloperKeys";
 
 // Swagger UI (~0.5 MB gzipped with its CSS) is its own chunk: only this page downloads it
 const ApiReference = lazy(() => import("../components/ApiReference"));
@@ -49,7 +50,7 @@ export default function ApiPage() {
         </h1>
         <p className="page-subtitle">
           The events on the DisasterWatch map as JSON: earthquakes, wildfires, floods and severe storms of the last 30 days. Read-only, free,
-          no key needed.
+          no key needed (an optional key raises the limit).
         </p>
       </header>
 
@@ -84,8 +85,9 @@ export default function ApiPage() {
         </h2>
         <ul>
           <li>
-            <strong>60 requests per minute per IP address.</strong> Above that the API answers <code className="api-inline-code">429</code> with a{" "}
-            <code className="api-inline-code">Retry-After</code> header; <code className="api-inline-code">RateLimit</code> headers show what is left.
+            <strong>60 requests per minute per IP address</strong>, or 600 per key with an optional <a href="#developer">API key</a>. Above that
+            the API answers <code className="api-inline-code">429</code> with a <code className="api-inline-code">Retry-After</code> header;{" "}
+            <code className="api-inline-code">RateLimit</code> headers show what is left.
           </li>
           <li>
             <strong>Cache.</strong> The data refreshes every 5 minutes. Responses carry <code className="api-inline-code">Cache-Control</code> and an{" "}
@@ -99,6 +101,8 @@ export default function ApiPage() {
           </li>
         </ul>
       </section>
+
+      <DeveloperKeys />
 
       <section className="card api-section" aria-labelledby="api-credit">
         <h2 id="api-credit" className="api-heading">
