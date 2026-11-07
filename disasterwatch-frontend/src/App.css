@@ -4339,3 +4339,8 @@ h2.card-title {
 .edd-timeline-latest {
   fill: #f3f4f6;
 }
+
+/* a lazily loaded page takes the viewport while it loads, so the footer does not jump when it arrives */
+.route-loading {
+  min-height: 70vh;
+}
