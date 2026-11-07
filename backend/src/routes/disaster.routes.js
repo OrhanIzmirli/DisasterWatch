@@ -4,7 +4,9 @@ import prisma from "../prisma.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
 import { writeAudit } from "../utils/audit.js";
 
+import rateLimit from "express-rate-limit";
 import { feedService, FeedUnavailableError, FEED_PARAM_LIMITS, FEED_UNAVAILABLE_MESSAGE } from "../services/feed.service.js";
+import { gdacsImpactClient, parseImpactRef } from "../services/gdacsImpact.js";
 
 // import { publishDisasterEvent } from "../services/kafkaProducer.js";
 // Kafka publishing is disabled here for now to avoid request timeouts
@@ -54,6 +56,29 @@ router.get("/", async (req, res) => {
     res.status(500).json({ message: "Disaster feed unavailable" });
   }
 });
+
+/* =====================================================
+   EVENT IMPACT (GDACS, on demand for the event drawer)
+   GET /disasters/impact?eventtype=WF&eventid=1033539
+   -> { populationAffected, reported: [{ kind, value, region, country }], fetchedAt, source: "GDACS" }
+   eventtype is WF | FL | TC and eventid digits only (the reference in the event's GDACS
+   source link); 400 otherwise. 503 { message } when GDACS cannot be reached. Answers are
+   cached 6 h on the server; misses reach GDACS, so the route is rate limited.
+===================================================== */
+export const IMPACT_RATE_LIMIT = { windowMs: 60 * 1000, limit: 30 };
+
+router.get(
+  "/impact",
+  rateLimit({ ...IMPACT_RATE_LIMIT, standardHeaders: "draft-7", legacyHeaders: false, message: { message: "Too many requests" } }),
+  async (req, res) => {
+    const ref = parseImpactRef(req.query.eventtype, req.query.eventid);
+    if (!ref) return res.status(400).json({ message: "Invalid GDACS event reference" });
+    const impact = await gdacsImpactClient.getImpact(ref);
+    if (!impact) return res.status(503).json({ message: "GDACS is not reachable right now" });
+    res.set("Cache-Control", "public, max-age=3600");
+    res.json({ ...impact, source: "GDACS" });
+  }
+);
 
 /* ===========================
    Routes below require authentication

@@ -157,3 +157,61 @@ describe("EventDetailDrawer content", () => {
     expect(document.querySelector(".edd-scale [aria-current='true']")).toBeNull();
   });
 });
+
+describe("EventDetailDrawer source data and unknowns", () => {
+  const base = { sources: [], severity: "low", severityReason: "", severitySource: "" };
+  const make = (over: Partial<DrawerEvent>, details: Record<string, unknown>) =>
+    ({ ...event, ...over, details: { ...base, ...details } }) as unknown as DrawerEvent;
+
+  it("names the nearest place of a quake, or says USGS names only a region", () => {
+    render(<EventDetailDrawer event={make({ type: "earthquake" }, { nearestPlace: { name: "Palekastro, Greece", distanceKm: 100, direction: "SSE" } })} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText("Palekastro, Greece")).toBeTruthy();
+    expect(screen.getByText("100 km SSE of it (USGS)")).toBeTruthy();
+    cleanup();
+    render(<EventDetailDrawer event={make({ type: "earthquake" }, { nearestPlace: null })} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText(/USGS names a region here/)).toBeTruthy();
+  });
+
+  it("lists GDACS countries by name, or unknown when GDACS has no answer", () => {
+    render(<EventDetailDrawer event={make({ type: "wildfire" }, { affectedCountries: ["AU", "PG"] })} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText("Australia, Papua New Guinea")).toBeTruthy();
+    cleanup();
+    render(<EventDetailDrawer event={make({ type: "flood" }, { affectedCountries: null })} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText("GDACS has no answer for this event")).toBeTruthy();
+  });
+
+  it("says the impact is unknown for an event GDACS does not cover, without asking the server", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<EventDetailDrawer event={make({ type: "storm" }, { sources: [{ name: "NASA EONET", url: "https://eonet.gsfc.nasa.gov/x" }] })} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText(/GDACS does not cover this event/)).toBeTruthy();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows GDACS's population and reported impacts, and unknown when GDACS does not answer", async () => {
+    const gdacs = { sources: [{ name: "GDACS", url: "https://www.gdacs.org/report.aspx?eventtype=FL&eventid=42" }] };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ populationAffected: 1200, reported: [{ kind: "rescued", value: 3, region: "North", country: "Exampleland" }] }), { status: 200 })));
+    render(<EventDetailDrawer event={make({ type: "flood" }, gdacs)} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(await screen.findByText("1,200")).toBeTruthy();
+    expect(screen.getByText("rescued", { exact: false })).toBeTruthy();
+    cleanup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 503 })));
+    render(<EventDetailDrawer event={make({ type: "flood" }, gdacs)} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(await screen.findByText(/impact figures are unknown/)).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("charts a storm's development and says so when the source has no series", () => {
+    const timeline = [
+      { at: "2026-11-03T00:00:00Z", value: 45, unit: "kts", lat: 14, lng: 87 },
+      { at: "2026-11-04T00:00:00Z", value: 135, unit: "kts", lat: 16, lng: 88 },
+      { at: "2026-11-05T00:00:00Z", value: 55, unit: "kts", lat: 19, lng: 89 },
+    ];
+    render(<EventDetailDrawer event={make({ type: "storm" }, { timeline })} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByRole("img", { name: /From 45 kts .* peak of 135 kts .* latest 55 kts/ })).toBeTruthy();
+    cleanup();
+    render(<EventDetailDrawer event={make({ type: "wildfire" }, { timeline: null })} onClose={() => {}} onZoomTo={() => {}} />);
+    expect(screen.getByText(/reports this fire once, without a series/)).toBeTruthy();
+  });
+});

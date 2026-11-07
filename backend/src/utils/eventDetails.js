@@ -3,7 +3,7 @@
  * the NASA EONET / USGS payloads the backend already fetches — no extra
  * requests, no guessed values. A field the source does not provide is null.
  */
-import { assessSeverity, assessEonetEvent } from "./severity.js";
+import { assessSeverity, assessEonetEvent, toHectares, toKnots } from "./severity.js";
 import { formatMagnitude } from "./magnitude.js";
 
 /** "Wildfire in Tanzania 1032766" -> "Wildfire in Tanzania"; "Flood in Nepal 1104225" -> "Flood in Nepal" */
@@ -37,6 +37,50 @@ function numOrNull(v) {
 }
 
 const PAGER_LEVELS = new Set(["green", "yellow", "orange", "red"]);
+
+/**
+ * Nearest named place from a USGS place string: "100 km SSE of Palekastro, Greece" ->
+ * { name: "Palekastro, Greece", distanceKm: 100, direction: "SSE" }. USGS writes this
+ * from its own gazetteer of populated places; strings without a distance ("Fiji region",
+ * "south of the Kermadec Islands") name a region, not a place, and give null.
+ */
+export function nearestPlaceFromUsgs(place) {
+  const m = String(place ?? "").trim().match(/^(\d+(?:\.\d+)?)\s*km\s+([NSEW]{1,3})\s+of\s+(.+)$/);
+  if (!m) return null;
+  const distanceKm = Number(m[1]);
+  return Number.isFinite(distanceKm) ? { name: m[3].trim(), distanceKm, direction: m[2] } : null;
+}
+
+/** At most this many timeline points per event (storm advisories can run to hundreds). */
+export const TIMELINE_MAX_POINTS = 40;
+
+/**
+ * How a storm or wildfire developed, from EONET's geometry series: one point per
+ * dated entry, oldest first, with the measured value in the unit the severity rule
+ * uses (storms: wind in kts; wildfires: burned area in ha) or null when that entry
+ * carries none. Long series keep the first and last entry and evenly spaced ones
+ * between. Floods (no measurement in EONET) and single-entry series give null.
+ */
+export function buildEonetTimeline(geometry, type) {
+  if (type !== "storm" && type !== "wildfire") return null;
+  const points = (Array.isArray(geometry) ? geometry : [])
+    .map((g) => {
+      const at = toIso(g?.date);
+      if (!at) return null;
+      const value = type === "storm" ? toKnots(g?.magnitudeValue, g?.magnitudeUnit) : toHectares(g?.magnitudeValue, g?.magnitudeUnit);
+      const point = g?.type === "Point" && Array.isArray(g.coordinates) ? g.coordinates : null;
+      const lng = numOrNull(point?.[0]);
+      const lat = numOrNull(point?.[1]);
+      return { at, value, unit: type === "storm" ? "kts" : "ha", lat, lng };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.at.localeCompare(b.at));
+  if (points.length < 2) return null;
+  if (points.length <= TIMELINE_MAX_POINTS) return points;
+  const last = points.length - 1;
+  const picked = new Set(Array.from({ length: TIMELINE_MAX_POINTS }, (_, i) => Math.round((i * last) / (TIMELINE_MAX_POINTS - 1))));
+  return [...picked].sort((a, b) => a - b).map((i) => points[i]);
+}
 
 /** USGS GeoJSON feature -> details. */
 export function buildUsgsDetails(feature) {
@@ -81,6 +125,9 @@ export function buildUsgsDetails(feature) {
     severity,
     severityReason: reason,
     severitySource: "Severity rule applied to the USGS magnitude",
+    nearestPlace: nearestPlaceFromUsgs(place), // { name, distanceKm, direction } | null (region-only places)
+    affectedCountries: null, // GDACS-only (wildfires, floods)
+    timeline: null, // EONET-only (storms, wildfires)
   };
 }
 
@@ -142,5 +189,9 @@ export function buildEonetDetails(event, type, pickedGeometry = null) {
     severity,
     severityReason: reason,
     severitySource,
+    nearestPlace: null, // USGS-only
+    // ISO 3166-1 alpha-2 codes GDACS lists for the event; null when GDACS has no answer for it (unknown, not "none")
+    affectedCountries: Array.isArray(event?.gdacsPlace?.countries) && event.gdacsPlace.countries.length ? [...event.gdacsPlace.countries] : null,
+    timeline: buildEonetTimeline(geometry, type), // [{ at, value, unit, lat, lng }] oldest first | null
   };
 }

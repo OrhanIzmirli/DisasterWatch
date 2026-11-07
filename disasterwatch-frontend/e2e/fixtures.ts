@@ -53,6 +53,12 @@ function quake(id: number, mag: number, place: string, lat: number, lng: number,
             ? `Medium: magnitude ${label} (5.0–5.9)`
             : `Low: magnitude ${label} (< 5.0)`,
       severitySource: "Severity rule applied to the USGS magnitude",
+      nearestPlace: (() => {
+        const m = place.match(/^(\d+) km ([NSEW]{1,3}) of (.+)$/);
+        return m ? { name: m[3], distanceKm: Number(m[1]), direction: m[2] } : null;
+      })(),
+      affectedCountries: null,
+      timeline: null,
     },
   };
 }
@@ -98,6 +104,9 @@ function eonet(
       magnitudeValue: null,
       magnitudeUnit: null,
       locationPrecision: "exact",
+      nearestPlace: null,
+      affectedCountries: null,
+      timeline: null,
       ...extra,
       severity,
     },
@@ -117,24 +126,37 @@ export const FEED: Item[] = [
     magnitudeUnit: "hectare",
     gdacsLevel: "green",
     gdacsScore: 1,
+    affectedCountries: ["AU"],
     severityReason: "Low: GDACS impact level Green (20,731 ha burned)",
     severitySource: "Impact level assigned by GDACS (gdacs.org)",
     sources: [
       { name: "NASA EONET", url: "https://eonet.gsfc.nasa.gov/" },
-      { name: "GDACS", url: "https://www.gdacs.org/" },
+      { name: "GDACS", url: "https://www.gdacs.org/report.aspx?eventtype=WF&eventid=900006" },
     ],
   }),
   eonet(7, "flood", "Flood in Indonesia", "Indonesia", -2.5, 118.0, 30, {
     severity: "medium",
     gdacsLevel: "orange",
     gdacsScore: 2,
+    affectedCountries: ["ID"],
     severityReason: "Medium: GDACS impact level Orange",
     severitySource: "Impact level assigned by GDACS (gdacs.org)",
+    sources: [
+      { name: "NASA EONET", url: "https://eonet.gsfc.nasa.gov/" },
+      { name: "GDACS", url: "https://www.gdacs.org/report.aspx?eventtype=FL&eventid=900007" },
+    ],
   }),
   eonet(8, "storm", "Tropical Cyclone Arnab", null, 18.5, 87.0, 20, {
     severity: "high",
     peakKts: 135,
     currentKts: 55,
+    timeline: [45, 70, 110, 135, 120, 90, 55].map((kts, i) => ({
+      at: hoursAgo(20 + (6 - i) * 12),
+      value: kts,
+      unit: "kts",
+      lat: 14 + i * 0.7,
+      lng: 86 + i * 0.2,
+    })),
     magnitudeValue: 55,
     magnitudeUnit: "kts",
     severityReason: "High: peak wind 135 kts (Saffir-Simpson category 4)",
@@ -238,6 +260,22 @@ export async function mockApi(page: Page) {
       const event = url.searchParams.get("event");
       const items = event === null ? NEWS.items : NEWS.items.filter((a) => a.relatedEvent?.id === Number(event));
       return json({ ...NEWS, items, count: items.length });
+    }
+    if (path === "/disasters/impact") {
+      // invented figures, shaped like GET /disasters/impact
+      const id = url.searchParams.get("eventid");
+      if (id === "900006") return json({ populationAffected: 1840, reported: [], fetchedAt: hoursAgo(1), source: "GDACS" });
+      if (id === "900007")
+        return json({
+          populationAffected: null,
+          reported: [
+            { kind: "people evacuated", value: 320, region: "Example Province", country: "Indonesia" },
+            { kind: "houses damaged", value: 45, region: "Example Province", country: "Indonesia" },
+          ],
+          fetchedAt: hoursAgo(1),
+          source: "GDACS",
+        });
+      return json({ message: "GDACS is not reachable right now" }, 503);
     }
     if (path === "/health") return json({ ok: true, service: "backend", kafka: "connected" });
     if (path === "/users/me") return json({ message: "Not signed in" }, 401);
