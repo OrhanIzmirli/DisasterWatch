@@ -5,6 +5,7 @@
  *   GET /v1/disasters          events of the last 30 days, filtered and paged
  *   GET /v1/disasters/{id}     one event ("usgs:us7000abcd", "eonet:EONET_1234")
  *   GET /v1/types              event types, severity levels and the rating rules
+ *   GET /v1/openapi.json       OpenAPI 3.1 description (api/v1/openapi.js)
  *
  * - GET/HEAD only (OPTIONS answers CORS preflights); any other method is 405.
  * - CORS: any origin, no credentials; cookies are never read or set here.
@@ -20,9 +21,10 @@ import rateLimit from "express-rate-limit";
 import { feedService as defaultFeed, FeedUnavailableError } from "../services/feed.service.js";
 import { SEVERITY_RULES } from "../utils/severity.js";
 import { ATTRIBUTION } from "../api/v1/attribution.js";
-import { BadRequest, createEventCache, parseListQuery, selectPage, TYPES, SEVERITIES, WINDOW_DAYS, WINDOW_MS, PAGE_LIMIT } from "../api/v1/events.js";
+import { BadRequest, createEventCache, parseListQuery, selectPage, TYPES, SEVERITIES, WINDOW_DAYS, WINDOW_MS, PAGE_LIMIT, RATE_LIMIT } from "../api/v1/events.js";
+import { buildOpenApi } from "../api/v1/openapi.js";
 
-export const V1_RATE_LIMIT = { windowMs: 60 * 1000, limit: 60 };
+export const V1_RATE_LIMIT = RATE_LIMIT;
 export const LIST_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 export const TYPES_CACHE_CONTROL = "public, max-age=86400";
 const ID_PATTERN = /^(usgs|eonet):[A-Za-z0-9_.-]{1,80}$/;
@@ -104,10 +106,12 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
     res.json({
       name: "DisasterWatch public API",
       version: "v1",
+      documentation: "/api",
       endpoints: {
         disasters: "/api/v1/disasters",
         disaster: "/api/v1/disasters/{id}",
         types: "/api/v1/types",
+        openapi: "/api/v1/openapi.json",
       },
       limits: { requestsPerMinute: V1_RATE_LIMIT.limit, windowDays: WINDOW_DAYS, maxPageSize: PAGE_LIMIT.max },
       attribution: ATTRIBUTION,
@@ -152,6 +156,12 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
     if (!event) return sendError(res, 404, "not_found", `No event ${id} in the last ${WINDOW_DAYS} days`);
     res.set("Cache-Control", LIST_CACHE_CONTROL);
     res.json({ data: event, meta: sourceMeta(loaded.snap), attribution: ATTRIBUTION });
+  });
+
+  const openApi = buildOpenApi();
+  router.get("/openapi.json", (req, res) => {
+    res.set("Cache-Control", TYPES_CACHE_CONTROL);
+    res.json(openApi);
   });
 
   router.get("/types", (req, res) => {

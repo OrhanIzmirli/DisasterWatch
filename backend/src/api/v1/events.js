@@ -18,6 +18,8 @@ import { FEED_TYPES, FEED_SEVERITIES } from "../../services/feed.service.js";
 export const WINDOW_DAYS = 30;
 export const WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000;
 export const PAGE_LIMIT = { min: 1, max: 200, fallback: 50 };
+/** Requests per client IP per window (routes/v1.routes.js; documented in openapi.js). */
+export const RATE_LIMIT = Object.freeze({ windowMs: 60 * 1000, limit: 60 });
 
 export const TYPES = FEED_TYPES; // earthquake, wildfire, flood, storm
 export const SEVERITIES = FEED_SEVERITIES; // high, medium, low, unrated
