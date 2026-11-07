@@ -25,6 +25,9 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "13.1.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "supertest": "^7.3.1",
     "vitest": "^5.0.4"
   }
