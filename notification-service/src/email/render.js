@@ -18,12 +18,25 @@ const SOURCE_LABELS = { nasa: "NASA EONET", usgs: "USGS", manual: "DisasterWatch
 const typeLabel = (t) => TYPE_LABELS[t] ?? (t ? t.charAt(0).toUpperCase() + t.slice(1) : "Disaster");
 const sourceOf = (eventId) => String(eventId ?? "").split(":")[0];
 
-/** Same numeric id as the public feed (backend utils/normalizeDisasters.js toId), so /?event=<id> selects it. */
+/**
+ * Same numeric id as the public feed (backend/src/utils/feedId.js), so /?event=<id> selects
+ * it: cyrb53 over the "source:sourceId" event id. Kept in step by tests/email.test.js, which
+ * compares it with the backend's normalizers when the backend sources are present.
+ */
 export function feedId(eventId) {
-  const raw = String(eventId ?? "").replace(/^(nasa|usgs):/, "");
-  let h = 0;
-  for (let i = 0; i < raw.length; i++) h = (h * 31 + raw.charCodeAt(i)) >>> 0;
-  return h;
+  const str = String(eventId ?? "");
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 }
 
 export function escapeHtml(value) {

@@ -94,11 +94,16 @@ describe("digest content", () => {
   });
 
   it("the event link uses the same numeric id as the public feed", async () => {
-    // backend/src/utils/normalizeDisasters.js: id = toId(EONET id / USGS id)
+    // backend/src/utils/feedId.js: id = feedId(source, source id)
     const { normalizeNasaEvents } = await import("../../backend/src/utils/normalizeDisasters.js").catch(() => ({}));
     if (!normalizeNasaEvents) return; // backend sources not present (service built on its own)
     const [item] = normalizeNasaEvents([{ id: "EONET_25292", title: "Flood", categories: [{ id: "floods", title: "Floods" }], geometry: [{ date: "2026-10-11T20:00:00Z", type: "Point", coordinates: [33, 37.8] }] }]);
     expect(item.id).toBe(feedId("nasa:EONET_25292"));
+    const { normalizeUsgsEarthquakes } = await import("../../backend/src/services/usgs.service.js");
+    const [quake] = normalizeUsgsEarthquakes([{ id: "us7000twfu", properties: { mag: 4.6, place: "10 km N of Exampleville", time: Date.now(), updated: Date.now() }, geometry: { coordinates: [1, 1, 10] } }]);
+    expect(quake.id).toBe(feedId("usgs:us7000twfu"));
+    // the pair the old 32-bit hash mapped to one number
+    expect(feedId("usgs:us7000twfu")).not.toBe(feedId("usgs:us7000twh7"));
   });
 });
 
