@@ -63,3 +63,8 @@ export function signAccessToken(payload) {
 export function verifyAccessToken(token) {
   return jwt.verify(token, JWT_SECRET);
 }
+
+/** Short-lived signed token for other cookies (developer session, OAuth attempt); same secret. */
+export function signToken(payload, expiresIn) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+}

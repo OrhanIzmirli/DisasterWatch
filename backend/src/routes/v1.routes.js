@@ -9,7 +9,8 @@
  *
  * - GET/HEAD only (OPTIONS answers CORS preflights); any other method is 405.
  * - CORS: any origin, no credentials; cookies are never read or set here.
- * - Rate limit per client IP (V1_RATE_LIMIT): 429 + Retry-After + RateLimit headers.
+ * - Rate limit: 60/min per client IP without a key, 600/min per key with a valid X-API-Key
+ *   (a wrong key is a 401); 429 + Retry-After + RateLimit headers.
  * - Cache-Control + ETag (Express): a client that sends If-None-Match gets 304.
  * - Every body carries `attribution` (sources, credit lines, disclaimer);
  *   errors are { error: { code, message } } with Cache-Control: no-store.
@@ -17,14 +18,17 @@
  */
 import express from "express";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { keyStore as defaultKeyStore } from "../services/apiKeys.js";
 import { feedService as defaultFeed, FeedUnavailableError } from "../services/feed.service.js";
 import { SEVERITY_RULES } from "../utils/severity.js";
 import { ATTRIBUTION } from "../api/v1/attribution.js";
-import { BadRequest, createEventCache, parseListQuery, selectPage, TYPES, SEVERITIES, WINDOW_DAYS, WINDOW_MS, PAGE_LIMIT, RATE_LIMIT } from "../api/v1/events.js";
+import { BadRequest, createEventCache, parseListQuery, selectPage, TYPES, SEVERITIES, WINDOW_DAYS, WINDOW_MS, PAGE_LIMIT, RATE_LIMIT, KEY_RATE_LIMIT } from "../api/v1/events.js";
 import { buildOpenApi } from "../api/v1/openapi.js";
 
 export const V1_RATE_LIMIT = RATE_LIMIT;
+/** Requests per window with a valid X-API-Key, counted per key instead of per IP. */
+export const V1_KEY_RATE_LIMIT = KEY_RATE_LIMIT;
 export const LIST_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 export const TYPES_CACHE_CONTROL = "public, max-age=86400";
 const ID_PATTERN = /^(usgs|eonet):[A-Za-z0-9_.-]{1,80}$/;
@@ -46,12 +50,23 @@ function sendError(res, status, code, message) {
  * @param {{ snapshot: Function }} [options.feed] source cache (feed.service.js)
  * @param {false | { windowMs?: number, limit?: number }} [options.rateLimit] false disables it (tests only)
  * @param {() => number} [options.now]
+ * @param {{ verify: (key: string) => Promise<number | null> }} [options.keyStore] API key lookup (services/apiKeys.js)
+ * @param {number} [options.keyLimit] requests per window with a valid key (default 600)
  */
-export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, now = () => Date.now() } = {}) {
+export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, now = () => Date.now(), keyStore = defaultKeyStore, keyLimit = V1_KEY_RATE_LIMIT.limit } = {}) {
   const router = express.Router();
   const eventsFor = createEventCache();
 
-  router.use(cors({ origin: "*", methods: ["GET", "HEAD", "OPTIONS"], credentials: false, maxAge: 86400 }));
+  router.use(
+    cors({
+      origin: "*",
+      methods: ["GET", "HEAD", "OPTIONS"],
+      allowedHeaders: ["X-API-Key", "If-None-Match"],
+      exposedHeaders: ["RateLimit", "RateLimit-Policy", "Retry-After", "ETag"],
+      credentials: false,
+      maxAge: 86400,
+    })
+  );
   router.use((req, res, next) => {
     // helmet's same-site default is for the dashboard API; this one is meant to be fetched from anywhere
     res.set("Cross-Origin-Resource-Policy", "cross-origin");
@@ -60,12 +75,30 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
     sendError(res, 405, "method_not_allowed", "The public API is read-only: use GET");
   });
 
+  // Optional key: a valid one raises the limit and is counted per key; a wrong one is a 401
+  // (silently falling back to the anonymous limit would hide a typo). When the key cannot be
+  // checked (database down), the request is served under the anonymous limit.
+  router.use(async (req, res, next) => {
+    const key = req.get("X-API-Key");
+    if (key === undefined || req.method === "OPTIONS") return next();
+    try {
+      const keyId = await keyStore.verify(key.trim());
+      if (keyId === null) return sendError(res, 401, "invalid_key", "The X-API-Key header holds no valid key; leave it out to use the API without one");
+      req.apiKeyId = keyId;
+    } catch (err) {
+      console.warn(`[v1] API key check unavailable, serving under the anonymous limit: ${err?.name || "error"}`);
+    }
+    next();
+  });
+
   if (limitOptions !== false) {
     const { windowMs, limit } = { ...V1_RATE_LIMIT, ...(limitOptions || {}) };
     router.use(
       rateLimit({
         windowMs,
-        limit,
+        limit: (req) => (req.apiKeyId ? keyLimit : limit),
+        // per key with a valid key, else per IP (IPv6 grouped by /56, the library default)
+        keyGenerator: (req) => (req.apiKeyId ? `key:${req.apiKeyId}` : ipKeyGenerator(req.ip)),
         standardHeaders: "draft-7",
         legacyHeaders: false,
         skip: (req) => req.method === "OPTIONS",
@@ -73,7 +106,8 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
           const reset = req.rateLimit?.resetTime;
           const seconds = reset instanceof Date ? Math.ceil((reset.getTime() - Date.now()) / 1000) : Math.ceil(options.windowMs / 1000);
           res.set("Retry-After", String(Math.max(1, seconds)));
-          sendError(res, 429, "rate_limited", `Too many requests: at most ${options.limit} per ${Math.round(options.windowMs / 1000)} s per client`);
+          const max = req.rateLimit?.limit ?? limit;
+          sendError(res, 429, "rate_limited", `Too many requests: at most ${max} per ${Math.round(options.windowMs / 1000)} s ${req.apiKeyId ? "for this key" : "per IP address without a key"}`);
         },
       })
     );
@@ -113,7 +147,7 @@ export function createV1Router({ feed = defaultFeed, rateLimit: limitOptions, no
         types: "/api/v1/types",
         openapi: "/api/v1/openapi.json",
       },
-      limits: { requestsPerMinute: V1_RATE_LIMIT.limit, windowDays: WINDOW_DAYS, maxPageSize: PAGE_LIMIT.max },
+      limits: { requestsPerMinute: V1_RATE_LIMIT.limit, requestsPerMinuteWithKey: keyLimit, windowDays: WINDOW_DAYS, maxPageSize: PAGE_LIMIT.max },
       attribution: ATTRIBUTION,
     });
   });

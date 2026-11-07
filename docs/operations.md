@@ -139,6 +139,8 @@ Every service has a `.env.example` next to its code. Docker Compose sets the con
 | `DISABLE_NEWS_JOB` | no | – | `1` switches off the background news refresh |
 | `DISABLE_INGESTION` | no | – | `1` switches off the NASA/USGS ingestion job (no events reach Kafka) |
 | `INGEST_WAKE_SECRET` | cloud | empty | shared secret of the scheduled wake-up (`POST /internal/ingest`, [Scheduled wake-up](#scheduled-wake-up)); **32+ characters**, same value as the GitHub Actions secret of the same name (the workflow is the only caller). Without it the endpoint does not exist |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | for API keys | empty | credentials of the GitHub OAuth app behind the optional public API keys (the secret is a secret: Render environment only). Without both, `/api/v1/auth/github` answers 503 and the API page offers no sign-in; the API itself works without keys |
+| `GITHUB_OAUTH_REDIRECT_URI` | optional | the live site's `/api/v1/auth/github/callback` | must equal the OAuth app's callback URL; set it for a local or other deployment |
 | `TEST_DATABASE_URL` | tests | – | throwaway database for `npm test` ([Tests and CI](#tests-and-ci-in-detail)) |
 
 ### Notification service (`notification-service/.env.example`)

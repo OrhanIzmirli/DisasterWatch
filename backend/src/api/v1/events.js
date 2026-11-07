@@ -20,6 +20,8 @@ export const WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000;
 export const PAGE_LIMIT = { min: 1, max: 200, fallback: 50 };
 /** Requests per client IP per window (routes/v1.routes.js; documented in openapi.js). */
 export const RATE_LIMIT = Object.freeze({ windowMs: 60 * 1000, limit: 60 });
+/** Requests per window with a valid X-API-Key, counted per key. */
+export const KEY_RATE_LIMIT = Object.freeze({ limit: 600 });
 
 export const TYPES = FEED_TYPES; // earthquake, wildfire, flood, storm
 export const SEVERITIES = FEED_SEVERITIES; // high, medium, low, unrated
