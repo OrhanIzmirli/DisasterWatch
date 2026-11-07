@@ -15,6 +15,16 @@ const TYPE_LABELS: Record<NewsType, string> = {
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** "via GDELT" / "via The Guardian"; unknown provider (old cache) shows nothing. */
+/** Languages the backend reads besides English (backend/src/services/newsLanguages.js). */
+export const LANGUAGE_NAMES: Record<string, string> = { en: "English", tr: "Turkish", es: "Spanish", fr: "French", de: "German", pt: "Portuguese", unknown: "Language not given" };
+
+/** "Turkish · Turkey" for an article in another language; null for English or when nothing is known. */
+export function originText(item: NewsItem) {
+  if (!item.language || item.language === "en") return null;
+  const name = LANGUAGE_NAMES[item.language] ?? item.language;
+  return item.sourceCountry ? `${name} · ${item.sourceCountry}` : name;
+}
+
 export function providerText(item: NewsItem) {
   return item.provider && PROVIDER_LABELS[item.provider] ? `via ${PROVIDER_LABELS[item.provider]}` : null;
 }

@@ -21,6 +21,8 @@ function toRow(item, position, fetchedAt) {
     provider: item.provider,
     relatedEvent: item.relatedEvent ?? undefined,
     location: item.location ?? undefined,
+    language: item.language ?? null,
+    sourceCountry: item.sourceCountry ?? null,
     position,
     // each provider keeps the time of its own fetch (merged cache)
     fetchedAt: item.fetchedAt ? new Date(item.fetchedAt) : fetchedAt,
@@ -38,6 +40,8 @@ function fromRow(row) {
     provider: row.provider,
     relatedEvent: row.relatedEvent ?? null,
     location: row.location ?? null,
+    language: row.language ?? null,
+    sourceCountry: row.sourceCountry ?? null,
     fetchedAt: row.fetchedAt ? row.fetchedAt.toISOString() : null,
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
   };

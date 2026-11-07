@@ -19,7 +19,7 @@ More in [Screenshots](docs/screenshots.md).
 - **One feed from two sources:** USGS earthquakes (M 4.5+) and NASA EONET wildfires, floods and storms, normalized into one model; one failing source degrades the feed instead of breaking it.
 - **Live dashboard:** Leaflet map with clustered, severity-coloured markers, an event drawer, filters, search, sorting and KPIs. No demo or fallback data anywhere.
 - **Severity from the source:** GDACS impact level, magnitude, Saffir-Simpson on the peak wind or burned area; an event the source gives no intensity for is shown as *not rated*, never guessed ([Severity](docs/severity.md)).
-- **News linked to events:** GDELT, The Guardian and GDACS media, filtered by relevance rules and placed in a country and region ([News](docs/news.md)).
+- **News linked to events:** GDELT, The Guardian and GDACS media, filtered by relevance rules and placed in a country and region. GDELT is read in English, Turkish, Spanish, French, German and Portuguese, and the news can be filtered by language and country ([News](docs/news.md)).
 - **Location-based alerts:** subscriptions by hazard type, minimum severity and radius; in-app notifications and opt-in e-mail with double opt-in and one-click unsubscribe.
 - **Event-driven pipeline:** transactional outbox, Kafka topic `disaster-events`, idempotent consumer: at-least-once delivery, at most one notification per user and event ([Architecture](docs/architecture.md#event-driven-notification-pipeline)).
 - **Accounts, privacy and admin:** cookie sessions, self-service account deletion, a privacy page, and an admin console with an audit log.

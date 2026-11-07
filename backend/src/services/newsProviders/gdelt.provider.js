@@ -9,6 +9,7 @@
  */
 import { createGdeltClient } from "../gdelt.js";
 import { GENERAL_QUERY, normalizeArticle, placeTokens, withUrlDate } from "../newsLinking.js";
+import { GDELT_LANGUAGE_FILTER } from "../newsLanguages.js";
 
 export const GDELT_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 /** Articles are searched over the last 72 h, so they are kept at most that long. */
@@ -22,7 +23,8 @@ export const GDELT_RETENTION_MS = 72 * 60 * 60 * 1000;
  * to the feed events on our side.
  */
 export const GDELT_GROUP_SEARCHES = 0;
-export const GDELT_GENERAL_RECORDS = 75;
+/** Shared by six languages (newsLanguages.js), so more than the 75 an English-only search took. */
+export const GDELT_GENERAL_RECORDS = 150;
 
 function orGroup(terms) {
   const quoted = terms.map((t) => (t.includes(" ") ? `"${t}"` : t));
@@ -36,11 +38,11 @@ export function placeTermsOf(group) {
   return [...words];
 }
 
-/** "(earthquake OR quake OR tremor) (kushiro OR japan OR kokopo OR papua OR guinea) sourcelang:english" */
+/** "(earthquake OR quake OR tremor) (kushiro OR japan OR kokopo OR papua OR guinea) (sourcelang:english OR ...)" */
 export function buildGdeltGroupQuery(group) {
   const places = placeTermsOf(group);
   const placePart = places.length ? ` ${orGroup(places)}` : "";
-  return `${orGroup(group.terms)}${placePart} sourcelang:english`;
+  return `${orGroup(group.terms)}${placePart} ${GDELT_LANGUAGE_FILTER}`;
 }
 
 export function createGdeltProvider({ client = createGdeltClient(), timespan = "72h" } = {}) {
@@ -59,7 +61,7 @@ export function createGdeltProvider({ client = createGdeltClient(), timespan = "
     },
     async searchGeneral({ maxRecords = 15 } = {}) {
       const records = Math.max(maxRecords, GDELT_GENERAL_RECORDS);
-      return normalize(await client.searchArticles({ query: `${GENERAL_QUERY} sourcelang:english`, timespan, maxRecords: records }));
+      return normalize(await client.searchArticles({ query: `${GENERAL_QUERY} ${GDELT_LANGUAGE_FILTER}`, timespan, maxRecords: records }));
     },
   };
 }

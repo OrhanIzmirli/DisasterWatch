@@ -2,6 +2,9 @@
 
 Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
 
+**2026-11-08**
+- Multi-source fusion, step 7: news in English, Turkish, Spanish, French, German and Portuguese from GDELT, still one request per refresh. Articles in other languages must name a strong hazard term of their own language. Every article keeps its language and the publisher's country. `GET /news` filters by `lang` and `country` and counts the languages. The news panel gets a language picker, and cards name the language and the publisher's country. The `NewsCache` table gets two nullable columns ([Operations](docs/operations.md)).
+
 **2026-11-07**
 - Multi-source fusion, step 6: on the map, marker size shows priority and the outline shows confidence (solid, dashed, dotted), with a legend, tooltip and screen-reader text. The feed filters by minimum priority and confidence and sorts by priority. The event drawer's "Why these scores?" lists every term and each source checked. The dashboard feed carries compact `scores`, and the API page gets an example with the new filters. On a phone, the feed toolbar puts the search on its own row. The API page visual test captures the page, not the window, so it no longer flakes.
 - Multi-source fusion, step 5: public API v1 events carry `sources`, `ambiguousSources`, `confidence` and `priority` after the original fields (unchanged, contract-tested); new filters `minConfidence` and `minPriority`; `meta.confirmingSources` and `meta.scoreVersion`; attribution lists EMSC, NOAA NHC, NASA FIRMS and GeoNames.

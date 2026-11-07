@@ -251,3 +251,9 @@ The user-facing limits (alerts hours late, free tiers, source coverage) are list
 - Events older than 48 hours and subscriptions created after an event never produce notifications, by design.
 - **GDELT rate limits by source IP.** The news job backs off and keeps serving GDELT's last articles (72 h) next to The Guardian and GDACS media; `/health` → `news.providers.gdelt` shows the last success and error.
 - **Deploy order: notification-service first, then the backend.** A consumer running an older build rejects messages with a value it does not know (such as `severity: "unrated"`) and commits their offsets, so those events never produce notifications unless the group offset is reset. On Render: 1) deploy the `notification-service` web service and wait for its `/health` to answer with `kafka: "connected"`; 2) only then deploy the backend. With auto-deploy from `main` on both services, suspend the backend's auto-deploy before merging a contract change, merge, let the notification-service build finish, then deploy the backend manually.
+
+**Schema change for news languages (2026-11-08).** Run this once on the production database before deploying the backend that reads it. It is additive; existing rows keep `null`:
+
+```sql
+ALTER TABLE "NewsCache" ADD COLUMN IF NOT EXISTS "language" TEXT, ADD COLUMN IF NOT EXISTS "sourceCountry" TEXT;
+```

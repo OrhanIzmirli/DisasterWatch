@@ -12,6 +12,7 @@
  * returned articles to events on our side, by place and hazard words in the
  * title and URL.
  */
+import { languageCode } from "./newsLanguages.js";
 
 const TYPE_KEYWORDS = {
   earthquake: "(earthquake OR quake OR tremor)",
@@ -163,12 +164,17 @@ export function normalizeArticle(raw) {
       domain = "";
     }
   }
+  const language = raw?.language ? languageCode(raw.language) ?? String(raw.language).trim().toLowerCase() : null;
   return {
     title: String(raw?.title ?? "").replace(/\s+/g, " ").trim() || "Untitled",
     url,
     domain,
     publishedAt: parseGdeltDate(raw?.seendate ?? raw?.date ?? raw?.datetime),
     image: String(raw?.socialimage ?? raw?.image ?? "").trim() || null,
+    // ISO 639-1 for the languages read ("tr"), else GDELT's name; null when the provider sends none
+    language,
+    // country of the publisher as GDELT names it ("Turkey"); not where the event is
+    sourceCountry: String(raw?.sourcecountry ?? "").trim() || null,
   };
 }
 

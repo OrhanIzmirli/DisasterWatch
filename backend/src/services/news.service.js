@@ -473,11 +473,14 @@ export function createNewsService({
 
   /**
    * Cached news. Filters: type (relatedEvent.type), eventId
-   * (relatedEvent.id) and region (location.regions; unlocated articles never
-   * match a region, they are listed only without one). Throws
+   * (relatedEvent.id), region (location.regions; unlocated articles never
+   * match a region, they are listed only without one), country (ISO 3166-1
+   * alpha-2 in location.countries) and language (ISO 639-1; "unknown" for
+   * articles whose provider names none). `languages` counts the articles per
+   * language after every other filter, for a language picker. Throws
    * NewsUnavailableError when nothing is cached.
    */
-  function getNews({ type = null, eventId = null, region = null, limit = 50 } = {}) {
+  function getNews({ type = null, eventId = null, region = null, country = null, language = null, limit = 50 } = {}) {
     const at = now();
     const live = cache ? liveItems(cache.items, at) : [];
     if (!cache || live.length === 0) {
@@ -487,9 +490,14 @@ export function createNewsService({
     if (type) items = items.filter((a) => a.relatedEvent?.type === type);
     if (eventId !== null && eventId !== undefined) items = items.filter((a) => a.relatedEvent?.id === eventId);
     if (region) items = items.filter((a) => a.location?.regions?.includes(region));
+    if (country) items = items.filter((a) => a.location?.countries?.includes(country));
+    const languages = {};
+    for (const a of items) languages[a.language ?? "unknown"] = (languages[a.language ?? "unknown"] ?? 0) + 1;
+    if (language) items = items.filter((a) => (a.language ?? "unknown") === language);
     const names = cache.provider ? cache.provider.split("+") : [];
     return {
       items: items.slice(0, limit).map(({ expiresAt, fetchedAt, ...a }) => a),
+      languages,
       updatedAt: cache.updatedAt,
       stale: isStale(at),
       lastError,

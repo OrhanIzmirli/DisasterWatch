@@ -121,8 +121,8 @@ describe("combined search plan (one query per hazard type, places OR-ed)", () =>
 
   it("builds one GDELT query per group with the hazard words and all place words OR-ed", () => {
     const [quakes, floods] = buildSearchPlan(EVENTS);
-    expect(buildGdeltGroupQuery(quakes)).toBe("(earthquake OR quake OR tremor) (kushiro OR japan OR kokopo OR papua OR guinea) sourcelang:english");
-    expect(buildGdeltGroupQuery(floods)).toBe("(flood OR flooding OR floods) nepal sourcelang:english");
+    expect(buildGdeltGroupQuery(quakes)).toBe("(earthquake OR quake OR tremor) (kushiro OR japan OR kokopo OR papua OR guinea) (sourcelang:english OR sourcelang:turkish OR sourcelang:spanish OR sourcelang:french OR sourcelang:german OR sourcelang:portuguese)");
+    expect(buildGdeltGroupQuery(floods)).toBe("(flood OR flooding OR floods) nepal (sourcelang:english OR sourcelang:turkish OR sourcelang:spanish OR sourcelang:french OR sourcelang:german OR sourcelang:portuguese)");
   });
 
   it("builds the equivalent Guardian boolean query", () => {
@@ -145,7 +145,7 @@ describe("combined search plan (one query per hazard type, places OR-ed)", () =>
     expect(searchArticles).toHaveBeenCalledWith({ query: buildGdeltGroupQuery(quakes), timespan: "72h", maxRecords: 25 });
     expect(out[0]).toMatchObject({ url: "https://a.jp/1", provider: "gdelt", publishedAt: "2026-10-13T10:00:00.000Z" });
     await provider.searchGeneral({ maxRecords: 15 });
-    expect(searchArticles.mock.calls[1][0].query).toMatch(/^\(earthquake OR flood .* sourcelang:english$/);
+    expect(searchArticles.mock.calls[1][0].query).toMatch(/^\(earthquake OR flood .* \(sourcelang:english OR .*sourcelang:portuguese\)$/);
   });
 });
 
@@ -214,6 +214,8 @@ describe("The Guardian provider", () => {
       publishedAt: "2026-10-13T10:15:00.000Z",
       image: null,
       provider: "guardian",
+      language: "en",
+      sourceCountry: "United Kingdom",
       summary: null,
       tagPlace: null,
     });
@@ -296,7 +298,7 @@ describe("GDELT settings measured on 2026-10-16 (slow answers, frequent 429)", (
     expect(client.backoff.retryInMs()).toBeLessThanOrEqual(GDELT_MAX_BACKOFF_MS * 1.25);
   });
 
-  it("spends each refresh on one broad request: no group searches, 75 records, kept 72 h", async () => {
+  it("spends each refresh on one broad request: no group searches, 150 records over six languages, kept 72 h", async () => {
     const FEED = [{ id: 1, type: "earthquake", severity: "high", timeMinutesAgo: 60, location: "53 km S of Kushiro, Japan", details: { cleanTitle: "M 6.1 - 53 km S of Kushiro, Japan" } }];
     const searchArticles = vi.fn(async () => [{ title: "Quake rattles Hokkaido", url: "https://a.jp/1", seendate: "20261013T100000Z" }]);
     const gdelt = createGdeltProvider({ client: { searchArticles } });
@@ -307,7 +309,7 @@ describe("GDELT settings measured on 2026-10-16 (slow answers, frequent 429)", (
     const svc = createNewsService({ providers: [gdelt], store: createMemoryNewsStore(), loadEvents: async () => FEED, now: () => new Date("2026-10-13T12:00:00Z"), log: quiet });
     await svc.refresh();
     expect(searchArticles).toHaveBeenCalledTimes(1);
-    expect(searchArticles.mock.calls[0][0].maxRecords).toBe(75);
+    expect(searchArticles.mock.calls[0][0].maxRecords).toBe(150);
     expect(svc.getNews().items.map((a) => a.title)).toEqual(["Quake rattles Hokkaido"]);
   });
 });

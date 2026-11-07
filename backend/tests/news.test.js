@@ -46,7 +46,10 @@ describe("article normalisation", () => {
     expect(parseGdeltDate("20261013T120000Z")).toBe("2026-10-13T12:00:00.000Z");
     expect(parseGdeltDate("not a date")).toBeNull();
     const a = normalizeArticle({ title: "  Big   quake  ", url: "https://www.example.com/a?x=1", seendate: "20261013T120000Z", socialimage: "" });
-    expect(a).toEqual({ title: "Big quake", url: "https://www.example.com/a?x=1", domain: "example.com", publishedAt: "2026-10-13T12:00:00.000Z", image: null });
+    expect(a).toEqual({ title: "Big quake", url: "https://www.example.com/a?x=1", domain: "example.com", publishedAt: "2026-10-13T12:00:00.000Z", image: null, language: null, sourceCountry: null });
+    const tr = normalizeArticle({ title: "Example", url: "https://example.com/b", language: "Turkish", sourcecountry: "Turkey" });
+    expect([tr.language, tr.sourceCountry]).toEqual(["tr", "Turkey"]);
+    expect(normalizeArticle({ title: "Example", url: "https://example.com/c", language: "Japanese" }).language).toBe("japanese");
     expect(normalizeArticle({ title: "no url" })).toBeNull();
   });
 });
