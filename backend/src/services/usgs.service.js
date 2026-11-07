@@ -3,12 +3,7 @@ import { severityFromMag } from "../utils/severity.js";
 import { buildUsgsDetails } from "../utils/eventDetails.js";
 import { formatMagnitude } from "../utils/magnitude.js";
 import { countryFromPlace } from "../utils/country.js";
-
-function toId(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
-  return h;
-}
+import { feedId } from "../utils/feedId.js";
 
 // Severity rules live in ../utils/severity.js (single source of truth);
 // re-exported so existing imports keep working.
@@ -60,7 +55,7 @@ export function normalizeUsgsEarthquakes(features, { minMag = 4.5, limit = 300 }
       const magLabel = formatMagnitude(mag); // one rounding rule for every displayed magnitude
 
       return {
-        id: toId(String(f?.id ?? place)),
+        id: feedId("usgs", String(f?.id ?? place)),
         type: "earthquake",
         location: place,
         meta: `Mag ${magLabel} • ${timeMinutesAgo} min ago`,

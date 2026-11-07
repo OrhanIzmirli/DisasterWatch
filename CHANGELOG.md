@@ -3,6 +3,7 @@
 Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
 
 **2026-11-07**
+- Feed ids no longer collide: the 32-bit hash gave five pairs of earthquakes in one week the same id, so the list showed wrong rows after paging and a click could open the other event; ids are now a 53-bit hash of `source:sourceId`.
 - Event drawer data: the nearest place of an earthquake (from the USGS place), the countries GDACS lists for wildfires and floods, a storm's development chart (EONET advisory series), and GDACS impact figures (people in the affected area, reported casualties and damage) from the new `GET /disasters/impact`; each shows "unknown" when the source does not publish it.
 - The drawer's severity scale reads the thresholds the backend serves with the feed (`severityRules`); the frontend copy is gone.
 - Map focus: "Zoom to" (now "Show on map"), the news panel's "Show on map" and a click on a Today's events card fly the map to the event even when the marker caps (15 strongest quakes, wildfires per country) or the type filter had left it off the map; on a phone they switch to the Map view. A news link to an event the feed no longer has says so instead of waiting silently.
