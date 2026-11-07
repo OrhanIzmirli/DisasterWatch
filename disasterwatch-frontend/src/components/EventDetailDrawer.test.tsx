@@ -114,8 +114,14 @@ describe("EventDetailDrawer content", () => {
     expect(screen.getByText("Shallow")).toBeTruthy();
   });
 
-  it("marks the event's level on the severity scale", () => {
-    render(<EventDetailDrawer event={quake} onClose={() => {}} onZoomTo={() => {}} />);
+  it("marks the event's level on the severity scale, with the served thresholds", () => {
+    const rules = {
+      earthquake: { basis: "magnitude", unit: "M", medium: 5.0, high: 6.0, step: 0.1 },
+      wildfire: { basis: "burnedArea", unit: "ha", medium: 7000, high: 10000, step: 1 },
+      storm: { basis: "peakWind", unit: "kts", medium: 64, high: 96, step: 1 },
+      gdacs: { levels: { green: "low", orange: "medium", red: "high" } as const, appliesTo: ["wildfire", "flood"] },
+    };
+    render(<EventDetailDrawer event={quake} onClose={() => {}} onZoomTo={() => {}} severityRules={rules} />);
     const current = document.querySelector(".edd-scale [aria-current='true']");
     expect(current?.textContent).toContain("Low");
     expect(current?.textContent).toContain("below M 5.0");

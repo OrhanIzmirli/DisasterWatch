@@ -26,6 +26,7 @@ import { fetchNasaEventsFast } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
 import { fetchUsgsEarthquakes, normalizeUsgsEarthquakes } from "./usgs.service.js";
 import { withSubtitles } from "../utils/eventSubtitle.js";
+import { SEVERITY_RULES } from "../utils/severity.js";
 
 /** "nasa:<EONET id>" -> earliest geometry date (an EONET event's start; its occurredAt is the latest observation). */
 function startDates(nasa) {
@@ -189,7 +190,8 @@ export function createFeedService({
   }
 
   /**
-   * -> { items, count, counts, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params }
+   * -> { items, count, counts, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params, severityRules }
+   *   severityRules:    the rating thresholds (SEVERITY_RULES), so clients keep no copy
    *   counts:           { total, bySeverity, byType } over the whole window (not just the returned page)
    *   sources:          { nasa, usgs } each "ok" (fresh or fetched now), "stale" (failed,
    *                     last good data still served) or "error" (failed, nothing served)
@@ -255,6 +257,7 @@ export function createFeedService({
       sourcesUpdatedAt,
       updatedAt: iso(updatedAt),
       params,
+      severityRules: SEVERITY_RULES, // the thresholds that rated these items (utils/severity.js)
     };
   }
 

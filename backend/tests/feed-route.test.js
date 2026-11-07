@@ -121,3 +121,27 @@ describe("GET /disasters: partial, stale and unavailable states", () => {
     }
   });
 });
+
+describe("GET /disasters: severity rules served with the feed", () => {
+  it("carries the thresholds that rated the items, so clients keep no copy", async () => {
+    const { SEVERITY_RULES, assessSeverity } = await import("../src/utils/severity.js");
+    const res = await request(app).get("/disasters");
+    expect(res.status).toBe(200);
+    expect(res.body.severityRules).toEqual(JSON.parse(JSON.stringify(SEVERITY_RULES)));
+
+    // each served lower bound is exactly where the rating changes
+    const { earthquake, wildfire, storm, gdacs } = res.body.severityRules;
+    expect(assessSeverity({ type: "earthquake", magnitude: earthquake.medium }).severity).toBe("medium");
+    expect(assessSeverity({ type: "earthquake", magnitude: earthquake.high }).severity).toBe("high");
+    expect(assessSeverity({ type: "earthquake", magnitude: earthquake.medium - earthquake.step }).severity).toBe("low");
+    expect(assessSeverity({ type: "wildfire", areaHa: wildfire.medium }).severity).toBe("medium");
+    expect(assessSeverity({ type: "wildfire", areaHa: wildfire.high }).severity).toBe("high");
+    expect(assessSeverity({ type: "wildfire", areaHa: wildfire.medium - wildfire.step }).severity).toBe("low");
+    expect(assessSeverity({ type: "storm", peakKts: storm.medium }).severity).toBe("medium");
+    expect(assessSeverity({ type: "storm", peakKts: storm.high }).severity).toBe("high");
+    expect(assessSeverity({ type: "storm", peakKts: storm.medium - storm.step }).severity).toBe("low");
+    for (const [level, severity] of Object.entries(gdacs.levels)) {
+      expect(assessSeverity({ type: "flood", gdacsLevel: level }).severity).toBe(severity);
+    }
+  });
+});

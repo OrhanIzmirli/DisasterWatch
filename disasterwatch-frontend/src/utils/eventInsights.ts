@@ -1,21 +1,16 @@
 /**
  * Plain-language context for the event drawer, derived only from data the
  * feed already carries. Nothing here rates an event: the severity comes from
- * the backend (backend/src/utils/severity.js, the single source of truth); the
- * scale below only shows where that rating sits, using the same thresholds.
+ * the backend (backend/src/utils/severity.js, the single source of truth), and
+ * the scale below is drawn from the thresholds the backend serves with the feed
+ * (`severityRules`); the frontend keeps no copy of them.
  */
 import type { DrawerEvent } from "../components/EventDetailDrawer";
+import type { SeverityRules } from "../services/feedCache";
 import { eventRelativeTime } from "./eventText";
 
 type Severity = DrawerEvent["severity"];
 type RatedSeverity = Exclude<Severity, "unrated">;
-
-/** Mirrors backend/src/utils/severity.js (display only). */
-export const SEVERITY_THRESHOLDS = {
-  earthquake: { medium: 5.0, high: 6.0 },
-  wildfireHa: { medium: 7_000, high: 10_000 },
-  stormKts: { medium: 64, high: 96 },
-} as const;
 
 const fmt = (n: number, digits = 0) =>
   n.toLocaleString("en-GB", { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -66,66 +61,65 @@ export type SeverityScale = {
 };
 
 /** The three steps of the rule that rated this event, for a small visual scale. */
-export function severityScale(event: DrawerEvent): SeverityScale {
+export function severityScale(event: DrawerEvent, rules: SeverityRules | null): SeverityScale {
   const d = event.details;
   const current = event.severity === "unrated" ? null : event.severity;
+  // Without the served rules (an old cached feed, a failed request) the levels are
+  // shown without their ranges rather than with numbers the frontend would have to guess.
+  const steps = (ranges: [string, string, string] | null): ScaleStep[] => [
+    { level: "low", label: "Low", range: ranges?.[0] ?? "" },
+    { level: "medium", label: "Medium", range: ranges?.[1] ?? "" },
+    { level: "high", label: "High", range: ranges?.[2] ?? "" },
+  ];
+  const decimals = (step: number) => (step < 1 ? Math.max(0, -Math.floor(Math.log10(step))) : 0);
+
   if (event.type === "earthquake") {
-    const t = SEVERITY_THRESHOLDS.earthquake;
+    const t = rules?.earthquake;
+    const n = (v: number) => fmt(v, t ? decimals(t.step) : 1);
     return {
       basis: "USGS magnitude",
       current,
-      steps: [
-        { level: "low", label: "Low", range: `below M ${fmt(t.medium, 1)}` },
-        { level: "medium", label: "Medium", range: `M ${fmt(t.medium, 1)}–${fmt(t.high - 0.1, 1)}` },
-        { level: "high", label: "High", range: `M ${fmt(t.high, 1)} and above` },
-      ],
+      steps: steps(t ? [`below M ${n(t.medium)}`, `M ${n(t.medium)}–${n(t.high - t.step)}`, `M ${n(t.high)} and above`] : null),
     };
   }
-  if (d?.gdacsLevel) {
-    return {
-      basis: "GDACS impact level",
-      current,
-      steps: [
-        { level: "low", label: "Low", range: "GDACS Green" },
-        { level: "medium", label: "Medium", range: "GDACS Orange" },
-        { level: "high", label: "High", range: "GDACS Red" },
-      ],
+  const gdacsRanges = (): [string, string, string] | null => {
+    if (!rules) return null;
+    const levelFor = (severity: RatedSeverity) =>
+      Object.entries(rules.gdacs.levels).find(([, s]) => s === severity)?.[0] ?? null;
+    const name = (severity: RatedSeverity) => {
+      const level = levelFor(severity);
+      return level ? `GDACS ${level.charAt(0).toUpperCase()}${level.slice(1)}` : "";
     };
-  }
+    return [name("low"), name("medium"), name("high")];
+  };
+  if (d?.gdacsLevel) return { basis: "GDACS impact level", current, steps: steps(gdacsRanges()) };
   if (event.type === "storm") {
-    const t = SEVERITY_THRESHOLDS.stormKts;
+    const t = rules?.storm;
+    const cat = (kts: number) => stormCategory(kts).replace(/ hurricane$/, "").replace("Category ", "Cat ");
     return {
       basis: "Peak wind (Saffir-Simpson)",
       current,
-      steps: [
-        { level: "low", label: "Low", range: `below ${t.medium} kts` },
-        { level: "medium", label: "Medium", range: `${t.medium}–${t.high - 1} kts (Cat 1–2)` },
-        { level: "high", label: "High", range: `${t.high} kts and above (Cat 3+)` },
-      ],
+      steps: steps(
+        t
+          ? [
+              `below ${fmt(t.medium)} kts`,
+              `${fmt(t.medium)}–${fmt(t.high - t.step)} kts (${cat(t.medium)}–${cat(t.high - t.step).replace("Cat ", "")})`,
+              `${fmt(t.high)} kts and above (${cat(t.high)}+)`,
+            ]
+          : null
+      ),
     };
   }
   if (event.type === "wildfire") {
-    const t = SEVERITY_THRESHOLDS.wildfireHa;
+    const t = rules?.wildfire;
     return {
       basis: "Burned area (NASA EONET)",
       current,
-      steps: [
-        { level: "low", label: "Low", range: `below ${fmt(t.medium)} ha` },
-        { level: "medium", label: "Medium", range: `${fmt(t.medium)}–${fmt(t.high - 1)} ha` },
-        { level: "high", label: "High", range: `${fmt(t.high)} ha and above` },
-      ],
+      steps: steps(t ? [`below ${fmt(t.medium)} ha`, `${fmt(t.medium)}–${fmt(t.high - t.step)} ha`, `${fmt(t.high)} ha and above`] : null),
     };
   }
   // floods without a GDACS level: nothing to measure
-  return {
-    basis: "GDACS impact level",
-    current,
-    steps: [
-      { level: "low", label: "Low", range: "GDACS Green" },
-      { level: "medium", label: "Medium", range: "GDACS Orange" },
-      { level: "high", label: "High", range: "GDACS Red" },
-    ],
-  };
+  return { basis: "GDACS impact level", current, steps: steps(gdacsRanges()) };
 }
 
 const TYPE_NOUN: Record<DrawerEvent["type"], string> = {

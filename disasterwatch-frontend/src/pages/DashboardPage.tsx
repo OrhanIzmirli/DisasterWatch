@@ -7,7 +7,7 @@ import RelatedNews from "../components/RelatedNews";
 import EventDetailDrawer, { type EventDetails } from "../components/EventDetailDrawer";
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
-import { getCachedFeed, isFeedFresh, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt } from "../services/feedCache";
+import { getCachedFeed, isFeedFresh, readSeverityRules, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt, type SeverityRules } from "../services/feedCache";
 import HeadlineStrip from "../components/HeadlineStrip";
 import { headlineText } from "../utils/headline";
 import { pulseIds } from "../utils/liveness";
@@ -203,6 +203,8 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
   // A cached feed shown while the live request runs may lack an event the live one has.
   const [feedSettled, setFeedSettled] = useState<boolean>(() => isFeedFresh());
   const [feedStale, setFeedStale] = useState(() => getCachedFeed()?.stale ?? false);
+  // Rating thresholds served with the feed; the drawer's severity scale is drawn from them
+  const [severityRules, setSeverityRules] = useState<SeverityRules | null>(() => getCachedFeed()?.severityRules ?? null);
   // Per-source status from the backend; a feed with one source in error is "partial"
   const [feedSources, setFeedSources] = useState<FeedSources | null>(() => getCachedFeed()?.sources ?? null);
   const [feedSourcesUpdatedAt, setFeedSourcesUpdatedAt] = useState<FeedSourcesUpdatedAt | null>(() => getCachedFeed()?.sourcesUpdatedAt ?? null);
@@ -344,7 +346,9 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
       const sources = readSources(data?.sources);
       const sourcesUpdatedAt = readSourcesUpdatedAt(data?.sourcesUpdatedAt);
       const updatedAt = readIso(data?.updatedAt);
-      setCachedFeed(items, { stale, sources, sourcesUpdatedAt, updatedAt });
+      const rules = readSeverityRules(data?.severityRules);
+      setCachedFeed(items, { stale, sources, sourcesUpdatedAt, updatedAt, severityRules: rules });
+      setSeverityRules(rules);
       setDisasters(items);
       setFeedStale(stale);
       setFeedSources(sources);
@@ -1087,6 +1091,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
           event={selectedDisaster}
           relatedNews={<RelatedNews eventId={selectedDisaster.id} />}
           nearby={nearbyEvents(selectedDisaster, disasters, 500, 4)}
+          severityRules={severityRules}
           onSelectEvent={(id) => {
             const hit = disasters.find((d) => d.id === id);
             if (hit) setSelectedDisaster(hit);
