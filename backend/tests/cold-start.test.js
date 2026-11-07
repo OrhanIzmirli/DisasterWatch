@@ -11,7 +11,7 @@ import { createMemoryGdacsStore, createPrismaGdacsStore, GDACS_STORE_MAX_AGE_MS 
 import { fetchNasaEventsFast, fetchNasaEventsRated } from "../src/services/nasa.service.js";
 import { createFeedService, strongestFirst } from "../src/services/feed.service.js";
 import { FEED_PARAM_LIMITS } from "../src/services/feed.service.js";
-import { USGS_FEED_URL } from "../src/services/usgs.service.js";
+import { USGS_FEED_URL, USGS_MONTH_FEED_URL } from "../src/services/usgs.service.js";
 import { prisma, resetDb } from "./helpers.js";
 
 const quiet = { info: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -266,15 +266,16 @@ describe("public feed on a cold start", () => {
   });
 });
 
-describe("USGS: 7 days of M4.5+", () => {
+describe("USGS: M4.5+ (week for alerts, month for the public feed)", () => {
   const quake = (id, mag, minutesAgo) => ({
     id,
     properties: { mag, place: `Somewhere ${id}`, time: Date.now() - minutesAgo * 60_000, updated: Date.now(), url: "https://example.org", status: "reviewed" },
     geometry: { coordinates: [10, 10, 10] },
   });
 
-  it("uses the weekly M4.5+ summary feed and does not accept a lower minimum", () => {
+  it("ingestion keeps the weekly M4.5+ feed, the public feed reads the monthly one, no lower minimum", () => {
     expect(USGS_FEED_URL).toBe("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson");
+    expect(USGS_MONTH_FEED_URL).toBe("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_month.geojson");
     expect(FEED_PARAM_LIMITS.minMag.min).toBe(4.5);
   });
 
