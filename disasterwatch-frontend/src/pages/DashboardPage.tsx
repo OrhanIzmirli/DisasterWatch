@@ -5,6 +5,7 @@ import FeedRow from "../components/FeedRow";
 import { kpiFromCounts, kpiFromItems, readCounts, type FeedCounts } from "../utils/kpi";
 import RelatedNews from "../components/RelatedNews";
 import type { EventDetails } from "../components/EventDetailDrawer";
+import { CONFIDENCE_STEPS, passesScores, PRIORITY_STEPS, type FeedScores } from "../utils/scores";
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
 import { getCachedFeed, isFeedFresh, readSeverityRules, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt, type SeverityRules } from "../services/feedCache";
@@ -42,6 +43,8 @@ type DisasterItem = {
   details?: EventDetails;
   /** Only on events whose title repeats in the feed: "≈ 18.2°S 131.6°E · 7,652 ha · since 14 Oct". */
   subtitle?: string | null;
+  /** Confidence, priority and independent confirmations (docs/scoring.md); null when they could not be computed. */
+  scores?: FeedScores;
 };
 
 type FeedStatus = "loading" | "ready" | "error";
@@ -221,7 +224,10 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
   const openerRef = useRef<HTMLElement | null>(null); // the feed row button
   const [activeFilter, setActiveFilter] = useState<"all" | DisasterType>("all");
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"time" | "severity">("time");
+  const [sortBy, setSortBy] = useState<"time" | "severity" | "priority">("time");
+  // score filters (list and map; the KPIs count every event, like the search)
+  const [minConfidence, setMinConfidence] = useState(0);
+  const [minPriority, setMinPriority] = useState(0);
   const [selectedDisaster, setSelectedDisaster] = useState<DisasterItem | null>(
     null
   );
@@ -453,6 +459,10 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
       data = data.filter((d) => d.type === activeFilter);
     }
 
+    if (minConfidence > 0 || minPriority > 0) {
+      data = data.filter((d) => passesScores(d.scores, minConfidence, minPriority));
+    }
+
     if (search.trim()) {
       const q = search.trim();
       data = data
@@ -466,12 +476,14 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
       data.sort((a, b) =>
         sortBy === "time"
           ? a.timeMinutesAgo - b.timeMinutesAgo
+          : sortBy === "priority"
+          ? (b.scores?.priority ?? -1) - (a.scores?.priority ?? -1) || a.timeMinutesAgo - b.timeMinutesAgo
           : severityOrder[a.severity] - severityOrder[b.severity]
       );
     }
 
     return data;
-  }, [disasters, activeFilter, search, sortBy]);
+  }, [disasters, activeFilter, search, sortBy, minConfidence, minPriority]);
 
   /* =========================
      TODAY EVENTS (REAL DATA)
@@ -792,6 +804,27 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
                   <span>Pulsing: newest event and recent significant ones (24 h)</span>
                 </div>
               )}
+              {/* markers: size from the priority score, outline from the confidence score (docs/scoring.md) */}
+              <span className="legend-divider" aria-hidden="true" />
+              <span className="legend-title legend-title-sub">Markers</span>
+              <div className="legend-pills legend-scores">
+                <div className="legend-pill">
+                  <span className="legend-size" aria-hidden="true">
+                    <span className="legend-size-dot legend-size-low" />
+                    <span className="legend-size-dot legend-size-medium" />
+                    <span className="legend-size-dot legend-size-high" />
+                  </span>
+                  <span>Size: priority (under 30, 30–59, 60+)</span>
+                </div>
+                <div className="legend-pill">
+                  <span className="legend-outline" aria-hidden="true">
+                    <span className="legend-outline-dot legend-outline-high" />
+                    <span className="legend-outline-dot legend-outline-medium" />
+                    <span className="legend-outline-dot legend-outline-low" />
+                  </span>
+                  <span>Outline: confidence (solid 70+, dashed 40–69, dotted under 40)</span>
+                </div>
+              </div>
             </div>
           </section>
         )}
@@ -876,7 +909,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
                 className="disaster-sort"
                 value={sortBy}
                 onChange={(e) => {
-                  setSortBy(e.target.value as "time" | "severity");
+                  setSortBy(e.target.value as "time" | "severity" | "priority");
                   setPage(1);
                   scrollListToTop();
                 }}
@@ -885,6 +918,45 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
               >
                 <option value="time">Sort: Newest</option>
                 <option value="severity">Sort: Severity</option>
+                <option value="priority">Sort: Priority</option>
+              </select>
+              <label htmlFor="feed-min-priority" className="sr-only">
+                Minimum priority
+              </label>
+              <select
+                id="feed-min-priority"
+                className="disaster-sort disaster-score-filter"
+                value={minPriority}
+                onChange={(e) => {
+                  setMinPriority(Number(e.target.value));
+                  setPage(1);
+                  scrollListToTop();
+                }}
+              >
+                {PRIORITY_STEPS.map((v) => (
+                  <option key={v} value={v}>
+                    {v === 0 ? "Priority: any" : `Priority: ${v}+`}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="feed-min-confidence" className="sr-only">
+                Minimum confidence
+              </label>
+              <select
+                id="feed-min-confidence"
+                className="disaster-sort disaster-score-filter"
+                value={minConfidence}
+                onChange={(e) => {
+                  setMinConfidence(Number(e.target.value));
+                  setPage(1);
+                  scrollListToTop();
+                }}
+              >
+                {CONFIDENCE_STEPS.map((v) => (
+                  <option key={v} value={v}>
+                    {v === 0 ? "Confidence: any" : `Confidence: ${v}+`}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

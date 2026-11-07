@@ -3935,8 +3935,14 @@ button.disaster-row {
     width: 100%;
   }
 
+  /* search on its own row; sort and the two score filters two to a row, never cut off */
   .disaster-search {
-    flex: 1;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .disaster-sort {
+    flex: 1 1 calc(50% - 0.4rem);
     min-width: 0;
   }
 
@@ -4563,4 +4569,149 @@ h2.card-title {
   margin-top: 1rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--dw-border);
+}
+
+/* ---- scores (docs/scoring.md): legend, tooltip line, event drawer ---- */
+/* map legend: size = priority, outline = confidence; drawn on the light legend pill */
+.legend-size,
+.legend-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.legend-size-dot,
+.legend-outline-dot {
+  display: inline-block;
+  border-radius: 999px;
+  background: #4b5563;
+}
+
+.legend-size-dot {
+  border: 1px solid rgba(15, 23, 42, 0.7);
+}
+
+.legend-size-low { width: 9px; height: 9px; }
+.legend-size-medium { width: 13px; height: 13px; }
+.legend-size-high { width: 18px; height: 18px; }
+
+.legend-outline-dot {
+  width: 17px;
+  height: 17px;
+  border: 2.5px solid #111827;
+}
+
+.legend-outline-high { border-style: solid; }
+.legend-outline-medium { border-style: dashed; }
+.legend-outline-low { border-style: dotted; }
+
+.dw-tooltip-scores {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: rgba(246, 232, 217, 0.92);
+}
+
+.edd-score-pills {
+  margin: 0 0 0.35rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.edd-score-pill {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgba(102, 155, 188, 0.35);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.edd-score-pill dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dw-text-muted);
+}
+
+.edd-score-pill dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--dw-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.edd-score-band {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--dw-text-muted);
+}
+
+.edd-score-table {
+  width: 100%;
+  margin: 0.6rem 0 0.2rem;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  color: var(--dw-text);
+}
+
+.edd-score-table caption {
+  margin-bottom: 0.25rem;
+  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--dw-cream);
+}
+
+.edd-score-table th,
+.edd-score-table td {
+  padding: 0.28rem 0.35rem;
+  border-bottom: 1px solid rgba(102, 155, 188, 0.25);
+  text-align: left;
+  vertical-align: top;
+}
+
+.edd-score-table thead th {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dw-text-muted);
+}
+
+.edd-score-table .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.edd-score-table tfoot th,
+.edd-score-table tfoot td {
+  border-bottom: none;
+  font-weight: 700;
+}
+
+.edd-score-term {
+  font-weight: 600;
+}
+
+.edd-score-subtitle {
+  margin: 0.7rem 0 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--dw-cream);
+}
+
+.edd-score-sources {
+  list-style: none;
+  margin: 0 0 0.4rem;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.edd-score-sources .edd-sub {
+  display: block;
 }

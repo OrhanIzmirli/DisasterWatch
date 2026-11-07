@@ -129,7 +129,12 @@ export function priorityScore(event, sources, confidence, population) {
   const terms = [
     { term: "severity", value: sev.value, weight: PRIORITY_WEIGHTS.severity, basis: sev.basis },
     exp
-      ? { term: "exposure", value: exposurePoints(exp.population), weight: PRIORITY_WEIGHTS.exposure, basis: `about ${exp.population.toLocaleString("en-US")} people in places within ${radiusKm} km` }
+      ? {
+          term: "exposure",
+          value: exposurePoints(exp.population),
+          weight: PRIORITY_WEIGHTS.exposure,
+          basis: exp.population > 0 ? `about ${exp.population.toLocaleString("en-US")} people in places within ${radiusKm} km` : `no places of 5,000 or more people within ${radiusKm} km`,
+        }
       : { term: "exposure", value: null, weight: 0, basis: "population data not available" },
     { term: "confidence", value: confidence, weight: PRIORITY_WEIGHTS.confidence, basis: `confidence ${confidence}` },
   ];

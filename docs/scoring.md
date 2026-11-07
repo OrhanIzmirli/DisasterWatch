@@ -96,7 +96,14 @@ Confidence carries a fifth of the weight, so an unconfirmed event cannot reach t
 - **Highest priority:** an M7.7 near populated Panama (79), then storms near the Indian and Mexican coasts (64–71).
 - **Wildfires and floods:** confidence 20. Most EONET events in the 30-day window were last updated days ago; GDACS levels and FIRMS detections raise current ones.
 
-## 4. Versions and limits
+## 4. On the map and in the feed
+
+- **Markers.** A marker's size shows its priority: under 30, 30–59, 60 and over. Its outline shows its confidence: solid at 70 or more, dashed at 40–69, dotted under 40. The colour stays the event type, and the legend explains all three. Each marker's tooltip and screen-reader label say the numbers, so nothing depends on seeing the size or the dashes.
+- **Filters and sort.** The feed toolbar filters list and map by minimum priority (any, 30, 60) and minimum confidence (any, 40, 70), and sorts by priority. The headline figures count every event, as they do with the search.
+- **"Why these scores?"** The event drawer shows both scores and the number of independent confirmations at once. It then loads `GET /api/v1/disasters/{id}` and lists every confidence term with its points, every priority term with its value and weight, and each source that was checked. Each source shows how it matched (time and distance apart, the computing agency, satellite detections, a shared reference) and links to the source.
+- **Feed size.** The dashboard feed carries only `scores: { confidence, priority, confirmations }` per event, so it stays small. The terms come from the public API when the drawer opens.
+
+## 5. Versions and limits
 
 Every response that carries scores names `scoreVersion`, currently 1. A change to any number above raises it and is listed in the [Changelog](../CHANGELOG.md).
 
