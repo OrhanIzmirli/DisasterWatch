@@ -23,7 +23,9 @@
  *     other storms ("... Hurricane Melissa claims") is a retrospective too.
  *     A show or election word (musical, film, festival, election, voters, ...)
  *     drops the headline as well, unless it reports impact, a disruption
- *     ("called off") or the hazard acting ("hits", "nears").
+ *     ("called off") or the hazard acting ("hits", "nears"). Retrospectives
+ *     and historical pieces stay when the headline reports a new event or
+ *     the article is linked to a current feed event (`linked`).
  *  2. Idioms and names are removed from the text before matching
  *     ("perfect storm", "storm of criticism", "flood of", "spread like
  *     wildfire", "political earthquake", "landslide victory", "like an
@@ -45,7 +47,7 @@
  *   isDisasterNews(article) -> { keep: boolean, reason: string }
  */
 
-import { isDisasterNewsIn } from "./newsLanguages.js";
+import { isDisasterNewsIn, reportsNewEventIn } from "./newsLanguages.js";
 
 /** URL path segments of sections / formats that are not disaster reporting. */
 const EXCLUDED_SECTIONS = new Set([
@@ -137,6 +139,14 @@ const PRODUCT_MARKERS =
 
 /** Retrospectives: the headline looks back at a past disaster. */
 const RETRO_MARKERS = /\b(anniversary|(years?|decades?|months?) (after|since|on from)|years on|(\d+|years|decades|centuries) ago|remember(ing|s)?|looking back|lessons (from|of)|legacy of|world series)\b/;
+
+const HAZARD_WORD = "(?:earthquakes?|quakes?|aftershocks?|tsunamis?|wildfires?|bushfires?|floods?|flooding|typhoons?|hurricanes?|cyclones?|tornado(?:es)?|landslides?|eruptions?|storms?)";
+
+/** A side story about what was built after a past disaster. "Set up" and "opened" are absent: shelters are set up after today's quake too. */
+const BUILT_AFTER = new RegExp(`\\b(built|rebuilt|founded|established) (?:after|following|since) (?:the |a |an )?(?:[\\p{L}\\p{N}-]+ )?${HAZARD_WORD}\\b`, "u");
+
+/** The headline reports a new event, which outweighs a look back ("New quake strikes three years after ..."). "Hit" is absent: it is also the past tense. */
+const FRESH_EVENT = new RegExp(`\\b(?:today|tonight|this (?:morning|evening|afternoon)|breaking)\\b|\\b(?:new|fresh|another)\\b(?: [\\p{L}\\p{N}.'-]+){0,2} ${HAZARD_WORD}\\b|\\b${HAZARD_WORD} (?:hits|strikes|shakes|rocks|batters|lashes)\\b`, "u");
 
 /** A 4-digit year in the headline; a past one marks a historical piece ("the 1989 quake", "2025 floods"). Counts ("1900 homes") are not years. */
 const YEAR = /\b(1[89]\d\d|20\d\d)\b(?! ?(homes|houses|people|residents|families|buildings|hectares|acres|km|miles|feet|metres|meters|dead|killed|evacuated|firefighters|troops|visitors|tourists|students|workers|cases)\b)/;
@@ -280,8 +290,10 @@ export function excludedSection(url) {
 /**
  * `marker: true` on a drop means an explicit marker decided it (section,
  * feature, sports, product, retrospective), not a missing hazard term.
+ * `linked`: the article is tied to a current feed event, so a look back in
+ * its headline does not make it a retrospective.
  */
-export function isDisasterNews(article, { now = new Date(), storms = null } = {}) {
+export function isDisasterNews(article, { now = new Date(), storms = null, linked = false } = {}) {
   const section = excludedSection(article?.url);
   if (section) return { keep: false, marker: true, reason: `section "${section}"` };
 
@@ -289,8 +301,8 @@ export function isDisasterNews(article, { now = new Date(), storms = null } = {}
   const lang = article?.language;
   if (lang && lang !== "en") {
     const past = String(article?.title ?? "").match(/\b(1[89]\d\d|20\d\d)\b/);
-    if (past && Number(past[1]) < now.getUTCFullYear()) return { keep: false, marker: true, reason: `historical ("${past[1]}")` };
-    return isDisasterNewsIn(lang, article.title) ?? { keep: false, reason: `language "${lang}" is not read` };
+    if (past && Number(past[1]) < now.getUTCFullYear() && !linked && !reportsNewEventIn(lang, article.title)) return { keep: false, marker: true, reason: `historical ("${past[1]}")` };
+    return isDisasterNewsIn(lang, article.title, { linked }) ?? { keep: false, reason: `language "${lang}" is not read` };
   }
 
   const headline = normalise(article?.title);
@@ -305,11 +317,13 @@ export function isDisasterNews(article, { now = new Date(), storms = null } = {}
   const product = headline.match(PRODUCT_MARKERS);
   if (product) return { keep: false, marker: true, reason: `product announcement ("${product[0]}")` };
 
-  const retro = headline.match(RETRO_MARKERS);
-  if (retro) return { keep: false, marker: true, reason: `retrospective ("${retro[1]}")` };
+  const current = linked || FRESH_EVENT.test(headline);
+
+  const retro = headline.match(RETRO_MARKERS) ?? headline.match(BUILT_AFTER);
+  if (retro && !current) return { keep: false, marker: true, reason: `retrospective ("${retro[1]}")` };
 
   const year = headline.match(YEAR);
-  if (year && Number(year[1]) < now.getUTCFullYear()) return { keep: false, marker: true, reason: `historical ("${year[1]}")` };
+  if (year && Number(year[1]) < now.getUTCFullYear() && !current) return { keep: false, marker: true, reason: `historical ("${year[1]}")` };
 
   const sport = headline.match(SPORT_WORDS);
   const reportsImpact = first(headline, IMPACT) || DISRUPTED.test(headline);
