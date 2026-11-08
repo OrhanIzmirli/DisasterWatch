@@ -3,6 +3,7 @@
 Notable changes to DisasterWatch, newest first. Back to the [README](README.md).
 
 **2026-11-08**
+- README rewritten as a short project overview with new screenshots and a demo video; the step-by-step setup moved to `docs/quick-start.md` and the public API notes to `docs/api.md`. The code is now under the MIT licence.
 - News, Turkish headlines and side stories: Turkish place names match with their case endings, because GDELT drops the apostrophe ("Japonyada", "Türkiyeye"). A piece looking back at a past disaster ("yıl dönümü", "deprem sonrası kurulan", "anniversary", "years after") is dropped in every language unless its headline reports a new event or it is linked to a current feed event.
 - News relevance: titles of shows and figures of speech no longer pass as disaster news, in all six languages (musicals, films, "landslide victory", "like an earthquake", "row erupts", team names). A headline that reports impact, a disruption or the hazard acting is kept.
 - News country and region filters work for GDELT: an article that matches no feed event is placed by its headline when the headline names exactly one country, in the article's own language. Headlines naming two countries, demonyms, ambiguous names and seas such as "Gulf of Mexico" leave it unlocated. Cached articles are placed at once.
