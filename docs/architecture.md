@@ -60,7 +60,7 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 - Pagination and marker caps keep the map responsive: the map shows the 15 strongest earthquakes of the feed page, and when a week has more quakes than the page has room for, the page keeps the strongest, not the newest.
 
 ### 2) Live dashboard (map + feed + KPIs)
-- Interactive world map (Leaflet) with severity-coloured markers and an event detail drawer (related news, USGS PAGER alert level, EONET sources).
+- Interactive world map (Leaflet) with markers coloured by event type, sized by priority and outlined by confidence, and an event detail drawer (related news, USGS PAGER alert level, EONET sources).
 - Nearby events are grouped into numbered clusters (supercluster, `src/utils/clustering.ts`) coloured by event type like the markers: one solid colour when a single type is inside, a ring split proportionally to the type counts for a mix, with the count on a dark disc. Clusters are sized logarithmically and carry a "7 events · 6 wildfires, 1 flood · highest: High" tooltip (severity lives in the tooltip, not in the colour); clicking zooms to the cluster's bounds, or fans the events out when they share coordinates (spiderfy). The selected event is always drawn on its own, on top, so it never disappears inside a cluster.
 - Live feed with filters (earthquake / wildfire / flood / storm), search by place, sorting by newest or severity.
 - KPIs: total events, significant events (high + medium severity), countries affected (derived by the backend from the source place names; events whose country cannot be derived, e.g. "North Atlantic Ocean", are not counted).

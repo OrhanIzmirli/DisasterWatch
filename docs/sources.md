@@ -2,7 +2,7 @@
 
 Back to the [README](../README.md).
 
-DisasterWatch shows events from two **primary** sources and checks them against **confirming** sources. A confirming source never adds an event of its own: it only raises (or, by its absence, leaves unchanged) the confidence that a primary event is real ([Scoring](scoring.md) once the fusion is complete).
+DisasterWatch shows events from two **primary** sources and checks them against **confirming** sources. A confirming source never adds an event of its own: it only raises (or, by its absence, leaves unchanged) the confidence that a primary event is real ([Scoring](scoring.md)).
 
 Licence terms were read on the official pages on 2026-11-07.
 
