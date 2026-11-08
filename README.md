@@ -22,7 +22,7 @@
 - **Public API with OAuth keys.** Read-only `/api/v1`, OpenAPI 3.1, cursor paging and ETags. No key needed for 60 requests a minute, or sign in with GitHub for a key with 600.
 - **News in six languages.** GDELT articles in English, Turkish, Spanish, French, German and Portuguese, with language-aware relevance rules and country placement.
 - **Event-driven alert pipeline.** Transactional outbox, Kafka and an idempotent consumer: at-least-once delivery, at most one notification per user and event.
-- **Tested and accessible.** 1,136 automated tests in CI, visual regression at 1440 px and 390 px, and WCAG 2.1 AA checks with axe-core.
+- **Tested and accessible.** 1,100+ automated tests in CI, visual regression at 1440 px and 390 px, and WCAG 2.1 AA checks with axe-core.
 
 ## See it
 
@@ -109,10 +109,10 @@ Step-by-step notes, ports and reset commands: [Quick start](docs/quick-start.md)
 
 | Suite | Tests | Tools |
 |---|---:|---|
-| Backend, including OpenAPI contract tests | 845 | Vitest, supertest, Ajv, PostgreSQL |
-| Frontend | 161 | Vitest, Testing Library |
-| Notification service | 73 | Vitest |
-| Visual and accessibility, at 1440 px and 390 px | 57 | Playwright, axe-core |
+| Backend, including OpenAPI contract tests | 800+ | Vitest, supertest, Ajv, PostgreSQL |
+| Frontend | 150+ | Vitest, Testing Library |
+| Notification service | 70+ | Vitest |
+| Visual and accessibility, at 1440 px and 390 px | 50+ | Playwright, axe-core |
 
 All four run on every push and pull request. Commands and setup: [Tests and CI](docs/operations.md#tests-and-ci-in-detail).
 
