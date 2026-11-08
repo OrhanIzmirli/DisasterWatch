@@ -9,7 +9,9 @@
  *   2. its Guardian keyword tags ("Mexico", "California" -> US; a region tag
  *      such as world/americas gives the region only);
  *   3. the GDACS event it came with (GDACS media news: the event's affected
- *      countries).
+ *      countries);
+ *   4. a GDELT headline that names exactly one country, in the article's own
+ *      language (headlineCountry below).
  *
  * Nothing is guessed: an article none of these place stays unlocated
  * (location: null) and is listed only under "All regions". A fixed
@@ -17,8 +19,9 @@
  * Russia spans two: the event's longitude decides (>= 60° E is Asia); without
  * coordinates it counts for both.
  */
-import { countryFromToken, countryAliases } from "../utils/country.js";
+import { countryFromToken, countryAliases, usStates } from "../utils/country.js";
 import { CITY_COUNTRY } from "./newsCities.js";
+import { LANGUAGE_NAMES } from "./newsLanguages.js";
 
 export const REGIONS = [
   { id: "africa", label: "Africa" },
@@ -150,7 +153,8 @@ export function resolveLocation(article) {
     const loc = placed(g.countries, "gdacs", Number.isFinite(g.lng) ? g.lng : null);
     if (loc) return loc;
   }
-  return null;
+  const code = headlineCountry(article);
+  return code ? placed([code], "headline") : null;
 }
 
 /** Adjectives headlines use instead of the country name ("Nepali villages", "Turkish officials"). */
@@ -170,7 +174,87 @@ const fold = (s) =>
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
+    .replace(/ı/g, "i") // Turkish dotless i: "MISIR" and "Mısır" read the same
     .replace(/[’‘]/g, "'");
+
+/**
+ * Names that can mean something else in a headline, so they never place an
+ * article on their own: the US state and the country, a first name, the
+ * Spanish city and the Caribbean island, the second half of New Jersey, the
+ * two Congos.
+ */
+const AMBIGUOUS_NAMES = ["georgia", "georgie", "jordan", "chad", "reunion", "jersey", "granada", "washington", "congo"];
+/** Everyday words of one language that equal a place name: "sabah" (morning), "mali" (financial), "cin", "madeira" (wood), "ira" (anger), "chili". */
+const COMMON_WORDS = { tr: ["mali", "cin", "misir", "sabah"], pt: ["madeira", "ira"], fr: ["chili"] };
+/** Places whose name holds a country they are not in; removed before matching. */
+const NOT_THE_COUNTRY = [
+  "gulf of mexico", "golfo de mexico", "golfo do mexico", "golfe du mexique", "golf von mexiko", "meksika korfezi",
+  "nuevo mexico", "novo mexico", "nouveau-mexique", "nouveau mexique", "yeni meksika",
+  "gulf of guinea", "gulf of oman", "gulf of thailand", "sea of japan", "south china sea", "east china sea",
+  "mar de japon", "mar do japao", "mer du japon", "japon denizi", "mar de china", "mar da china", "mer de chine",
+];
+
+const WORD_EDGE_BEFORE = "(^|[^\\p{L}\\p{N}])";
+const WORD_EDGE_AFTER = "(?![\\p{L}\\p{N}])";
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Every code the region table knows, plus Russia, which it handles apart. */
+const placeableCodes = () => [...COUNTRY_REGION.keys(), "RU"];
+
+const HEADLINE_TERMS = new Map();
+
+/**
+ * Compiled place names for headlines in one language, longest first ("south
+ * sudan" before "sudan"). Each language looks for its own country names
+ * ("Japonya", "Japón", "Japon"); English also knows the US states and the
+ * aliases, which are English words ("usa" is a verb in Spanish). Demonyms
+ * are left out: "Indian Ocean", "Turkish Airlines" and "American Red Cross"
+ * are not places.
+ */
+function headlineTerms(language) {
+  const lang = LANGUAGE_NAMES[language] ? language : "en";
+  if (HEADLINE_TERMS.has(lang)) return HEADLINE_TERMS.get(lang);
+  const terms = new Map();
+  const add = (term, code) => {
+    const t = fold(term).replace(/\s*\(.*?\)\s*/g, " ").trim();
+    if (code && t.length >= 3) terms.set(t, code);
+  };
+  if (lang === "en") {
+    for (const state of usStates()) add(state, "US");
+    for (const [alias, name] of countryAliases()) add(alias, countryCode(name));
+  }
+  const display = new Intl.DisplayNames([lang], { type: "region" });
+  for (const code of placeableCodes()) add(display.of(code), code);
+  add("hong kong", "HK");
+  for (const [city, code] of CITY_COUNTRY) add(city, code);
+  for (const word of [...AMBIGUOUS_NAMES, ...(COMMON_WORDS[lang] ?? [])]) terms.delete(word);
+  const compiled = [...terms]
+    .sort((a, b) => b[0].length - a[0].length)
+    .map(([term, code]) => ({ code, pattern: new RegExp(`${WORD_EDGE_BEFORE}${escapeRegExp(term)}${WORD_EDGE_AFTER}`, "gu") }));
+  HEADLINE_TERMS.set(lang, compiled);
+  return compiled;
+}
+
+/**
+ * ISO code of the one country a GDELT headline names, or null. GDELT sends no
+ * place for an article and most of its articles match no feed event, so the
+ * headline is all there is. Two countries ("Japan sends aid to Peru") leave
+ * the article unlocated: the headline does not say which one it is about. A
+ * name found is blanked, so "Papua New Guinea" is not also "Guinea".
+ */
+export function headlineCountry(article) {
+  if (article?.provider !== "gdelt") return null;
+  let text = fold(article.title);
+  for (const place of NOT_THE_COUNTRY) text = text.split(place).join(" ");
+  const found = new Set();
+  for (const { code, pattern } of headlineTerms(article.language)) {
+    const rest = text.replace(pattern, "$1 ");
+    if (rest === text) continue;
+    found.add(code);
+    text = rest;
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
 
 /** Lower-case, accent-free names a headline may use for each country code. */
 function buildCountryTerms() {

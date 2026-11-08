@@ -79,7 +79,7 @@ describe("GET /news language and country filters", () => {
     expect(svc.getNews({ language: "tr" }).items.map((a) => a.url)).toEqual(["https://example.com/dunya/2"]);
     expect(svc.getNews({ language: "tr" }).languages).toEqual({ en: 1, tr: 1, es: 1 }); // counted before the language filter
     const jp = svc.getNews({ country: "JP" });
-    expect(jp.items.every((a) => a.location?.countries?.includes("JP"))).toBe(true);
+    expect(jp.items.map((a) => a.url)).toEqual(["https://example.com/world/1", "https://example.com/dunya/2"]); // linked to the event; named in Turkish
   });
 
   it("the route validates lang and country", async () => {
