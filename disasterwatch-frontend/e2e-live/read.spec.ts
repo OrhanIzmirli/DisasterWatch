@@ -64,8 +64,18 @@ test("the map draws markers and clusters; a cluster zooms in on click", async ({
   await liveDashboard(page, "map");
   const markers = page.locator(".map-marker:visible, .map-cluster:visible");
   await expect(markers.first()).toBeVisible();
-  const cluster = page.locator(".map-cluster:visible").first();
-  test.skip(!(await cluster.count()), "no cluster at this zoom");
+  // the attribution bar can lie over a cluster on a phone: take one that a click really reaches
+  await page.locator(".leaflet-container").first().scrollIntoViewIfNeeded();
+  const clusters = page.locator(".map-cluster:visible");
+  const reachable = await clusters.evaluateAll((els) =>
+    els.findIndex((e) => {
+      const r = e.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return top !== null && e.contains(top);
+    })
+  );
+  test.skip(reachable < 0, "no cluster can be clicked at this zoom");
+  const cluster = clusters.nth(reachable);
   const zoomBefore = await page.evaluate(() => document.querySelector(".leaflet-container")?.getAttribute("data-zoom") ?? (window as unknown as { __z?: number }).__z ?? null);
   const tilesBefore = await page.locator(".leaflet-tile-container img").count();
   await cluster.click();

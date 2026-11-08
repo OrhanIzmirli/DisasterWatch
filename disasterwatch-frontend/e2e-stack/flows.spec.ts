@@ -20,6 +20,7 @@ function sql(query: string): string {
 
 /** axe-core WCAG 2.1 A/AA on the page's main content; serious and critical findings fail. */
 async function auditA11y(page: Page) {
+  await page.locator("main").first().waitFor(); // pages are lazy chunks: the header can render before the page does
   const { violations } = await new AxeBuilder({ page }).include("main").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
   const blocking = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   expect(blocking.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(", ")}`)).toEqual([]);

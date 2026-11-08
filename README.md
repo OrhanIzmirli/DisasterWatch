@@ -69,7 +69,7 @@ The public map needs only the backend and the sources. Kafka, the notification s
 
 ## Engineering decisions
 
-**Licences decide what the API may say: GDACS.** GDACS's [terms](https://www.gdacs.org/About/termofuse.aspx) contain disclaimers but grant no redistribution licence. So the API passes on only its alert level and a link to its report, never its impact figures, and news stays out of the public API altogether. [Data sources](docs/sources.md)
+**Licenses decide what the API may say: GDACS.** GDACS's [terms](https://www.gdacs.org/About/termofuse.aspx) contain disclaimers but grant no redistribution license. So the API passes on only its alert level and a link to its report, never its impact figures, and news stays out of the public API altogether. [Data sources](docs/sources.md)
 
 **A rate limit that passed its tests and failed in production.** Behind Cloudflare and Render's proxy hops, `req.ip` was an internal address that changed between requests. A live test of 70 anonymous requests showed one client spread over three counters, and unrelated clients could share one. Limiters now use `True-Client-IP` or `CF-Connecting-IP`, and a live check confirmed that a client cannot forge either.
 
@@ -109,16 +109,26 @@ Step-by-step notes, ports and reset commands: [Quick start](docs/quick-start.md)
 
 | Suite | Tests | Tools |
 |---|---:|---|
-| Backend, including OpenAPI contract tests | 800+ | Vitest, supertest, Ajv, PostgreSQL |
-| Frontend | 150+ | Vitest, Testing Library |
+| Backend, including OpenAPI contract tests | 840+ | Vitest, supertest, Ajv, PostgreSQL |
+| Frontend | 160+ | Vitest, Testing Library |
 | Notification service | 70+ | Vitest |
 | Visual and accessibility, at 1440 px and 390 px | 50+ | Playwright, axe-core |
 
 All four run on every push and pull request. Commands and setup: [Tests and CI](docs/operations.md#tests-and-ci-in-detail).
 
+## Admin console
+
+Admins (addresses in `ADMIN_EMAILS`, confirmed while signed in) can search users, open an account, disable, re-enable or delete it, and read the audit log of those actions. Signed-out requests get 401, other users 403, and an admin cannot disable their own account.
+
 ## Limits
 
-Alerts can be hours late, because free services sleep. Events come only from what USGS (M 4.5+) and NASA EONET report. Volcanoes, landslides and official warnings are not covered. Full list: [Limits](docs/operations.md#limits).
+- **Alerts can be hours late.** Free services sleep and a scheduled job wakes them. Over three days in November 2026, a USGS event was first seen a median of 3.3 hours after it happened, and 41 hours later at worst.
+- **E-mail reaches only the Resend account owner** until the project has its own sending domain. In-app notifications do not have this limit.
+- **No password reset.** A forgotten password cannot be recovered yet.
+- **Alert delivery is proven on the local stack.** Live, the outbox and Kafka links report healthy, but no user has an alert subscription yet, so the last step has not run in production.
+- **Coverage.** Events come only from what USGS (M 4.5+) and NASA EONET report. Volcanoes, landslides and official warnings are not covered.
+
+Full list: [Limits](docs/operations.md#limits).
 
 ## Documentation
 
@@ -128,15 +138,15 @@ Alerts can be hours late, because free services sleep. Events come only from wha
 | Endpoints, public API design | [HTTP API](docs/api.md) |
 | Matching and score formulas | [Scoring](docs/scoring.md) |
 | How events are rated | [Severity](docs/severity.md) |
-| Sources and licences | [Data sources](docs/sources.md) |
+| Sources and licenses | [Data sources](docs/sources.md) |
 | Providers, relevance rules, regions | [News](docs/news.md) |
 | Deployment, environment, tests | [Operations](docs/operations.md) |
 | More screenshots | [Screenshots](docs/screenshots.md) |
 | History and contributing | [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) |
 
-## Licence and data
+## License and data
 
-The code is under the [MIT licence](LICENSE). The data belongs to its sources and keeps their terms, listed in [Data sources](docs/sources.md); API responses carry the required attribution. Map tiles © Esri and contributors.
+The code is under the [MIT license](LICENSE). The data belongs to its sources and keeps their terms, listed in [Data sources](docs/sources.md); API responses carry the required attribution. Map tiles © Esri and contributors.
 
 ## Author
 
