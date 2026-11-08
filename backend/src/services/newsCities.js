@@ -1,8 +1,8 @@
 /**
  * Unambiguous major cities and well-known provinces/islands -> ISO alpha-2.
- * Used only to confirm (or contradict) the country a GDACS article inherits
- * from its event (src/services/newsLocation.js); never to place an article
- * on its own.
+ * Used to confirm (or contradict) the country a GDACS article inherits from
+ * its event, and to place a GDELT article whose headline names one country
+ * and nothing else (src/services/newsLocation.js).
  *
  * Names shared by places in different countries are left out on purpose
  * (Tripoli: Libya and Lebanon; Hyderabad: India and Pakistan; Valencia,

@@ -17,8 +17,8 @@
  *    search: it lists the media articles of each feed event that links to
  *    a GDACS report, so its articles arrive linked to their event;
  *  - every article is placed for the region filter (src/services/newsLocation.js:
- *    linked event -> Guardian tags -> GDACS event country), or left
- *    unlocated (listed only under "All regions");
+ *    linked event -> Guardian tags -> GDACS event country -> a GDELT headline
+ *    naming one country), or left unlocated (listed only under "All regions");
  *  - every article must pass the disaster-news relevance rules
  *    (src/services/newsRelevance.js), whatever search returned it; the
  *    rules and the location check run again on the cached articles each
@@ -42,7 +42,7 @@ import { buildSearchPlan, dedupeArticles, linkArticlesToEvents, MAX_EVENT_QUERIE
 import { GDELT_RETENTION_MS } from "./newsProviders/gdelt.provider.js";
 import { createStormContext } from "./stormContext.js";
 import { isDisasterNews, stormNamesIn } from "./newsRelevance.js";
-import { withLocation, confirmLocation } from "./newsLocation.js";
+import { withLocation, confirmLocation, resolveLocation } from "./newsLocation.js";
 import { createNewsProviders } from "./newsProviders/index.js";
 import { fetchNasaEventsRated } from "./nasa.service.js";
 import { normalizeNasaEvents } from "../utils/normalizeDisasters.js";
@@ -312,7 +312,9 @@ export function createNewsService({
       const a = base.provider === "gdelt" ? withUrlDate(base, at) : base;
       const verdict = tooOld(a, at) ?? isDisasterNews(a, { now: at, storms });
       if (!verdict.keep && (verdict.marker || (a.provider ?? name) !== "guardian")) continue;
-      const location = confirmLocation({ ...a, provider: a.provider ?? name }, a.location ?? null);
+      // an unlocated article is placed again, so a new location rule reaches the cached articles too
+      const article = { ...a, provider: a.provider ?? name };
+      const location = confirmLocation(article, a.location ?? resolveLocation(article));
       const out = a === cached ? cached : { ...cached, publishedAt: a.publishedAt };
       kept.push(location === out.location ? out : { ...out, location });
     }

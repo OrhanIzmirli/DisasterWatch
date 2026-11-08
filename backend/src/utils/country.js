@@ -43,6 +43,11 @@ export function countryAliases() {
   return [...ALIASES];
 }
 
+/** The US state names, for matching a place in free text. */
+export function usStates() {
+  return [...US_STATES];
+}
+
 /** English country names from the ISO 3166-1 alpha-2 space (built once). */
 function buildCountryNames() {
   const names = new Map(); // lower-case -> display name
