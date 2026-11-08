@@ -42,15 +42,28 @@ export function languageCode(value) {
 const STEM = "stem"; // matches the start of a word
 const WORD = "word"; // matches a whole word or phrase
 
-/** Strong hazard terms per language (lower case). */
+/**
+ * Per language (lower case):
+ *   terms       strong hazard terms;
+ *   figurative  phrases removed before matching ("siyasi deprem", "Erdrutschsieg");
+ *   context     show, election and sport words: with one of them the headline
+ *               must also report what happened, or a hazard word is a title or a figure of speech;
+ *   report      word starts that report impact or a disruption (always matched as word starts).
+ */
 export const STRONG_TERMS = {
   tr: {
     mode: STEM,
     terms: ["deprem", "artçı sarsıntı", "tsunami", "orman yangın", "kasırga", "tayfun", "siklon", "tropik fırtına", "tropikal fırtına", "sel felaket", "sel bask", "su bask", "taşkın", "heyelan", "yanardağ", "volkan", "doğal afet"],
+    figurative: ["siyasi deprem", "siyasette deprem", "seçim deprem", "transfer deprem", "deprem etkisi", "deprem gibi", "tsunami gibi", "siyasi kasırga", "kasırga gibi"],
+    context: ["film", "netflix", "dizi", "tiyatro", "konser", "belgesel", "seçim", "futbol", "maç", "lig", "transfer", "şampiyon"],
+    report: ["ölü", "öldü", "yaralı", "hasar", "tahliye", "kayıp", "iptal", "ertelen", "yıkıl", "can kayb"],
   },
   de: {
     mode: STEM,
     terms: ["erdbeben", "nachbeben", "tsunami", "waldbr", "buschfeuer", "flächenbrand", "hurrikan", "taifun", "zyklon", "tropensturm", "überschwemmung", "hochwasser", "sturzflut", "erdrutsch", "vulkanausbruch", "naturkatastroph"],
+    figurative: ["politisches erdbeben", "politische erdbeben", "erdrutschsieg", "erdrutschartig", "wie ein erdbeben", "wie ein tsunami", "wie ein hurrikan"],
+    context: ["film", "netflix", "theater", "konzert", "dokumentation", "wahl", "bundesliga", "fußball", "liga"],
+    report: ["tote", "verletz", "schäden", "schaden", "evakuier", "vermisst", "opfer", "abgesagt", "verschoben", "zerstör"],
   },
   es: {
     mode: WORD,
@@ -59,6 +72,9 @@ export const STRONG_TERMS = {
       "incendio forestal", "incendios forestales", "huracán", "huracanes", "tifón", "tifones", "ciclón", "ciclones", "tormenta tropical",
       "inundación", "inundaciones", "riada", "riadas", "deslizamiento de tierra", "deslave", "erupción", "volcán", "desastre natural",
     ],
+    figurative: ["terremoto político", "terremoto electoral", "terremoto financiero", "tsunami político", "tsunami electoral", "tsunami de votos", "tsunami de críticas", "como un terremoto", "como un huracán", "erupción cutánea", "erupciones cutáneas"],
+    context: ["película", "películas", "netflix", "teatro", "concierto", "conciertos", "documental", "novela", "elecciones", "electoral", "candidato", "candidata", "votos", "fútbol", "liga", "gol", "goles"],
+    report: ["muert", "herid", "daño", "evacu", "desaparecid", "víctima", "damnificad", "cancel", "suspend", "aplaz", "destru"],
   },
   fr: {
     mode: WORD,
@@ -67,6 +83,9 @@ export const STRONG_TERMS = {
       "incendie de forêt", "incendies de forêt", "feu de forêt", "feux de forêt", "ouragan", "ouragans", "typhon", "typhons", "cyclone", "cyclones", "tempête tropicale",
       "inondation", "inondations", "crue", "crues", "glissement de terrain", "éruption", "volcan", "catastrophe naturelle",
     ],
+    figurative: ["séisme politique", "séisme électoral", "tsunami politique", "tsunami électoral", "comme un séisme", "comme un ouragan", "éruption cutanée", "éruptions cutanées"],
+    context: ["film", "films", "netflix", "théâtre", "concert", "concerts", "documentaire", "roman", "attraction", "élections", "électoral", "électorale", "candidat", "candidate", "football", "ligue", "championnat", "match"],
+    report: ["mort", "bless", "dégât", "évacu", "disparu", "victime", "sinistré", "annul", "reporté", "suspend", "détrui"],
   },
   pt: {
     mode: WORD,
@@ -75,6 +94,9 @@ export const STRONG_TERMS = {
       "incêndio florestal", "incêndios florestais", "queimada", "queimadas", "furacão", "furacões", "tufão", "ciclone", "ciclones", "tempestade tropical",
       "inundação", "inundações", "enchente", "enchentes", "deslizamento", "deslizamentos", "erupção", "vulcão", "desastre natural",
     ],
+    figurative: ["terremoto político", "terremoto eleitoral", "tsunami político", "tsunami eleitoral", "como um terremoto", "como um furacão", "erupção cutânea", "erupções cutâneas"],
+    context: ["filme", "filmes", "netflix", "teatro", "concerto", "concertos", "documentário", "novela", "eleições", "eleitoral", "candidato", "candidata", "votos", "futebol", "campeonato", "jogo"],
+    report: ["mort", "ferid", "dano", "evacu", "desaparecid", "vítima", "desabrigad", "desalojad", "cancel", "suspens", "adiad", "destru"],
   },
 };
 
@@ -99,9 +121,13 @@ function matches(text, term, mode) {
 export function isDisasterNewsIn(language, title) {
   const rule = STRONG_TERMS[language];
   if (!rule) return null;
-  const text = String(title ?? "")
+  let text = String(title ?? "")
     .toLocaleLowerCase(language)
     .replace(/\s+/g, " ");
+  for (const phrase of rule.figurative) text = text.split(phrase).join(" ");
   const hit = rule.terms.find((t) => matches(text, t, rule.mode));
-  return hit ? { keep: true, reason: `${LANGUAGE_NAMES[language]} headline names "${hit}"` } : { keep: false, reason: `no ${LANGUAGE_NAMES[language]} hazard term in the headline` };
+  if (!hit) return { keep: false, reason: `no ${LANGUAGE_NAMES[language]} hazard term in the headline` };
+  const show = rule.context.find((t) => matches(text, t, rule.mode));
+  if (show && !rule.report.some((t) => matches(text, t, STEM))) return { keep: false, marker: true, reason: `show, election or sport ("${show}", no impact in the headline)` };
+  return { keep: true, reason: `${LANGUAGE_NAMES[language]} headline names "${hit}"` };
 }

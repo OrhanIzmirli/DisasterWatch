@@ -39,7 +39,7 @@ describe("languages", () => {
   it("isDisasterNews applies the stricter rule to other languages only", () => {
     expect(isDisasterNews({ title: "Deprem sonrası arama kurtarma sürüyor", url: "https://example.com/haber/1", language: "tr" }, { now: NOW }).keep).toBe(true);
     expect(isDisasterNews({ title: "2019 depreminin yıl dönümü", url: "https://example.com/haber/2", language: "tr" }, { now: NOW })).toMatchObject({ keep: false, reason: 'historical ("2019")' });
-    expect(isDisasterNews({ title: "Sismo en la liga de fútbol", url: "https://example.com/deportes/x", language: "es" }, { now: NOW }).keep).toBe(true); // section "deportes" is not English: the strong word decides
+    expect(isDisasterNews({ title: "Sismo en la región de Ejemplo", url: "https://example.com/deportes/x", language: "es" }, { now: NOW }).keep).toBe(true); // section "deportes" is not English: the strong word decides
     expect(isDisasterNews({ title: "Sismo", url: "https://example.com/sport/x", language: "es" }, { now: NOW })).toMatchObject({ keep: false, reason: 'section "sport"' });
     expect(isDisasterNews({ title: "地震", url: "https://example.com/x", language: "japanese" }, { now: NOW })).toMatchObject({ keep: false, reason: 'language "japanese" is not read' });
     // English (and articles without a language) keep the full English rules
