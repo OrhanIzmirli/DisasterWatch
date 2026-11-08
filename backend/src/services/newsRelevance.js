@@ -35,9 +35,13 @@
  *     carries an impact word ("Thousands flee as river rises" + "Flash
  *     flood warnings issued").
  *  Anything else is dropped.
+ *  Articles in another language (article.language, not "en") pass the
+ *  section and past-year checks, then the stricter rule of newsLanguages.js.
  *
  *   isDisasterNews(article) -> { keep: boolean, reason: string }
  */
+
+import { isDisasterNewsIn } from "./newsLanguages.js";
 
 /** URL path segments of sections / formats that are not disaster reporting. */
 const EXCLUDED_SECTIONS = new Set([
@@ -250,6 +254,14 @@ export function excludedSection(url) {
 export function isDisasterNews(article, { now = new Date(), storms = null } = {}) {
   const section = excludedSection(article?.url);
   if (section) return { keep: false, marker: true, reason: `section "${section}"` };
+
+  // other languages: a past year marks a retrospective, then the stricter strong-term rule (newsLanguages.js)
+  const lang = article?.language;
+  if (lang && lang !== "en") {
+    const past = String(article?.title ?? "").match(/\b(1[89]\d\d|20\d\d)\b/);
+    if (past && Number(past[1]) < now.getUTCFullYear()) return { keep: false, marker: true, reason: `historical ("${past[1]}")` };
+    return isDisasterNewsIn(lang, article.title) ?? { keep: false, reason: `language "${lang}" is not read` };
+  }
 
   const headline = normalise(article?.title);
   const standfirst = normalise(article?.summary);

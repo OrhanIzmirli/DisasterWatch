@@ -137,6 +137,8 @@ export function normalizeGuardianResult(r) {
     publishedAt: Number.isNaN(d.getTime()) ? null : d.toISOString(),
     image: null,
     provider: "guardian",
+    language: "en",
+    sourceCountry: "United Kingdom",
     summary: stripHtml(r.fields?.trailText) || null,
     tagPlace: guardianTagPlace(r.tags),
   };

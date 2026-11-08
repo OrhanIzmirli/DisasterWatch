@@ -233,6 +233,10 @@ model NewsCache {
   relatedEvent Json?
   /// { countries: ["MX"], regions: ["americas"], source: "event" | "guardian-tags" | "gdacs" }; null = unlocated.
   location     Json?
+  /// ISO 639-1 code of the article's language ("en", "tr"); null when the provider sends none.
+  language     String?
+  /// Country of the publisher as GDELT names it; not where the event is.
+  sourceCountry String?
   /// Order within the refresh (0 = first).
   position     Int
   /// When the refresh that produced the row ran; all rows of one refresh share it.

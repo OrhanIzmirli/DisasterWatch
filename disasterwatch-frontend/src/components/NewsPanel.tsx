@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { getDisasterNews, NewsError, REGION_LABELS, type NewsItem, type NewsRegion, type NewsType } from "../services/newsService";
 import { relativeTime } from "../utils/formatDate";
 import { safeImageUrl } from "../utils/imageUrl";
-import { eventTagText, locationText, providerText } from "../utils/newsText";
+import { eventTagText, LANGUAGE_NAMES, locationText, originText, providerText } from "../utils/newsText";
 
 type Props = {
   isOpen: boolean;
@@ -57,6 +57,9 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>("all");
   const [region, setRegion] = useState<RegionFilter>("all");
+  // "all" or an ISO 639-1 code; the choices come from the languages the answer counts
+  const [language, setLanguage] = useState<string>("all");
+  const [languageCounts, setLanguageCounts] = useState<Record<string, number>>({});
   // Every request is identified by filter + attempt; the panel shows "loading"
   // until the answer for the current request has arrived, so state is only set
   // from the request's callbacks (never synchronously inside the effect).
@@ -68,22 +71,26 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
     setWasOpen(isOpen);
     if (isOpen) setAttempt((a) => a + 1);
   }
-  const requestKey = `${filter}|${region}#${attempt}`;
+  const requestKey = `${filter}|${region}|${language}#${attempt}`;
 
   useEffect(() => {
     if (!isOpen) return;
     const controller = new AbortController();
-    getDisasterNews({ type: filter === "all" ? null : filter, region: region === "all" ? null : region }, controller.signal)
+    getDisasterNews(
+      { type: filter === "all" ? null : filter, region: region === "all" ? null : region, lang: language === "all" ? null : language },
+      controller.signal
+    )
       .then((data) => {
         if (controller.signal.aborted) return;
         setResult({ key: requestKey, ok: true, items: data.items, updatedAt: data.updatedAt, stale: data.stale });
+        setLanguageCounts(data.languages ?? {});
       })
       .catch((e) => {
         if (controller.signal.aborted) return;
         setResult({ key: requestKey, ok: false, error: e instanceof NewsError ? e.message : "Could not reach the news service." });
       });
     return () => controller.abort();
-  }, [isOpen, filter, region, requestKey]);
+  }, [isOpen, filter, region, language, requestKey]);
 
   const current = result && result.key === requestKey ? result : null;
   const status: "loading" | "error" | "ready" = !current ? "loading" : current.ok ? "ready" : "error";
@@ -164,6 +171,23 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
           <p className="news-region-note">Articles without a known location are listed only under All regions.</p>
         )}
 
+        <div className="news-filters news-filters-language">
+          <label htmlFor="news-language" className="news-language-label">
+            Language
+          </label>
+          <select id="news-language" className="news-language-select" value={language} onChange={(e) => setLanguage(e.target.value)}>
+            <option value="all">All languages</option>
+            {Object.keys({ ...languageCounts, ...(language !== "all" ? { [language]: 0 } : {}) })
+              .sort((a, b) => (languageCounts[b] ?? 0) - (languageCounts[a] ?? 0) || a.localeCompare(b))
+              .map((code) => (
+                <option key={code} value={code}>
+                  {LANGUAGE_NAMES[code] ?? code}
+                  {languageCounts[code] !== undefined ? ` (${languageCounts[code]})` : ""}
+                </option>
+              ))}
+          </select>
+        </div>
+
         <div className="news-content">
           {status === "loading" && <Skeleton />}
 
@@ -211,6 +235,7 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
                 const tag = eventTagText(a);
                 const via = providerText(a);
                 const place = locationText(a);
+                const origin = originText(a);
                 return (
                   <li key={a.url} className={a.provider ? `news-card news-card-${a.provider}` : "news-card"}>
                     {a.provider !== "guardian" && <NewsCardImage src={a.image} />}
@@ -219,9 +244,11 @@ export default function NewsPanel({ isOpen, onClose }: Props) {
                         <span className="news-card-domain">{a.domain || "unknown source"}</span>
                         {a.publishedAt && <span> · {relativeTime(a.publishedAt)}</span>}
                         {via && <span className="news-card-provider"> · {via}</span>}
+                        {origin && <span className="news-card-origin"> · {origin}</span>}
                       </div>
                       <h3 className="news-card-title">
-                        <a href={a.url} target="_blank" rel="noopener noreferrer">
+                        {/* lang lets screen readers read a Turkish or Spanish headline in its own language */}
+                        <a href={a.url} target="_blank" rel="noopener noreferrer" lang={a.language && a.language.length === 2 ? a.language : undefined}>
                           {a.title}
                         </a>
                       </h3>

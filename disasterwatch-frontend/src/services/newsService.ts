@@ -52,6 +52,10 @@ export type NewsItem = {
   provider?: NewsProvider;
   relatedEvent?: RelatedEvent | null;
   location?: NewsLocation | null;
+  /** ISO 639-1 code ("en", "tr", "es", "fr", "de", "pt"); null when the provider names none. */
+  language?: string | null;
+  /** Country of the publisher (GDELT), not where the event is. */
+  sourceCountry?: string | null;
 };
 
 export type NewsResponse = {
@@ -63,6 +67,8 @@ export type NewsResponse = {
   source?: string;
   /** Provider names joined with "+", e.g. "guardian+gdacs" (merged cache). */
   provider?: string | null;
+  /** Articles per language ("unknown" without one) under the other filters, for the language picker. */
+  languages?: Record<string, number>;
 };
 
 export class NewsError extends Error {
@@ -80,7 +86,13 @@ export class NewsError extends Error {
  * (articles linked to one feed event).
  */
 export async function getDisasterNews(
-  { type, region, eventId, limit }: { type?: NewsType | null; region?: NewsRegion | null; eventId?: number | null; limit?: number } = {},
+  {
+    type,
+    region,
+    eventId,
+    limit,
+    lang,
+  }: { type?: NewsType | null; region?: NewsRegion | null; eventId?: number | null; limit?: number; lang?: string | null } = {},
   signal?: AbortSignal
 ): Promise<NewsResponse> {
   const params = new URLSearchParams();
@@ -88,6 +100,7 @@ export async function getDisasterNews(
   if (region) params.set("region", region);
   if (eventId !== undefined && eventId !== null) params.set("event", String(eventId));
   if (limit) params.set("limit", String(limit));
+  if (lang) params.set("lang", lang);
   const qs = params.toString();
 
   const res = await fetch(`/api/news${qs ? `?${qs}` : ""}`, { signal, headers: { Accept: "application/json" } });
@@ -111,5 +124,6 @@ export async function getDisasterNews(
     stale: Boolean(body.stale),
     source: body.source,
     provider: body.provider ?? null,
+    languages: body.languages && typeof body.languages === "object" ? body.languages : {},
   };
 }

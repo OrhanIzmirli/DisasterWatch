@@ -300,6 +300,19 @@ const NEWS = {
       relatedEvent: related(7),
       location: { countries: ["ID"], regions: ["asia"], source: "event" },
     },
+    {
+      // invented headline in Turkish: an article in another language, labelled on its card
+      title: "Örnek haber: Örnekköy'de deprem sonrası hasar tespiti sürüyor",
+      url: "https://example.com/haber/ornekkoy-deprem",
+      domain: "example.com",
+      publishedAt: hoursAgo(10),
+      image: null,
+      provider: "gdelt",
+      relatedEvent: related(1),
+      location: null,
+      language: "tr",
+      sourceCountry: "Turkey",
+    },
   ],
   count: 3,
   updatedAt: hoursAgo(0.02),
@@ -341,8 +354,15 @@ export async function mockApi(page: Page) {
     if (path === "/news") {
       // the backend filters by the linked event (?event=), as the drawer's "Related news" relies on
       const event = url.searchParams.get("event");
-      const items = event === null ? NEWS.items : NEWS.items.filter((a) => a.relatedEvent?.id === Number(event));
-      return json({ ...NEWS, items, count: items.length });
+      const lang = url.searchParams.get("lang");
+      const byEvent = event === null ? NEWS.items : NEWS.items.filter((a) => a.relatedEvent?.id === Number(event));
+      const languages: Record<string, number> = {};
+      for (const a of byEvent) {
+        const code = (a as { language?: string }).language ?? "en";
+        languages[code] = (languages[code] ?? 0) + 1;
+      }
+      const items = lang ? byEvent.filter((a) => ((a as { language?: string }).language ?? "en") === lang) : byEvent;
+      return json({ ...NEWS, items, count: items.length, languages });
     }
     if (path === "/disasters/impact") {
       // invented figures, shaped like GET /disasters/impact

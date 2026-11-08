@@ -144,3 +144,43 @@ describe("news card images", () => {
     expect(container.querySelector("img.news-card-image")).toBeNull();
   });
 });
+
+describe("news panel language filter", () => {
+  const TURKISH: NewsItem = {
+    title: "Örnekköy'de deprem: hasar tespit çalışmaları sürüyor",
+    url: "https://haber.example.com/dunya/ornekkoy-deprem",
+    domain: "haber.example.com",
+    publishedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    provider: "gdelt",
+    relatedEvent: null,
+    location: null,
+    language: "tr",
+    sourceCountry: "Turkey",
+  };
+
+  it("lists the languages the answer counts, asks again with lang, and labels other-language cards", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        const lang = new URL(url, "http://x").searchParams.get("lang");
+        const items = [{ ...LOCATED, language: "en" }, TURKISH].filter((a) => !lang || a.language === lang);
+        return new Response(JSON.stringify({ items, count: items.length, languages: { en: 1, tr: 1 }, updatedAt: new Date().toISOString(), stale: false }), {
+          headers: { "content-type": "application/json" },
+        });
+      })
+    );
+    renderPanel();
+    const turkishLink = await screen.findByRole("link", { name: TURKISH.title });
+    expect(turkishLink.getAttribute("lang")).toBe("tr");
+    expect(screen.getByText("· Turkish · Turkey")).toBeTruthy();
+
+    const select = screen.getByLabelText("Language") as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(["All languages", "English (1)", "Turkish (1)"]);
+    await userEvent.selectOptions(select, "tr");
+    await screen.findByRole("link", { name: TURKISH.title });
+    expect(calls.at(-1)).toContain("lang=tr");
+    expect(screen.queryByRole("link", { name: LOCATED.title })).toBeNull();
+  });
+});

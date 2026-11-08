@@ -4715,3 +4715,31 @@ h2.card-title {
 .edd-score-sources .edd-sub {
   display: block;
 }
+
+/* news panel: language picker (backend/src/services/newsLanguages.js) */
+.news-filters-language {
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.news-language-label {
+  font-size: 0.78rem;
+  color: var(--dw-text-muted);
+}
+
+.news-language-select {
+  min-height: 36px;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--dw-border);
+  background: rgba(0, 21, 35, 0.6);
+  color: var(--dw-text);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 640px) {
+  .news-language-select {
+    min-height: 44px;
+    font-size: 1rem;
+  }
+}
