@@ -73,7 +73,7 @@ The public map needs only the backend and the sources. Kafka, the notification s
 
 **A rate limit that passed its tests and failed in production.** Behind Cloudflare and Render's proxy hops, `req.ip` was an internal address that changed between requests. A live test of 70 anonymous requests showed one client spread over three counters, and unrelated clients could share one. Limiters now use `True-Client-IP` or `CF-Connecting-IP`, and a live check confirmed that a client cannot forge either.
 
-**Two sources are not always two witnesses: EMSC.** EMSC often relays the USGS solution for an earthquake. Counting that as confirmation would inflate confidence, so the entry's computing agency decides: an independent agency adds +20, a USGS relay is only "listed" and adds +5. In the evaluation run, 209 of 715 matched EMSC entries turned out to be relays. [Scoring](docs/scoring.md)
+**Why an EMSC copy of a USGS quake doesn't count twice.** EMSC often relays the USGS solution for an earthquake. Counting that as confirmation would inflate confidence, so the entry's computing agency decides: an independent agency adds +20, a USGS relay is only "listed" and adds +5. In the evaluation run, 209 of 715 matched EMSC entries turned out to be relays. [Scoring](docs/scoring.md)
 
 **A transparent formula instead of a black box.** A score people act on should be checkable, so both formulas are plain arithmetic, and the API returns every term with a `scoreVersion`:
 
@@ -126,7 +126,7 @@ Admins (addresses in `ADMIN_EMAILS`, confirmed while signed in) can search users
 - **E-mail reaches only the Resend account owner** until the project has its own sending domain. In-app notifications do not have this limit.
 - **No password reset.** A forgotten password cannot be recovered yet.
 - **Alert delivery is proven on the local stack.** Live, the outbox and Kafka links report healthy, but no user has an alert subscription yet, so the last step has not run in production.
-- **Coverage.** Events come only from what USGS (M 4.5+) and NASA EONET report. Volcanoes, landslides and official warnings are not covered.
+- **Coverage.** DisasterWatch shows four hazard types: earthquakes, wildfires, floods and storms. Events come only from what USGS (M 4.5+) and NASA EONET report, and official warnings are not included.
 
 Full list: [Limits](docs/operations.md#limits).
 
