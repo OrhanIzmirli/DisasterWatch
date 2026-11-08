@@ -36,8 +36,8 @@ concurrency:
 jobs:
   wake:
     runs-on: ubuntu-latest
-    # worst case: backend 3 x 120 s + 2 x 20 s, following the run 6 min, notification 3 x 60 s + 2 x 20 s = 980 s
-    timeout-minutes: 18
+    # worst case: 3 attempts of (backend 3 x 120 s + 2 x 20 s, following the run 6 min) + 2 x 60 s, notification 3 x 60 s + 2 x 20 s = 2620 s
+    timeout-minutes: 45
     steps:
       - name: Wake the backend and ingest now
         env:
@@ -48,38 +48,51 @@ jobs:
             echo "::error::Set the BACKEND_URL variable and the INGEST_WAKE_SECRET secret (see the comment at the top of wake.yml)"
             exit 1
           fi
-          # a cold start takes up to about a minute and the endpoint answers within another minute;
-          # connection failures and timeouts are retried
-          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 120 --retry 2 --retry-delay 20 --retry-all-errors \
-            -X POST "$BACKEND_URL/internal/ingest" -H "Authorization: Bearer $INGEST_WAKE_SECRET")
-          echo "HTTP $code"
-          cat body.json; echo
-          case "$code" in
-            200)
-              # a run with a failed part (source fetch, Kafka publish) fails the job, so GitHub reports it
-              grep -q '"ok":true' body.json || { echo "::error::the ingestion reported a failure (see the counts above; Kafka may be powered off)"; exit 1; }
-              ;;
-            202)
-              # the run outlasted the endpoint's wait (after a long sleep its GDACS lookups can take
-              # minutes): follow it on the public /health until it ends, at most 6 minutes
-              echo "the ingestion is still running; following it on /health"
-              deadline=$((SECONDS + 360))
-              while [ "$SECONDS" -lt "$deadline" ]; do
-                sleep 15
-                curl -sS --max-time 20 -o health.json "$BACKEND_URL/health" || continue
-                jq -e '.ingest.running == false and .ingest.lastRunAt != null' health.json > /dev/null || continue
-                jq -c '.ingest' health.json
-                failed=$(jq -r '.ingest.lastErrorSources | join(", ")' health.json)
-                [ -z "$failed" ] || { echo "::error::the ingestion reported a failure in: $failed (Kafka may be powered off)"; exit 1; }
-                exit 0
-              done
-              echo "::error::the ingestion did not finish within 6 minutes of the call (see /health -> ingest)"
-              exit 1
-              ;;
-            *)
-              exit 1
-              ;;
-          esac
+          # A part of a run can fail for a moment (a source that does not answer during a cold start):
+          # the endpoint then says 200 with ok:false, which curl's own retries do not cover. Each new
+          # call really runs again (a failed run does not count as recent, and the service is awake).
+          # A wrong secret or a run that never ends is not retried.
+          attempts=3
+          for attempt in $(seq 1 "$attempts"); do
+            # a cold start takes up to about a minute and the endpoint answers within another minute;
+            # connection failures and timeouts are retried by curl
+            code=$(curl -sS -o body.json -w '%{http_code}' --max-time 120 --retry 2 --retry-delay 20 --retry-all-errors \
+              -X POST "$BACKEND_URL/internal/ingest" -H "Authorization: Bearer $INGEST_WAKE_SECRET")
+            echo "HTTP $code (attempt $attempt of $attempts)"
+            cat body.json; echo
+            case "$code" in
+              200)
+                grep -q '"ok":true' body.json && exit 0
+                ;;
+              202)
+                # the run outlasted the endpoint's wait (after a long sleep its GDACS lookups can take
+                # minutes): follow it on the public /health until it ends, at most 6 minutes
+                echo "the ingestion is still running; following it on /health"
+                deadline=$((SECONDS + 360))
+                finished=
+                while [ "$SECONDS" -lt "$deadline" ]; do
+                  sleep 15
+                  curl -sS --max-time 20 -o health.json "$BACKEND_URL/health" || continue
+                  jq -e '.ingest.running == false and .ingest.lastRunAt != null' health.json > /dev/null || continue
+                  jq -c '.ingest' health.json
+                  [ -n "$(jq -r '.ingest.lastErrorSources | join(", ")' health.json)" ] || exit 0
+                  finished=1
+                  break
+                done
+                [ -n "$finished" ] || { echo "::error::the ingestion did not finish within 6 minutes of the call (see /health -> ingest)"; exit 1; }
+                ;;
+              *)
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" -lt "$attempts" ]; then
+              echo "a part of the ingestion failed; trying again in 60 s"
+              sleep 60
+            fi
+          done
+          # still failing: GitHub reports it (/health -> ingest.lastErrorSources names the part)
+          echo "::error::the ingestion reported a failure in all $attempts attempts (see the counts above and /health -> ingest.lastErrorSources; Kafka may be powered off)"
+          exit 1
 
       - name: Wake the notification service
         if: always()
