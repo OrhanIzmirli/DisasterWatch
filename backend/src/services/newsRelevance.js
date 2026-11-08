@@ -21,9 +21,13 @@
  *     the caller passes the current storms (`storms`: names of storms in
  *     the feed or closed in the last 14 days), a headline that names only
  *     other storms ("... Hurricane Melissa claims") is a retrospective too.
+ *     A show or election word (musical, film, festival, election, voters, ...)
+ *     drops the headline as well, unless it reports impact, a disruption
+ *     ("called off") or the hazard acting ("hits", "nears").
  *  2. Idioms and names are removed from the text before matching
  *     ("perfect storm", "storm of criticism", "flood of", "spread like
- *     wildfire", "political earthquake", "Carolina Hurricanes", ...).
+ *     wildfire", "political earthquake", "landslide victory", "like an
+ *     earthquake", "row erupts", "Carolina Hurricanes", ...).
  *  3. A STRONG hazard term in the headline keeps the article
  *     (earthquake, tsunami, wildfire, bushfire, hurricane, typhoon,
  *     cyclone, tornado, landslide, flooding, eruption, ...).
@@ -65,7 +69,20 @@ const IDIOMS = [
   /\bdesert storm\b/g,
   /\bstormzy\b/g,
   /\b(political|electoral|seismic shift|youth) ?quakes?\b/g,
-  /\b(political|electoral|financial|market|diplomatic|cultural) earthquakes?\b/g,
+  /\b(political|electoral|election|financial|economic|market|diplomatic|cultural|corporate|transfer|box[- ]office) earthquakes?\b/g,
+  // similes: "shook the room like an earthquake" (the plain "like floods and fires" stays)
+  /\blike (a|an) (earthquake|quake|tsunami|hurricane|cyclone|typhoon|tornado|volcano|landslide|flood|storm)\b/g,
+  /\b(tsunamis?|hurricanes?|cyclones?|tornado(es)?|volcano(es)?) of (criticism|protests?|controversy|outrage|anger|abuse|complaints|lawsuits|cash|money|debt|data|misinformation|disinformation|support|praise|votes|layoffs|goals|emotions?|change)\b/g,
+  /\b(blue|red|silver|gr[ae]y|political|electoral|economic|financial|digital|debt|data) tsunamis?\b/g,
+  // a landslide win; "cut off by a landslide" is the real thing, so the winning word has to be there
+  /\blandslides? (victory|victories|win|wins|defeat|defeats|majority|mandate|election|re-?election|loss|losses|triumph)\b/g,
+  /\b(electoral|political) landslides?\b/g,
+  /\b(win|wins|won|winning|elected|re-?elected|victory|sweeps?|swept)\b(?: [\p{L}\p{N}'-]+){0,3} (by|in) a landslide\b/gu,
+  // a row "erupts"; a volcano is never one of these subjects
+  /\b(row|rows|war|wars|violence|fight|fights|fighting|brawl|brawls|protest|protests|riot|riots|clash|clashes|chaos|controversy|scandal|dispute|disputes|feud|anger|fury|tension|tensions|crowd|crowds|stadium|celebration|celebrations|applause|laughter|cheers|gunfire|debate|argument|arguments|conflict|conflicts|backlash|drama) (?:[\p{L}\p{N}'-]+ ){0,2}?erupt(s|ed|ing)?\b/gu,
+  /\berupt(s|ed|ing)? (in|into) (cheers|applause|laughter|violence|protests?|anger|chaos|celebration|flames?)\b/g,
+  /\beruptions? of (violence|anger|protests?|joy|cheers|unrest|fighting)\b/g,
+  /\bskin eruptions?\b/g,
   /\bfloods? of (applications|money|cash|investment|imports|complaints|tears|calls|emails|refugees|migrants|orders|bids|content|requests|interest)\b/g,
   /\bfloodgates\b/g,
   /\bflooded (with|by) (calls|messages|complaints|applications|orders|requests|offers)\b/g,
@@ -74,7 +91,8 @@ const IDIOMS = [
   /\blike (a )?wildfire\b/g,
   /\b(carolina|miami) hurricanes\b/g,
   /\bseattle storm\b/g,
-  /\b(iowa state )?cyclones (beat|win|lose|fall|rally)\b/g,
+  /\b(iowa state )?cyclones (fall|rally)\b/g,
+  /\b(hurricanes|cyclones|storm|typhoons|tornadoes) (beat|beats|defeat|defeats|win|wins|lose|loses|edge|edges|rout|routs|sign|signs|draft|drafts)\b/g,
   /\b(eurofighter )?typhoon (jets?|fighters?|aircraft|squadron)\b/g,
   /\beurofighter\b/g,
   /\bstorm (shadow|missiles?)\b/g,
@@ -124,7 +142,19 @@ const RETRO_MARKERS = /\b(anniversary|(years?|decades?|months?) (after|since|on 
 const YEAR = /\b(1[89]\d\d|20\d\d)\b(?! ?(homes|houses|people|residents|families|buildings|hectares|acres|km|miles|feet|metres|meters|dead|killed|evacuated|firefighters|troops|visitors|tourists|students|workers|cases)\b)/;
 
 /** League and sport words: a hazard word next to them is usually a team name ("Hurricanes", "Storm", "Cyclones"). */
-const SPORT_WORDS = /\b(volleyball|football|soccer|basketball|baseball|hockey|cricket|rugby|netball|handball|league|champions league|premier league|super bowl|playoffs?|season opener|tournament|championships?)\b/;
+const SPORT_WORDS = /\b(volleyball|football|soccer|basketball|baseball|hockey|cricket|rugby|netball|handball|league|champions league|premier league|super bowl|playoffs?|season opener|tournament|championships?|nfl|nba|nhl|mlb|wnba|ncaa|quarterback|touchdown|striker|goalkeeper|midfielder|semi-?finals?|quarter-?finals?|derby|grand prix|world cup|head coach)\b/;
+
+/** Stage, screen and other shows: a hazard word next to them is usually a title ("Dance of the Cyclone: the musical"). */
+const WORK_WORDS = /\b(musicals?|theatre|theater|broadway|opera|ballet|stage (?:show|play|production)|concerts?|gig|festival|gala|films?|movies?|netflix|hulu|disney|box office|trailer|actor|actress|starring|tv series|sitcom|memoir|roller ?coaster|theme park|comic book|video game)\b/;
+
+/** Elections: a hazard word next to them is usually a figure of speech. */
+const ELECTION_WORDS = /\b(elections?|by-?elections?|electoral|ballots?|voters?|votes?|candidates?|polling|mandate)\b/;
+
+/** The event was disrupted: a real hazard story even next to a sport, show or election word ("Concert called off as typhoon nears"). */
+const DISRUPTED = /\b(cancel(s|led|ed|ling|ing|lation)?|postpone(s|d)?|postponing|delay(s|ed)?|called off|suspend(s|ed)?)\b/;
+
+/** The hazard acts on the place ("Hurricane hits music festival"). Not used for sports, where teams hit and strike too. */
+const HAZARD_ACTS = /\b(hits?|struck|strikes|nears?|approach(es|ing)|threatens?|forces?|forced)\b/;
 
 /**
  * "... after Hurricane Helene" / "... Following Hurricane Beryl": a named storm the headline looks back on.
@@ -282,7 +312,11 @@ export function isDisasterNews(article, { now = new Date(), storms = null } = {}
   if (year && Number(year[1]) < now.getUTCFullYear()) return { keep: false, marker: true, reason: `historical ("${year[1]}")` };
 
   const sport = headline.match(SPORT_WORDS);
-  if (sport && !first(headline, IMPACT)) return { keep: false, marker: true, reason: `sports ("${sport[1]}", no impact in the headline)` };
+  const reportsImpact = first(headline, IMPACT) || DISRUPTED.test(headline);
+  if (sport && !reportsImpact) return { keep: false, marker: true, reason: `sports ("${sport[1]}", no impact in the headline)` };
+
+  const show = headline.match(WORK_WORDS) ?? headline.match(ELECTION_WORDS);
+  if (show && !reportsImpact && !HAZARD_ACTS.test(headline)) return { keep: false, marker: true, reason: `show or election ("${show[1]}", no impact in the headline)` };
 
   // every "after/since/following <class> X" counts, not just the first ("after storm hits, a year after Hurricane Helene")
   for (const after of String(article?.title ?? "").matchAll(AFTER_NAMED_STORM)) {
