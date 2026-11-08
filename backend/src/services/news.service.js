@@ -135,13 +135,20 @@ function tooOld(article, at) {
 }
 
 /**
+ * Tied to a current feed event by place and hazard words, so a look back in
+ * the headline is not a retrospective. GDACS media lists do not count: they
+ * are noisy, and every article in one arrives attached to its event.
+ */
+const isLinked = (article) => article.provider !== "gdacs" && Boolean(article.event ?? article.relatedEvent);
+
+/**
  * Keeps disaster/hazard news only (src/services/newsRelevance.js) and logs
  * what was dropped and why, so the filter can be audited from the logs.
  */
 function relevantOnly(articles, provider, what, log, dropped, rules = {}) {
   const kept = [];
   for (const a of articles) {
-    const verdict = tooOld(a, rules.now ?? new Date()) ?? isDisasterNews(a, rules);
+    const verdict = tooOld(a, rules.now ?? new Date()) ?? isDisasterNews(a, { ...rules, linked: isLinked(a) });
     if (verdict.keep) kept.push(a);
     else dropped.push({ title: a.title, url: a.url, provider: provider.name, search: what, reason: verdict.reason });
   }
@@ -182,8 +189,9 @@ async function runPlan(provider, plan, top, log, rules = {}) {
   requests += 1;
   try {
     // The provider matched the query somewhere in the article; the relevance rules decide what is disaster news.
-    const relevant = relevantOnly(await provider.searchGeneral({ maxRecords: GENERAL_LIMIT }), provider, "general search", log, dropped, rules);
-    general = linkArticlesToEvents(relevant, top, { requireHazard: true }).map((a) => attachEvent(a, a.event));
+    // linked first: an article tied to a current event may look back at an earlier one
+    const assigned = linkArticlesToEvents(await provider.searchGeneral({ maxRecords: GENERAL_LIMIT }), top, { requireHazard: true });
+    general = relevantOnly(assigned, provider, "general search", log, dropped, rules).map((a) => attachEvent(a, a.event));
   } catch (err) {
     failures += 1;
     lastFailure = err?.message || String(err);
@@ -310,7 +318,7 @@ export function createNewsService({
       // rows cached before the URL-date rule still carry GDELT's seen date
       const base = cached.provider ? cached : { ...cached, provider: name };
       const a = base.provider === "gdelt" ? withUrlDate(base, at) : base;
-      const verdict = tooOld(a, at) ?? isDisasterNews(a, { now: at, storms });
+      const verdict = tooOld(a, at) ?? isDisasterNews(a, { now: at, storms, linked: isLinked(a) });
       if (!verdict.keep && (verdict.marker || (a.provider ?? name) !== "guardian")) continue;
       // an unlocated article is placed again, so a new location rule reaches the cached articles too
       const article = { ...a, provider: a.provider ?? name };

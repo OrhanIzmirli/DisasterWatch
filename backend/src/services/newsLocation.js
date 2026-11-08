@@ -185,7 +185,7 @@ const fold = (s) =>
  */
 const AMBIGUOUS_NAMES = ["georgia", "georgie", "jordan", "chad", "reunion", "jersey", "granada", "washington", "congo"];
 /** Everyday words of one language that equal a place name: "sabah" (morning), "mali" (financial), "cin", "madeira" (wood), "ira" (anger), "chili". */
-const COMMON_WORDS = { tr: ["mali", "cin", "misir", "sabah"], pt: ["madeira", "ira"], fr: ["chili"] };
+const COMMON_WORDS = { tr: ["mali", "cin", "misir", "sabah", "kabul"], pt: ["madeira", "ira"], fr: ["chili"] };
 /** Places whose name holds a country they are not in; removed before matching. */
 const NOT_THE_COUNTRY = [
   "gulf of mexico", "golfo de mexico", "golfo do mexico", "golfe du mexique", "golf von mexiko", "meksika korfezi",
@@ -197,6 +197,31 @@ const NOT_THE_COUNTRY = [
 const WORD_EDGE_BEFORE = "(^|[^\\p{L}\\p{N}])";
 const WORD_EDGE_AFTER = "(?![\\p{L}\\p{N}])";
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Turkish case endings a place name takes, accent-free. GDELT drops the
+ * apostrophe ("Japonyada", "Türkiyeye"), so they are part of the name to
+ * match. Vowel harmony and consonant voicing are applied, which also keeps
+ * look-alikes out: "Çad" takes -da, so "cadde" (street) is not Chad. The
+ * locative, ablative and relative, then the dative, genitive and, after a
+ * vowel, the accusative; a bare accusative ("Yemeni") reads as other words.
+ */
+function turkishEndings(name) {
+  const lower = name.toLocaleLowerCase("tr");
+  const vowel = lower.match(/[aıoueiöü]/g)?.at(-1) ?? "e";
+  // the city table is accent-free, so a plain "i" may stand for "ı" (diyarbakir): both harmonies
+  const open = vowel === "i" ? ["a", "e"] : "aıou".includes(vowel) ? ["a"] : ["e"];
+  const closed = "ouöü".includes(vowel) ? "u" : "i";
+  const afterVowel = /[aıoueiöü]$/.test(lower);
+  const d = /[fstkçşhp]$/.test(lower) ? "t" : "d";
+  return [
+    ...open.flatMap((a) => [`${d}${a}`, `${d}${a}n`, `${d}${a}ki`, afterVowel ? `y${a}` : a]),
+    afterVowel ? `n${closed}n` : `${closed}n`,
+    ...(afterVowel ? [`y${closed}`] : []),
+  ];
+}
+/** Read aloud: "ABD'de", "ABD'ye" ("a-be-de"). */
+const TURKISH_READING = { abd: "abede" };
 
 /** Every code the region table knows, plus Russia, which it handles apart. */
 const placeableCodes = () => [...COUNTRY_REGION.keys(), "RU"];
@@ -215,10 +240,15 @@ function headlineTerms(language) {
   const lang = LANGUAGE_NAMES[language] ? language : "en";
   if (HEADLINE_TERMS.has(lang)) return HEADLINE_TERMS.get(lang);
   const terms = new Map();
+  const endings = new Map();
   const add = (term, code) => {
-    const t = fold(term).replace(/\s*\(.*?\)\s*/g, " ").trim();
-    if (code && t.length >= 3) terms.set(t, code);
+    const plain = term.replace(/\s*\(.*?\)\s*/g, " ").trim();
+    const t = fold(plain);
+    if (!code || t.length < 3) return;
+    terms.set(t, code);
+    if (lang === "tr") endings.set(t, turkishEndings(TURKISH_READING[t] ?? plain));
   };
+  if (lang === "tr") add("ABD", "US");
   if (lang === "en") {
     for (const state of usStates()) add(state, "US");
     for (const [alias, name] of countryAliases()) add(alias, countryCode(name));
@@ -230,7 +260,10 @@ function headlineTerms(language) {
   for (const word of [...AMBIGUOUS_NAMES, ...(COMMON_WORDS[lang] ?? [])]) terms.delete(word);
   const compiled = [...terms]
     .sort((a, b) => b[0].length - a[0].length)
-    .map(([term, code]) => ({ code, pattern: new RegExp(`${WORD_EDGE_BEFORE}${escapeRegExp(term)}${WORD_EDGE_AFTER}`, "gu") }));
+    .map(([term, code]) => {
+      const ending = endings.has(term) ? `(?:${endings.get(term).join("|")})?` : "";
+      return { code, pattern: new RegExp(`${WORD_EDGE_BEFORE}${escapeRegExp(term)}${ending}${WORD_EDGE_AFTER}`, "gu") };
+    });
   HEADLINE_TERMS.set(lang, compiled);
   return compiled;
 }

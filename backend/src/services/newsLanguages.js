@@ -48,7 +48,9 @@ const WORD = "word"; // matches a whole word or phrase
  *   figurative  phrases removed before matching ("siyasi deprem", "Erdrutschsieg");
  *   context     show, election and sport words: with one of them the headline
  *               must also report what happened, or a hazard word is a title or a figure of speech;
- *   report      word starts that report impact or a disruption (always matched as word starts).
+ *   report      word starts that report impact or a disruption (always matched as word starts);
+ *   retrospective  phrases of a piece that looks back at a past disaster (word starts);
+ *   fresh       phrases that report a new event, which outweigh a look back (word starts).
  */
 export const STRONG_TERMS = {
   tr: {
@@ -57,6 +59,8 @@ export const STRONG_TERMS = {
     figurative: ["siyasi deprem", "siyasette deprem", "seçim deprem", "transfer deprem", "deprem etkisi", "deprem gibi", "tsunami gibi", "siyasi kasırga", "kasırga gibi"],
     context: ["film", "netflix", "dizi", "tiyatro", "konser", "belgesel", "seçim", "futbol", "maç", "lig", "transfer", "şampiyon"],
     report: ["ölü", "öldü", "yaralı", "hasar", "tahliye", "kayıp", "iptal", "ertelen", "yıkıl", "can kayb"],
+    retrospective: ["yıl dönüm", "yıldönüm", "yıl sonra", "yıl önce", "yıl geçti", "yıl oldu", "sonrası kurul", "sonrası inşa", "ardından kurul", "anma tören", "anıldı", "anısına", "unutul", "unutma", "depremi yaşa", "depremini yaşa", "depremlerini yaşa"],
+    fresh: ["yeni deprem", "yeni sel", "son dakika", "bugün", "az önce", "bu sabah", "bu gece", "meydana geldi"],
   },
   de: {
     mode: STEM,
@@ -64,6 +68,8 @@ export const STRONG_TERMS = {
     figurative: ["politisches erdbeben", "politische erdbeben", "erdrutschsieg", "erdrutschartig", "wie ein erdbeben", "wie ein tsunami", "wie ein hurrikan"],
     context: ["film", "netflix", "theater", "konzert", "dokumentation", "wahl", "bundesliga", "fußball", "liga"],
     report: ["tote", "verletz", "schäden", "schaden", "evakuier", "vermisst", "opfer", "abgesagt", "verschoben", "zerstör"],
+    retrospective: ["jahrestag", "jahre nach", "jahre später", "gedenk", "erinnerung an"],
+    fresh: ["neues erdbeben", "neue erdbeben", "erneut", "heute", "aktuell"],
   },
   es: {
     mode: WORD,
@@ -75,6 +81,8 @@ export const STRONG_TERMS = {
     figurative: ["terremoto político", "terremoto electoral", "terremoto financiero", "tsunami político", "tsunami electoral", "tsunami de votos", "tsunami de críticas", "como un terremoto", "como un huracán", "erupción cutánea", "erupciones cutáneas"],
     context: ["película", "películas", "netflix", "teatro", "concierto", "conciertos", "documental", "novela", "elecciones", "electoral", "candidato", "candidata", "votos", "fútbol", "liga", "gol", "goles"],
     report: ["muert", "herid", "daño", "evacu", "desaparecid", "víctima", "damnificad", "cancel", "suspend", "aplaz", "destru"],
+    retrospective: ["aniversario", "años después", "años del terremoto", "años del sismo", "años del huracán", "años desde", "años tras", "conmemor", "a un año", "a dos años", "a tres años", "a cinco años", "a diez años"],
+    fresh: ["nuevo sismo", "nuevo terremoto", "nueva réplica", "hoy", "última hora"],
   },
   fr: {
     mode: WORD,
@@ -86,6 +94,8 @@ export const STRONG_TERMS = {
     figurative: ["séisme politique", "séisme électoral", "tsunami politique", "tsunami électoral", "comme un séisme", "comme un ouragan", "éruption cutanée", "éruptions cutanées"],
     context: ["film", "films", "netflix", "théâtre", "concert", "concerts", "documentaire", "roman", "attraction", "élections", "électoral", "électorale", "candidat", "candidate", "football", "ligue", "championnat", "match"],
     report: ["mort", "bless", "dégât", "évacu", "disparu", "victime", "sinistré", "annul", "reporté", "suspend", "détrui"],
+    retrospective: ["anniversaire", "ans après", "an après", "commémor"],
+    fresh: ["nouveau séisme", "aujourd'hui", "ce matin", "dernière minute"],
   },
   pt: {
     mode: WORD,
@@ -97,6 +107,8 @@ export const STRONG_TERMS = {
     figurative: ["terremoto político", "terremoto eleitoral", "tsunami político", "tsunami eleitoral", "como um terremoto", "como um furacão", "erupção cutânea", "erupções cutâneas"],
     context: ["filme", "filmes", "netflix", "teatro", "concerto", "concertos", "documentário", "novela", "eleições", "eleitoral", "candidato", "candidata", "votos", "futebol", "campeonato", "jogo"],
     report: ["mort", "ferid", "dano", "evacu", "desaparecid", "vítima", "desabrigad", "desalojad", "cancel", "suspens", "adiad", "destru"],
+    retrospective: ["aniversário", "anos depois", "anos após", "anos do terremoto", "anos da tragédia", "relembr"],
+    fresh: ["novo terremoto", "novo sismo", "hoje", "última hora"],
   },
 };
 
@@ -114,20 +126,32 @@ function matches(text, term, mode) {
   }
 }
 
+const lowered = (language, title) => String(title ?? "").toLocaleLowerCase(language).replace(/\s+/g, " ");
+
+/** Does the headline report a new event ("yeni deprem", "hoy")? False for a language without rules. */
+export function reportsNewEventIn(language, title) {
+  const rule = STRONG_TERMS[language];
+  if (!rule) return false;
+  const text = lowered(language, title);
+  return rule.fresh.some((t) => matches(text, t, STEM));
+}
+
 /**
  * Relevance of a headline in a language other than English.
+ * A piece that looks back at a past disaster is dropped unless it reports a
+ * new event or `linked` says it is tied to a current feed event.
  * -> { keep, reason }; null when the language has no rule (the article is then dropped by the caller).
  */
-export function isDisasterNewsIn(language, title) {
+export function isDisasterNewsIn(language, title, { linked = false } = {}) {
   const rule = STRONG_TERMS[language];
   if (!rule) return null;
-  let text = String(title ?? "")
-    .toLocaleLowerCase(language)
-    .replace(/\s+/g, " ");
+  let text = lowered(language, title);
   for (const phrase of rule.figurative) text = text.split(phrase).join(" ");
   const hit = rule.terms.find((t) => matches(text, t, rule.mode));
   if (!hit) return { keep: false, reason: `no ${LANGUAGE_NAMES[language]} hazard term in the headline` };
   const show = rule.context.find((t) => matches(text, t, rule.mode));
   if (show && !rule.report.some((t) => matches(text, t, STEM))) return { keep: false, marker: true, reason: `show, election or sport ("${show}", no impact in the headline)` };
+  const past = rule.retrospective.find((t) => matches(text, t, STEM));
+  if (past && !linked && !reportsNewEventIn(language, title)) return { keep: false, marker: true, reason: `retrospective ("${past}")` };
   return { keep: true, reason: `${LANGUAGE_NAMES[language]} headline names "${hit}"` };
 }
