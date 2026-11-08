@@ -17,9 +17,10 @@ More in [Screenshots](docs/screenshots.md).
 ## Features
 
 - **One feed from two sources:** USGS earthquakes (M 4.5+) and NASA EONET wildfires, floods and storms, normalized into one model; one failing source degrades the feed instead of breaking it.
-- **Live dashboard:** Leaflet map with clustered, severity-coloured markers, an event drawer, filters, search, sorting and KPIs. No demo or fallback data anywhere.
+- **Live dashboard:** Leaflet map with clustered markers coloured by event type, sized by priority and outlined by confidence, an event drawer, filters, search, sorting and KPIs. No demo or fallback data anywhere.
 - **Severity from the source:** GDACS impact level, magnitude, Saffir-Simpson on the peak wind or burned area; an event the source gives no intensity for is shown as *not rated*, never guessed ([Severity](docs/severity.md)).
 - **News linked to events:** GDELT, The Guardian and GDACS media, filtered by relevance rules and placed in a country and region. GDELT is read in English, Turkish, Spanish, French, German and Portuguese, and the news can be filtered by language and country ([News](docs/news.md)).
+- **Multi-source confirmation:** each event is checked against EMSC, NOAA NHC, NASA FIRMS (when a key is set) and GDACS, and gets open confidence and priority scores, with a "Why these scores?" breakdown in the event drawer ([Scoring methodology](#scoring-methodology)).
 - **Location-based alerts:** subscriptions by hazard type, minimum severity and radius; in-app notifications and opt-in e-mail with double opt-in and one-click unsubscribe.
 - **Event-driven pipeline:** transactional outbox, Kafka topic `disaster-events`, idempotent consumer: at-least-once delivery, at most one notification per user and event ([Architecture](docs/architecture.md#event-driven-notification-pipeline)).
 - **Accounts, privacy and admin:** cookie sessions, self-service account deletion, a privacy page, and an admin console with an audit log.
@@ -165,7 +166,7 @@ The backend suite refuses to run against the application database. **CI** (`.git
 - **Alerts can be hours late.** The free services sleep after about 15 minutes; a scheduled GitHub workflow wakes them every few hours, and events older than 48 hours never notify.
 - **Free infrastructure.** Cold starts take up to a minute, GDACS is often slow, Aiven's free Kafka powers off when idle, and the free plans cap database size, instance hours and e-mails.
 - **An alert carries the level known when the event was first seen.** A later rise of an event's GDACS level sends no new alert.
-- **Source coverage.** Only what USGS (M 4.5+) and NASA EONET report: no volcanoes, landslides, tsunami warnings or official warnings; floods are rated only through GDACS.
+- **Source coverage.** Events come only from what USGS (M 4.5+) and NASA EONET report; the confirming sources never add one: no volcanoes, landslides, tsunami warnings or official warnings; floods are rated only through GDACS.
 - **News and e-mail.** GDELT rate-limits most requests, so the news panel can be thin; without its own sending domain, e-mail reaches only the Resend account owner.
 
 The full list with measurements: [Limits](docs/operations.md#limits).

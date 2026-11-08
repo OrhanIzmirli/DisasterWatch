@@ -43,7 +43,7 @@ Only confirming sources raise the confidence score fully.
 - **EMSC:** 715 were matched, 506 by an independent agency and 209 as USGS relays. None were ambiguous.
 - **Spread:** origin times differed by a median of 0 s (95th percentile 3 s, maximum 40 s). Distances had a median of 5.4 km (95th percentile 21.5 km).
 - **Distant pairs:** the three pairs over 50 km were remote mid-ocean and Tonga quakes 1–5 s apart with matching magnitudes.
-- **Near misses:** 19 EMSC entries came within 5 min and 300 km of an unmatched quake. On review they were either aftershocks outside the rule or entries already taken by a closer quake.
+- **Near misses:** 19 EMSC entries came within 5 min and 300 km of an unmatched quake. All 19 entries were already matched to a different quake, so one-to-one kept them from being counted twice.
 
 ## 2. Confidence (0–100): is the event real and current?
 
