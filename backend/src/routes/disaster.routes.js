@@ -5,9 +5,9 @@ import { requireAuth, requireAdmin } from "../middleware/auth.middleware.js";
 import { writeAudit } from "../utils/audit.js";
 
 import rateLimit from "express-rate-limit";
-import { feedService, FeedUnavailableError, FEED_PARAM_LIMITS, FEED_UNAVAILABLE_MESSAGE } from "../services/feed.service.js";
+import { FeedUnavailableError, FEED_PARAM_LIMITS, FEED_UNAVAILABLE_MESSAGE } from "../services/feed.service.js";
 import { gdacsImpactClient, parseImpactRef } from "../services/gdacsImpact.js";
-import { annotateFeed } from "../services/fusion/feed.js";
+import { feedView } from "../services/feedView.js";
 
 // import { publishDisasterEvent } from "../services/kafkaProducer.js";
 // Kafka publishing is disabled here for now to avoid request timeouts
@@ -34,6 +34,8 @@ function bounded(val, { min, max, fallback }, parse = toInt) {
    GET /disasters?minutes=10080&limit=50&minMag=4.5
    -> { items, count, counts, source, stale, partial, sources, sourcesUpdatedAt, updatedAt, params, severityRules, scoring }
    items[].scores = { confidence, priority, confirmations } | null (services/fusion/feed.js; the terms are in API v1)
+   The response is computed when the data changes, not per request (services/feedView.js),
+   and carries an ETag: a request with a matching If-None-Match gets 304 without a body.
    counts = { total, bySeverity, byType } over the whole window, independent of limit (dashboard KPIs)
    The cache lifetime is fixed on the server: there is no query parameter to
    force a live fetch or shorten the cache, so anonymous callers cannot make
@@ -49,7 +51,9 @@ router.get("/", async (req, res) => {
     minMag: bounded(req.query.minMag, FEED_PARAM_LIMITS.minMag, toFloat),
   };
   try {
-    res.json(await annotateFeed(await feedService.getFeed(options)));
+    // built once per data change (services/feedView.js); a matching If-None-Match gets a 304
+    const { body, etag } = await feedView.get(options);
+    res.set("ETag", etag).type("application/json").send(body);
   } catch (err) {
     if (err instanceof FeedUnavailableError) {
       return res.status(503).json({ message: FEED_UNAVAILABLE_MESSAGE, retryAfterSeconds: 60 });

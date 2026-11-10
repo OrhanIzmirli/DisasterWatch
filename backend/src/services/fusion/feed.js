@@ -28,19 +28,42 @@ export function v1IdOf(item) {
  * @param {object} feed getFeed() result
  * -> the same feed with items[].scores and top-level scoring { version, status }
  */
-export async function annotateFeed(feed, { feedService = defaultFeed, fusion = defaultFusion, eventsFor = sharedEventsFor, now = () => Date.now(), log = console } = {}) {
-  try {
-    const snap = await feedService.snapshot();
-    const { matches, scores, status } = await fusion.fuse(eventsFor(snap.served, now()));
-    const items = feed.items.map((item) => {
-      const id = v1IdOf(item);
-      const sc = id ? scores.get(id) : undefined;
-      const confirmations = id ? (matches.get(id)?.sources ?? []).filter((s) => s.role === "confirming").length : 0;
-      return { ...item, scores: sc ? { confidence: sc.confidence.score, priority: sc.priority.score, confirmations } : null };
-    });
-    return { ...feed, items, scoring: { version: SCORE_VERSION, status } };
-  } catch (err) {
-    log.error("[feed] scores unavailable:", err?.message || err);
-    return { ...feed, items: feed.items.map((item) => ({ ...item, scores: null })), scoring: { version: SCORE_VERSION, status: { emsc: "error", nhc: "error", firms: "error" } } };
-  }
+export async function annotateFeed(feed, deps = {}) {
+  return createFeedAnnotator(deps)(feed);
+}
+
+/** The feed with the fusion's scores attached (pure). */
+function withScores(feed, { matches, scores, status }) {
+  const items = feed.items.map((item) => {
+    const id = v1IdOf(item);
+    const sc = id ? scores.get(id) : undefined;
+    const confirmations = id ? (matches.get(id)?.sources ?? []).filter((s) => s.role === "confirming").length : 0;
+    return { ...item, scores: sc ? { confidence: sc.confidence.score, priority: sc.priority.score, confirmations } : null };
+  });
+  return { ...feed, items, scoring: { version: SCORE_VERSION, status } };
+}
+
+/**
+ * annotateFeed with memory: the scored feed is built once per feed result (getFeed
+ * returns the same object while the data and the minute are unchanged) and per fusion
+ * result (the fusion keeps its matches and scores until a source or the minute changes),
+ * then reused by every request. A failed fusion is not remembered: the next call tries again.
+ */
+export function createFeedAnnotator({ feedService = defaultFeed, fusion = defaultFusion, eventsFor = sharedEventsFor, now = () => Date.now(), log = console } = {}) {
+  const done = new WeakMap(); // feed result -> { matches, scores, statusKey, out }
+  return async function annotate(feed) {
+    try {
+      const snap = await feedService.snapshot();
+      const fused = await fusion.fuse(eventsFor(snap.served, now()));
+      const statusKey = JSON.stringify(fused.status);
+      const hit = done.get(feed);
+      if (hit && hit.matches === fused.matches && hit.scores === fused.scores && hit.statusKey === statusKey) return hit.out;
+      const out = withScores(feed, fused);
+      done.set(feed, { matches: fused.matches, scores: fused.scores, statusKey, out });
+      return out;
+    } catch (err) {
+      log.error("[feed] scores unavailable:", err?.message || err);
+      return { ...feed, items: feed.items.map((item) => ({ ...item, scores: null })), scoring: { version: SCORE_VERSION, status: { emsc: "error", nhc: "error", firms: "error" } } };
+    }
+  };
 }

@@ -57,6 +57,7 @@ The public map and feed need only the backend and the sources; Kafka, the notifi
 - **USGS** earthquakes (M ≥ 4.5, last 30 days; the alert ingestion reads the last 7) and **NASA EONET** wildfires, floods and storms.
 - Heterogeneous responses are normalized into one model (`type`, `severity`, `title`, `lat`/`lng`, `country`, `occurredAt`, source ids).
 - 5-minute server-side cache per source; the two sources are fetched independently, so one failing source degrades the feed instead of killing it (see [Feed contract](api.md#feed-contract-get-disasters)).
+- Computed when data arrives, not per request (`backend/src/services/feedView.js`): while the backend is awake a warmer runs once a minute, refreshes each source before its cache expires and builds the dashboard response (items, fusion scores, JSON body and ETag) right away. A request sends the prepared body, or a 304 when the browser already holds it, and never waits for NASA, USGS or the scoring. The warmer also starts at boot, so a woken service fetches before the first visitor asks.
 - Pagination and marker caps keep the map responsive: the map shows the 15 strongest earthquakes of the feed page, and when a week has more quakes than the page has room for, the page keeps the strongest, not the newest.
 
 ### 2) Live dashboard (map + feed + KPIs)
