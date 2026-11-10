@@ -5,6 +5,10 @@
 #    events go to Kafka. The endpoint answers within a minute: 200 with the run's result, or
 #    202 when the run is still going (it is then followed on /health until it ends).
 # 2. GET the notification service's /health: it wakes and consumes what is waiting in Kafka.
+# 3. Publish the dashboard feed the backend now serves as a static snapshot (branch
+#    feed-snapshot, a single commit replaced on every run). The site serves it at
+#    /snapshot/feed.json (a Render rewrite, docs/operations.md), so a visitor who arrives while
+#    the backend sleeps sees the last data at once, labelled with its age, instead of waiting.
 #
 # Setup (values never in the repository):
 #   Settings -> Secrets and variables -> Actions
@@ -104,3 +108,40 @@ jobs:
             exit 1
           fi
           curl -fsS --max-time 60 --retry 2 --retry-delay 20 --retry-all-errors "$NOTIFICATION_URL/health"; echo
+
+  snapshot:
+    needs: wake
+    # also after a failed ingestion: the feed itself is checked below and only a complete one is published
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write # this job only: it pushes the feed-snapshot branch
+    steps:
+      - name: Publish the feed snapshot
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "::error::Set the BACKEND_URL variable (see the comment at the top of wake.yml)"
+            exit 1
+          fi
+          mkdir snapshot && cd snapshot
+          curl -fsS --max-time 120 --retry 2 --retry-delay 20 --retry-all-errors -o raw.json "$BACKEND_URL/disasters?limit=200"
+          # only a complete, current feed replaces the published one (never a stale, partial or empty one)
+          if ! jq -e '(.items | length) > 0 and .stale == false and .partial == false and (.updatedAt | type) == "string"' raw.json > /dev/null; then
+            echo "::warning::the feed is stale, partial or empty; the previous snapshot stays"
+            exit 0
+          fi
+          jq -c . raw.json > feed.json
+          rm raw.json
+          jq -c '{updatedAt, count, sources}' feed.json
+          git init -q -b feed-snapshot
+          git add feed.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Feed snapshot $(jq -r .updatedAt feed.json) [skip ci]"
+          # one commit, replaced every run: the branch never grows
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" \
+            push -q --force "https://github.com/$GITHUB_REPOSITORY.git" feed-snapshot

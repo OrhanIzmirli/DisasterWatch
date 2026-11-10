@@ -132,7 +132,8 @@ describe("session check", () => {
     stubApi(1, { me: 200 });
     await renderApp();
     await screen.findByRole("button", { name: /sign out/i });
-    expect(Object.keys(localStorage).filter((k) => k !== "dw.dashboardView")).toEqual(["dw.session"]);
+    // about the visitor only the flag; the other keys hold the phone view choice and the public feed copy
+    expect(Object.keys(localStorage).filter((k) => k !== "dw.dashboardView" && k !== "dw.feed.v1")).toEqual(["dw.session"]);
     expect(localStorage.getItem("dw.session")).toBe("in");
   });
 
