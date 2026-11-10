@@ -8,7 +8,8 @@ import type { EventDetails } from "../components/EventDetailDrawer";
 import { CONFIDENCE_STEPS, passesScores, PRIORITY_STEPS, type FeedScores } from "../utils/scores";
 import { relativeTime } from "../utils/formatDate";
 import { cleanTitle, eventRelativeTime, eventTitle } from "../utils/eventText";
-import { getCachedFeed, isFeedFresh, readSeverityRules, setCachedFeed, type FeedSources, type FeedSourcesUpdatedAt, type SeverityRules } from "../services/feedCache";
+import { getCachedFeed, isFeedFresh, type CachedFeed, type FeedOrigin, type FeedSources, type FeedSourcesUpdatedAt, type SeverityRules } from "../services/feedCache";
+import { cacheFeed, feedFromResponse, fetchSnapshot, isNewer, primeFromSaved, saveFeed, SNAPSHOT_DELAY_MS } from "../services/feedSnapshot";
 import HeadlineStrip from "../components/HeadlineStrip";
 import { headlineText } from "../utils/headline";
 import { pulseIds } from "../utils/liveness";
@@ -68,25 +69,6 @@ const displayMeta = (item: DisasterItem) => {
       : item.details?.category ?? getTypeLabel(item.type);
   return [lead, rel].filter(Boolean).join(" · ");
 };
-
-/** Narrows the backend's `sources` field; anything unexpected counts as "not reported". */
-const readSources = (raw: unknown): FeedSources | null => {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  const ok = (v: unknown): v is "ok" | "stale" | "error" => v === "ok" || v === "stale" || v === "error";
-  return ok(r.nasa) && ok(r.usgs) ? { nasa: r.nasa, usgs: r.usgs } : null;
-};
-
-/** Narrows the backend's `sourcesUpdatedAt` field (ISO strings or null per source). */
-const readSourcesUpdatedAt = (raw: unknown): FeedSourcesUpdatedAt | null => {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  const t = (v: unknown) => (typeof v === "string" && !Number.isNaN(new Date(v).getTime()) ? v : null);
-  return { nasa: t(r.nasa), usgs: t(r.usgs) };
-};
-
-/** ISO string or null; used for the backend's `updatedAt`. */
-const readIso = (raw: unknown): string | null => (typeof raw === "string" && !Number.isNaN(new Date(raw).getTime()) ? raw : null);
 
 const SOURCE_LABEL = { nasa: "NASA EONET", usgs: "USGS" } as const;
 const SOURCE_ITEMS = { nasa: "wildfires, storms and floods", usgs: "earthquakes" } as const;
@@ -201,9 +183,11 @@ type DashboardProps = {
 };
 
 const DashboardPage = ({ signedIn = false }: DashboardProps) => {
-  // Start from the feed cached by the previous visit (survives route changes), else the fallback rows.
-  // Start from the feed cached by the previous visit (survives route changes); otherwise the
-  // list is empty and the skeleton is shown until the backend answers. Never demo rows.
+  // First, before the state below reads the cache: a tab without a feed starts from this
+  // browser's copy of the last live answer, if it has a recent one (services/feedSnapshot.ts).
+  useState(primeFromSaved);
+  // Start from the feed cached by the previous visit (survives route changes) or the saved
+  // copy; otherwise the list is empty and the skeleton is shown until data arrives. Never demo rows.
   const [disasters, setDisasters] = useState<DisasterItem[]>(() => getCachedFeed<DisasterItem>()?.items ?? []);
   const [feedStatus, setFeedStatus] = useState<FeedStatus>(() => (getCachedFeed() ? "ready" : "loading"));
   // True once the items on screen are current: a fresh cache, or the live answer (or its failure) has arrived.
@@ -218,8 +202,11 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
   // When the data was fetched from the sources, as reported by the backend: every "ago" label
   // on the page derives from this, never from the time the browser received the response.
   const [feedUpdatedAt, setFeedUpdatedAt] = useState<string | null>(() => getCachedFeed()?.updatedAt ?? null);
-  // Whole-window counts from the backend (null until the first live answer)
-  const [feedCounts, setFeedCounts] = useState<FeedCounts | null>(null);
+  // Whole-window counts from the backend (null until a feed with counts is on screen)
+  const [feedCounts, setFeedCounts] = useState<FeedCounts | null>(() => readCounts(getCachedFeed()?.counts));
+  // "live" only for this page's own answer from the backend; a saved copy or the published
+  // snapshot is labelled as such until the live answer replaces it
+  const [feedOrigin, setFeedOrigin] = useState<FeedOrigin>(() => getCachedFeed()?.origin ?? "live");
   // The feed row that opened the drawer; it gets focus back when the drawer closes
   const openerRef = useRef<HTMLElement | null>(null); // the feed row button
   const [activeFilter, setActiveFilter] = useState<"all" | DisasterType>("all");
@@ -351,50 +338,76 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
        explicit error state with "Try again"; demo rows are never shown.
        Upstream error details are never shown (the backend does not send them).
   ========================= */
+  /** Puts a feed (live answer, saved copy or snapshot) on screen. */
+  const putOnScreen = useCallback((feed: CachedFeed<DisasterItem>) => {
+    setFeedCounts(readCounts(feed.counts));
+    setSeverityRules(feed.severityRules);
+    setDisasters(feed.items);
+    setFeedStale(feed.stale);
+    setFeedSources(feed.sources);
+    setFeedSourcesUpdatedAt(feed.sourcesUpdatedAt);
+    setFeedUpdatedAt(feed.updatedAt);
+    setFeedOrigin(feed.origin);
+    setFeedStatus("ready");
+  }, []);
+  /** On screen and into the tab's cache (it survives route changes). */
+  const adoptFeed = useCallback(
+    (feed: CachedFeed<DisasterItem>) => {
+      cacheFeed(feed);
+      putOnScreen(feed);
+    },
+    [putOnScreen]
+  );
+
   const loadFeed = useCallback(async (signal?: AbortSignal) => {
     const hasCache = Boolean(getCachedFeed());
     if (!hasCache) setFeedStatus("loading");
+    // A slow answer (a sleeping backend takes up to a minute to wake) is covered by the
+    // published snapshot when it is newer than what is on screen; the live answer replaces it.
+    let answered = false;
+    const showSnapshotIfNewer = async () => {
+      const snap = await fetchSnapshot<DisasterItem>(signal);
+      if (answered || signal?.aborted || !snap || !isNewer(snap, getCachedFeed<DisasterItem>())) return;
+      adoptFeed(snap);
+    };
+    const snapshotTimer = window.setTimeout(() => void showSnapshotIfNewer(), SNAPSHOT_DELAY_MS);
+    // leaving the page cancels it too (a request to a sleeping backend may never settle)
+    signal?.addEventListener("abort", () => window.clearTimeout(snapshotTimer), { once: true });
     try {
       // The whole window (the API's maximum page), so severity sort can bring every
       // significant event to the top; the KPIs use the backend's full-window counts.
       const res = await fetch("/api/disasters?limit=200", { signal });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(`Feed request failed (${res.status})`);
-      const items: DisasterItem[] = Array.isArray(data?.items) ? data.items : [];
       if (signal?.aborted) return;
-      setFeedCounts(readCounts(data?.counts));
-      const stale = Boolean(data?.stale);
-      const sources = readSources(data?.sources);
-      const sourcesUpdatedAt = readSourcesUpdatedAt(data?.sourcesUpdatedAt);
-      const updatedAt = readIso(data?.updatedAt);
-      const rules = readSeverityRules(data?.severityRules);
-      setCachedFeed(items, { stale, sources, sourcesUpdatedAt, updatedAt, severityRules: rules });
-      setSeverityRules(rules);
-      setDisasters(items);
-      setFeedStale(stale);
-      setFeedSources(sources);
-      setFeedSourcesUpdatedAt(sourcesUpdatedAt);
-      setFeedUpdatedAt(updatedAt);
-      setFeedStatus("ready");
+      answered = true;
+      // a body without an item list is an empty feed, never invented rows
+      const items: DisasterItem[] = Array.isArray(data?.items) ? data.items : [];
+      adoptFeed(feedFromResponse<DisasterItem>({ ...(data ?? {}), items }, "live")!);
+      saveFeed(data); // for the next visit (complete, current feeds only)
       setFeedSettled(true);
     } catch {
       if (signal?.aborted) return;
+      answered = true;
+      // nothing on screen yet: the published snapshot is better than an empty page
+      if (!getCachedFeed()) {
+        const snap = await fetchSnapshot<DisasterItem>(signal);
+        if (signal?.aborted) return;
+        if (snap) cacheFeed(snap);
+      }
       const cached = getCachedFeed<DisasterItem>();
       if (cached) {
         // keep the last real data on screen, flagged as stale; its age is still the backend's updatedAt
-        setDisasters(cached.items);
-        setFeedStale(true);
-        setFeedSources(cached.sources);
-        setFeedSourcesUpdatedAt(cached.sourcesUpdatedAt);
-        setFeedUpdatedAt(cached.updatedAt);
-        setFeedStatus("ready");
+        putOnScreen({ ...cached, stale: true });
       } else {
         setDisasters([]);
         setFeedStatus("error");
       }
       setFeedSettled(true);
+    } finally {
+      window.clearTimeout(snapshotTimer);
     }
-  }, []);
+  }, [adoptFeed, putOnScreen]);
 
   useEffect(() => {
     // A feed fetched less than FEED_FRESH_MS ago (previous visit to the
@@ -548,12 +561,16 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
   const sourcesLabel = unavailableSource === "nasa" ? "USGS only, NASA unavailable" : unavailableSource === "usgs" ? "NASA only, USGS unavailable" : "NASA + USGS";
   // Data age as reported by the backend (never the browser's fetch time)
   const dataAge = relativeTime(feedUpdatedAt) ?? "unknown";
+  // A saved copy or the published snapshot is on screen while the live answer is awaited
+  const savedCopy = feedStatus === "ready" && !feedStale && feedOrigin !== "live";
   const updatedLabel =
     feedStatus === "loading"
       ? "Loading live data (NASA + USGS)…"
       : feedStatus === "error"
         ? "Live data unavailable"
-        : `Last updated: ${dataAge} (${sourcesLabel}${feedStale ? ", last successful fetch" : ", live data"})`;
+        : savedCopy
+          ? `Last updated: ${dataAge} (saved copy, connecting to live data…)`
+          : `Last updated: ${dataAge} (${sourcesLabel}${feedStale ? ", last successful fetch" : ", live data"})`;
   // KPI numbers only exist for real data
   const kpi = (n: number) => (hasData ? n : "—");
 
@@ -622,7 +639,7 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
     significant: wholeFeed.significant,
     total: wholeFeed.total,
     items: disasters,
-    stale: feedStale,
+    stale: feedStale || savedCopy,
     dataAge: relativeTime(feedUpdatedAt),
   });
   const headlineTone =
@@ -666,7 +683,8 @@ const DashboardPage = ({ signedIn = false }: DashboardProps) => {
 
         <div className="dashboard-header-meta">
           {/* LIVE only while real, fresh data is on screen */}
-          {hasData && !feedStale && <span className="badge-live">LIVE</span>}
+          {hasData && !feedStale && !savedCopy && <span className="badge-live">LIVE</span>}
+          {hasData && savedCopy && <span className="badge-stale">SAVED</span>}
           {hasData && feedStale && <span className="badge-stale">STALE</span>}
           {feedStatus === "error" && <span className="badge-stale">OFFLINE</span>}
           <span className="dashboard-updated">{updatedLabel}</span>

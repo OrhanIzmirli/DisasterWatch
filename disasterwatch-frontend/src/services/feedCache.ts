@@ -44,8 +44,18 @@ export function readSeverityRules(raw: unknown): SeverityRules | null {
   return raw as SeverityRules;
 }
 
+/**
+ * Where the items on screen came from: "live" (this page's request to the backend),
+ * "saved" (this browser's copy of the last live answer) or "snapshot" (the copy the
+ * scheduled wake-up publishes). Only "live" data is called live on the page.
+ */
+export type FeedOrigin = "live" | "saved" | "snapshot";
+
 export type CachedFeed<T> = {
   items: T[];
+  origin: FeedOrigin;
+  /** The backend's whole-window counts (KPIs); null when not sent. */
+  counts: unknown;
   /** When the browser received it (drives the re-fetch decision only). */
   fetchedAt: number;
   /** When the data was fetched from the sources, as reported by the backend (ISO); drives every "ago" label. */
@@ -76,9 +86,11 @@ export function setCachedFeed<T>(
     updatedAt = null as string | null,
     severityRules = null as SeverityRules | null,
     fetchedAt = Date.now(),
+    origin = "live" as FeedOrigin,
+    counts = null as unknown,
   } = {}
 ) {
-  cached = { items, fetchedAt, updatedAt, stale, sources, sourcesUpdatedAt, severityRules };
+  cached = { items, fetchedAt, updatedAt, stale, sources, sourcesUpdatedAt, severityRules, origin, counts };
 }
 
 /** True when the cache exists and is younger than FEED_FRESH_MS. */
