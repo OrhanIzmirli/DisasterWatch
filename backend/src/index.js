@@ -5,6 +5,7 @@ import { newsService } from "./services/news.service.js";
 import { initProducer, producer } from "./services/kafkaProducer.js";
 import { startIngestion } from "./jobs/ingest.js";
 import { gdacsClient } from "./services/gdacs.js";
+import { startFeedWarmer } from "./services/feedView.js";
 
 // Hosting platforms provide PORT; docker-compose sets it to 5000
 const PORT = Number(process.env.PORT) || 5000;
@@ -16,6 +17,12 @@ app.listen(PORT, "0.0.0.0", () => {
 
 // Load the stored GDACS lookups right away, so the first feed request finds them in memory
 if (process.env.NODE_ENV !== "test") gdacsClient.ensureLoaded();
+
+// Dashboard feed kept ready: sources refreshed before their cache expires and the response
+// built when data arrives (once a minute, starting now), so feed requests never wait for them.
+if (process.env.NODE_ENV !== "test" && process.env.DISABLE_FEED_WARMER !== "1") {
+  startFeedWarmer();
+}
 
 // Background news refresh (GDELT every 15 minutes); requests only read its cache.
 if (process.env.NODE_ENV !== "test" && process.env.DISABLE_NEWS_JOB !== "1") {

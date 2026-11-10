@@ -46,6 +46,17 @@ export const SOURCE_RETRY_MS = 60 * 1000;
 export const COLD_START_RETRY_MS = 10 * 1000;
 /** A failed source keeps serving its last good data while it is at most this old. */
 export const SOURCE_STALE_MAX_MS = 60 * 60 * 1000;
+/** prefetch() refreshes a source once its data is this close to FEED_CACHE_MS, so a request never waits for it. */
+export const PREFETCH_AHEAD_MS = 90 * 1000;
+/** Results kept per distinct parameter set (the dashboard uses one; the clamped ranges allow many). */
+const BUILT_MAX = 16;
+
+/** Map used as a small LRU: the newest entry last, the oldest dropped beyond `max`. */
+function remember(map, key, value, max = BUILT_MAX) {
+  map.delete(key);
+  map.set(key, value);
+  if (map.size > max) map.delete(map.keys().next().value);
+}
 
 /** Message of the public 503; the per-source reasons are logged, never sent. */
 export const FEED_UNAVAILABLE_MESSAGE = "Live disaster sources are not responding";
@@ -121,6 +132,9 @@ export function createFeedService({
     nasa: { fetch: fetchNasa, data: null, updatedAt: 0, failedAt: 0, lastError: null, inflight: null },
     usgs: { fetch: fetchUsgs, data: null, updatedAt: 0, failedAt: 0, lastError: null, inflight: null },
   };
+
+  // getFeed results per parameter set, reused while the data and the minute are the same
+  const built = new Map();
 
   const isFresh = (s, t) => s.data !== null && t - s.updatedAt < cacheMs;
   // a source with no data at all retries sooner; one with data keeps the normal back-off
@@ -263,14 +277,24 @@ export function createFeedService({
     const params = { minutesWindow, limit, minMag };
     const snap = await snapshot();
     const { served } = snap;
+    const source = !snap.anyOk ? "CACHE-FALLBACK" : snap.liveNow ? snap.label : "CACHE";
+
+    // The items are rebuilt only when the data, the parameters or the minute change (the
+    // "minutes ago" values and the window edge move with the clock); otherwise the same
+    // result object is returned, so the scores and the serialised body built on it are
+    // reused too (feedView.js).
+    const key = `${minutesWindow}|${limit}|${minMag}`;
+    const fingerprint = [Math.floor(now() / 60_000), source, snap.stale, snap.partial, JSON.stringify(snap.sources), JSON.stringify(snap.sourcesUpdatedAt)].join("|");
+    const hit = built.get(key);
+    if (hit && hit.nasa === served.nasa && hit.usgs === served.usgs && hit.fingerprint === fingerprint) return hit.feed;
 
     const { items, counts } = buildItems(served, params);
 
-    return {
+    const feed = {
       items,
       count: items.length,
       counts, // whole window, before the limit: KPIs must not depend on the page size
-      source: !snap.anyOk ? "CACHE-FALLBACK" : snap.liveNow ? snap.label : "CACHE",
+      source,
       stale: snap.stale,
       partial: snap.partial,
       sources: snap.sources,
@@ -279,6 +303,25 @@ export function createFeedService({
       params,
       severityRules: SEVERITY_RULES, // the thresholds that rated these items (utils/severity.js)
     };
+    remember(built, key, { nasa: served.nasa, usgs: served.usgs, fingerprint, feed });
+    return feed;
+  }
+
+  /**
+   * Refreshes ahead of expiry: every source with no data, or with data older than
+   * cacheMs - aheadMs, is fetched now, unless a fetch is already running or the source
+   * failed recently (the same back-off as requests). Called once a minute by the warmer
+   * (feedView.js), so while the service is awake a request never waits for NASA or USGS.
+   * Resolves with the names fetched once those fetches end; never rejects.
+   */
+  async function prefetch({ aheadMs = PREFETCH_AHEAD_MS } = {}) {
+    const t = now();
+    const due = Object.keys(sources).filter((name) => {
+      const s = sources[name];
+      return !s.inflight && !inRetryBackoff(s, t) && (s.data === null || t - s.updatedAt >= cacheMs - aheadMs);
+    });
+    await Promise.all(due.map((name) => fetchOnce(name, t)));
+    return due;
   }
 
   /** Per-source state for logs/admin (includes the last upstream error; never exposed on the public route). */
@@ -289,6 +332,7 @@ export function createFeedService({
 
   /** Forgets every cached payload (tests only). */
   function reset() {
+    built.clear();
     for (const s of Object.values(sources)) {
       s.data = null;
       s.updatedAt = 0;
@@ -298,7 +342,7 @@ export function createFeedService({
     }
   }
 
-  return { getFeed, snapshot, status, reset };
+  return { getFeed, snapshot, prefetch, status, reset };
 }
 
 /** Process-wide instance used by the route. */
