@@ -202,3 +202,65 @@ describe("createFusion", () => {
     expect(status.firms).toBe("pending");
   });
 });
+
+describe("assign runs per independent group", () => {
+  // the previous single global run, kept here as the reference
+  function globalAssign(events, observations, costFn) {
+    const cand = [];
+    for (const e of events) for (const o of observations) {
+      const fit = costFn(e, o);
+      if (fit) cand.push({ e, o, fit });
+    }
+    const sortCost = (a, b) => a.fit.cost - b.fit.cost || (a.o.sourceId < b.o.sourceId ? -1 : a.o.sourceId > b.o.sourceId ? 1 : 0) || (a.e.id < b.e.id ? -1 : 1);
+    const clear = (list) => list.length < 2 || list[1].fit.cost >= 1.5 * list[0].fit.cost + 1e-9;
+    const group = (list, key) => {
+      const m = new Map();
+      for (const c of list) (m.get(key(c)) ?? m.set(key(c), []).get(key(c))).push(c);
+      for (const l of m.values()) l.sort(sortCost);
+      return m;
+    };
+    const pairs = [];
+    const ambiguous = new Set();
+    const doneE = new Set();
+    const doneO = new Set();
+    for (let changed = true; changed; ) {
+      changed = false;
+      const live = cand.filter((c) => !doneE.has(c.e.id) && !doneO.has(c.o.sourceId));
+      const byE = group(live, (c) => c.e.id);
+      const byO = group(live, (c) => c.o.sourceId);
+      for (const id of [...byE.keys()].sort()) {
+        const eList = byE.get(id);
+        const best = eList[0];
+        const oList = byO.get(best.o.sourceId);
+        if (oList[0] !== best || doneO.has(best.o.sourceId)) continue;
+        changed = true;
+        doneE.add(id);
+        doneO.add(best.o.sourceId);
+        if (clear(eList) && clear(oList)) pairs.push(best);
+        else ambiguous.add(id);
+        break;
+      }
+    }
+    return { pairs, ambiguous };
+  }
+
+  // small deterministic pseudo-random generator, so a failure is reproducible
+  const rng = (seed) => () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const key = ({ pairs, ambiguous }) => JSON.stringify({ pairs: pairs.map((p) => `${p.e.id}>${p.o.sourceId}`).sort(), ambiguous: [...ambiguous].sort() });
+
+  it("gives the same pairs and ambiguous events as one global run (dense clusters, aftershock swarms, isolated quakes)", () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const r = rng(seed);
+      const events = [];
+      const obs = [];
+      for (let i = 0; i < 60; i++) {
+        // a few dense spots make many candidates per event; the rest are isolated
+        const spot = r() < 0.4 ? Math.floor(r() * 3) : 10 + i;
+        const base = { lat: 10 + spot, lng: 120, dtSec: Math.floor(r() * 90), northKm: r() * 60, mag: 4.5 + r() * 1.5 };
+        events.push(quake(`q${seed}-${i}`, base));
+        if (r() < 0.85) obs.push(emsc(`o${seed}-${i}`, { ...base, dtSec: base.dtSec + Math.floor(r() * 50), northKm: base.northKm + r() * 40, mag: base.mag + (r() - 0.5) }));
+      }
+      expect(key(assign(events, obs, quakeCost)), `seed ${seed}`).toBe(key(globalAssign(events, obs, quakeCost)));
+    }
+  });
+});
