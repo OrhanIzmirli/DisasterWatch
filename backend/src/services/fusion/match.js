@@ -43,7 +43,13 @@ const hostOf = (url) => {
   }
 };
 const linksTo = (event, host) => (event.links ?? []).some((l) => hostOf(l.url)?.endsWith(host));
-const timeOf = (event) => Date.parse(event.occurredAt);
+// parsed once per event: the pair costs ask for it about a million times per matching run
+const times = new WeakMap();
+const timeOf = (event) => {
+  let t = times.get(event);
+  if (t === undefined) times.set(event, (t = Date.parse(event.occurredAt)));
+  return t;
+};
 const round = (n, d = 1) => (n === null || n === undefined ? null : Math.round(n * 10 ** d) / 10 ** d);
 
 /** Earthquake pair cost (0 = identical), or null when the pair is outside the rule. */
@@ -93,6 +99,50 @@ export function assign(events, observations, costFn) {
       if (fit) cand.push({ e, o, fit });
     }
   }
+  // Candidates that share no event and no observation (directly or through others) never
+  // affect each other's decisions, so the rounds run per group: the same pairs and the same
+  // ambiguous events as one global run, without regrouping every candidate after each
+  // decision (about 1 s per call with 1,500 events and 1,500 EMSC entries on a desktop CPU,
+  // several seconds on the free hosting plan, and it blocked every request meanwhile).
+  const pairs = [];
+  const ambiguous = new Set();
+  for (const group of independentGroups(cand)) {
+    const out = decide(group);
+    pairs.push(...out.pairs);
+    for (const id of out.ambiguous) ambiguous.add(id);
+  }
+  return { pairs, ambiguous };
+}
+
+/** Splits candidates into groups connected by a shared event or observation (union-find). */
+function independentGroups(cand) {
+  const parent = new Map();
+  const find = (k) => {
+    let r = k;
+    while (parent.get(r) !== r) r = parent.get(r);
+    for (let n = k; parent.get(n) !== r; ) {
+      const next = parent.get(n);
+      parent.set(n, r);
+      n = next;
+    }
+    return r;
+  };
+  const node = (k) => (parent.has(k) ? k : (parent.set(k, k), k));
+  for (const c of cand) {
+    const a = find(node(`e:${c.e.id}`));
+    const b = find(node(`o:${c.o.sourceId}`));
+    if (a !== b) parent.set(a, b);
+  }
+  const groups = new Map();
+  for (const c of cand) {
+    const r = find(`e:${c.e.id}`);
+    (groups.get(r) ?? groups.set(r, []).get(r)).push(c);
+  }
+  return groups.values();
+}
+
+/** The one-to-one rounds over one group of candidates. */
+function decide(cand) {
   const sortCost = (a, b) => a.fit.cost - b.fit.cost || (a.o.sourceId < b.o.sourceId ? -1 : a.o.sourceId > b.o.sourceId ? 1 : 0) || (a.e.id < b.e.id ? -1 : 1);
   const clear = (list) => list.length < 2 || list[1].fit.cost >= AMBIGUITY_RATIO * list[0].fit.cost + 1e-9;
   const group = (list, key) => {

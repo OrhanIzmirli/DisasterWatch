@@ -72,17 +72,32 @@ describe("buildEvents", () => {
 });
 
 describe("createEventCache", () => {
-  it("rebuilds only when a source payload changes or a minute passes", () => {
+  const at = (msAgo) => ({ id: `e${msAgo}`, occurredAt: new Date(NOW - msAgo).toISOString() });
+
+  it("builds only when a source payload changes", () => {
     let builds = 0;
-    const cache = createEventCache(() => [{ n: ++builds }]);
+    const cache = createEventCache(() => (builds++, [at(1000)]));
     const served = { nasa: [], usgs: [] };
     cache(served, NOW);
     cache(served, NOW + 1000);
+    cache(served, NOW + 61_000); // a minute later: only the window is re-applied
     expect(builds).toBe(1);
-    cache({ ...served, usgs: [] }, NOW + 2000);
+    cache({ ...served, usgs: [] }, NOW + 62_000);
     expect(builds).toBe(2);
-    cache({ nasa: served.nasa, usgs: served.usgs }, NOW + 61_000);
-    expect(builds).toBe(3);
+  });
+
+  it("keeps the same array while the same events are in the window (the fusion keys its matches on it)", () => {
+    const old = at(WINDOW_MS - 30_000); // leaves the window in 30 s
+    const cache = createEventCache(() => [at(1000), old]);
+    const served = { nasa: [], usgs: [] };
+    const first = cache(served, NOW);
+    expect(first).toHaveLength(2);
+    expect(cache(served, NOW + 25_000)).toBe(first); // same minute
+    expect(cache(served, NOW + 20_000 + 0)).toBe(first);
+    const later = cache(served, NOW + 61_000); // the old one has left
+    expect(later).not.toBe(first);
+    expect(later.map((e) => e.id)).toEqual(["e1000"]);
+    expect(cache(served, NOW + 125_000)).toBe(later); // nothing else left: same array again
   });
 });
 

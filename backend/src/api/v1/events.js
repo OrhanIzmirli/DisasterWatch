@@ -83,26 +83,46 @@ export function compareEvents(a, b) {
  * Raw source payloads -> every public event of the window, sorted.
  * The GDACS point is dropped before normalising (coordinates stay EONET's).
  */
-export function buildEvents({ nasa, usgs }, nowMs) {
+export function buildEvents(served, nowMs) {
+  return buildAllEvents(served).filter((e) => inWindow(e, nowMs));
+}
+
+/** Every public event of the payloads, sorted, before the window is applied. */
+export function buildAllEvents({ nasa, usgs }) {
   const eonet = nasa ? normalizeNasaEvents(nasa.map(({ gdacsPlace: _omit, ...e }) => e)) : [];
   const quakes = usgs ? normalizeUsgsEarthquakes(usgs, { limit: Number.MAX_SAFE_INTEGER }) : [];
-  const since = nowMs - WINDOW_MS;
   return [...eonet, ...quakes]
     .map(toPublicEvent)
-    .filter((e) => e.id && e.occurredAt && Date.parse(e.occurredAt) >= since && Date.parse(e.occurredAt) <= nowMs + 60_000)
+    .filter((e) => e.id && e.occurredAt)
     .sort(compareEvents);
 }
 
-/** Remembers the last build per pair of source payloads: a refresh (every 5 min) is the only time events are rebuilt. */
-export function createEventCache(build = buildEvents) {
-  let last = null;
+/** Inside the 30-day window ending now (a minute of clock skew allowed). */
+function inWindow(e, nowMs) {
+  const t = Date.parse(e.occurredAt);
+  return t >= nowMs - WINDOW_MS && t <= nowMs + 60_000;
+}
+
+/**
+ * Builds the events once per pair of source payloads (a refresh, every few minutes) and
+ * re-applies only the window as the clock moves (once a minute). While the same events stay
+ * in the window it returns the same array: the fusion keys its matches on that array, and
+ * rebuilding it every minute used to redo the whole cross-source matching every minute.
+ */
+export function createEventCache(build = buildAllEvents) {
+  let last = null; // { nasa, usgs, all, events, minute }
   return function eventsFor(served, nowMs) {
-    // the window edge moves with the clock, so the build is also redone once a minute
     const minute = Math.floor(nowMs / 60_000);
-    if (last && last.nasa === served.nasa && last.usgs === served.usgs && last.minute === minute) return last.events;
-    const events = build(served, nowMs);
-    last = { nasa: served.nasa, usgs: served.usgs, minute, events };
-    return events;
+    if (!last || last.nasa !== served.nasa || last.usgs !== served.usgs) {
+      const all = build(served, nowMs);
+      last = { nasa: served.nasa, usgs: served.usgs, all, events: all.filter((e) => inWindow(e, nowMs)), minute };
+      return last.events;
+    }
+    if (last.minute === minute) return last.events;
+    last.minute = minute;
+    const events = last.all.filter((e) => inWindow(e, nowMs));
+    if (events.length !== last.events.length || events.some((e, i) => e !== last.events[i])) last.events = events;
+    return last.events;
   };
 }
 
