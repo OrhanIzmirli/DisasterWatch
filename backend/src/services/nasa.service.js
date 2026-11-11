@@ -4,12 +4,15 @@ import { gdacsClient } from "./gdacs.js";
 const NASA_EONET_URL =
   "https://eonet.gsfc.nasa.gov/api/v3/events?status=all&days=30&limit=2000";
 
-export async function fetchNasaEvents() {
+/** Download and parse limit: the answer is about 1.8 MB and the free plan's CPU is small. */
+export const EONET_TIMEOUT_MS = 25_000;
+
+async function downloadEonet({ fetchImpl = fetch, timeoutMs = EONET_TIMEOUT_MS } = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(NASA_EONET_URL, { signal: controller.signal });
+    const res = await fetchImpl(NASA_EONET_URL, { signal: controller.signal });
 
     if (!res.ok) {
       throw new Error(`NASA API request failed: ${res.status}`);
@@ -21,6 +24,27 @@ export async function fetchNasaEvents() {
     clearTimeout(timeout);
   }
 }
+
+/**
+ * One EONET download shared by every caller that asks while it runs (the ingestion job,
+ * the dashboard feed and the storm list all start together when a sleeping service wakes).
+ * Three parallel 1.8 MB downloads on the free plan's CPU used to push one of them past the
+ * timeout ("This operation was aborted"), which failed the start-up ingestion. Each caller
+ * gets its own copy of the events, because the GDACS rating attaches fields to them.
+ */
+export function createEonetFetcher({ download = downloadEonet } = {}) {
+  let inflight = null;
+  return async function fetchEvents() {
+    if (!inflight) {
+      inflight = download().finally(() => {
+        inflight = null;
+      });
+    }
+    return structuredClone(await inflight);
+  };
+}
+
+export const fetchNasaEvents = createEonetFetcher();
 
 /**
  * EONET events with the GDACS impact level attached (`event.gdacs`) for the
